@@ -130,7 +130,7 @@ Die Claude-Anbindung nutzt bewusst `java.net.http` statt des Anthropic-Java-SDK.
 
 ### Stand und bekannte Grenzen
 
-- Das **ADT-Bundle** baut nur in CI (`-Padt`), weil SAPs p2-Site aus der Entwicklungsumgebung nicht erreichbar war.
+- Das **ADT-Bundle** kompiliert in CI (`-Padt`) gegen das aktuelle ADT SDK von SAPs p2-Site. Zur Laufzeit gegen ein echtes SAP-System ist es noch nicht getestet.
   - Zustandsbehaftete Sessions (für Sperren) und die Objektreferenz eines Editors liest es per Reflection.
   - Fehlt eine API in deiner ADT-Version, meldet Bella das im Chat. ARC-1 bleibt dann als Weg für die SAP-Tools.
 - Die ADT-REST-Aufrufe (Suche, Quelltext, Verwendungsnachweis, Syntaxcheck, ABAP Unit, ATC, Sperren/Schreiben, Anlegen, Aktivierung) folgen den bekannten ADT-Endpunkten. Gegen ein echtes System sind sie noch nicht getestet.
