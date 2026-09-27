@@ -15,6 +15,7 @@ PLUGIN = {
 }
 MESSAGES = {
  "app.name": "Bella",
+ "chat.noBrowser": "Czat wymaga komponentu przeglądarki, który jest niedostępny: {0}\nW systemie Linux zainstaluj WebKitGTK (libwebkit2gtk-4.1).",
  "editor.readOnly": "Edytor jest tylko do odczytu. Najpierw przełącz obiekt w tryb zmiany.",
  "editor.none": "Najpierw otwórz edytor ABAP.", "editor.noSelection": "Najpierw zaznacz kod.",
  "editor.noMethod": "Umieść kursor wewnątrz METHOD, FORM lub FUNCTION.",

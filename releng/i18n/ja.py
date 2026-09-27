@@ -15,6 +15,7 @@ PLUGIN = {
 }
 MESSAGES = {
  "app.name": "Bella",
+ "chat.noBrowser": "チャットにはブラウザーコンポーネントが必要ですが、利用できません：{0}\nLinux では WebKitGTK（libwebkit2gtk-4.1）をインストールしてください。",
  "editor.readOnly": "エディターは読み取り専用です。先にオブジェクトを変更モードにしてください。",
  "editor.none": "先に ABAP エディターを開いてください。", "editor.noSelection": "先にコードを選択してください。",
  "editor.noMethod": "カーソルを METHOD、FORM または FUNCTION の中に置いてください。",

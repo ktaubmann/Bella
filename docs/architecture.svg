@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 660" width="1000" height="660" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Bella – wer ruft wen auf</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f8fa; stroke: #d0d7de; }
+    .area { fill: #fbfbfc; stroke: #8c959f; }
+    .bella { fill: #fff5f8; stroke: #e91e63; }
+    .chip { fill: #ffffff; stroke: #f48fb1; }
+    .ext { fill: #f6f8fa; stroke: #57606a; }
+    .sap { fill: #eef4fb; stroke: #0a6ed1; }
+    .t { fill: #1f2328; font-size: 14px; }
+    .h { fill: #1f2328; font-size: 15px; font-weight: 700; }
+    .s { fill: #57606a; font-size: 12px; }
+    .lbl { fill: #1f2328; font-size: 12px; }
+    .num { fill: #e91e63; }
+    .numt { fill: #ffffff; font-size: 11px; font-weight: 700; }
+    .line { stroke: #57606a; stroke-width: 1.6; fill: none; }
+    .pink { stroke: #e91e63; }
+    .dash { stroke-dasharray: 6 4; }
+    .arrowhead { fill: #57606a; }
+    .arrowpink { fill: #e91e63; }
+    .logo { fill: #e91e63; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .box { fill: #161b22; stroke: #30363d; }
+      .area { fill: #0d1117; stroke: #6e7681; }
+      .bella { fill: #2a1520; stroke: #f06292; }
+      .chip { fill: #161b22; stroke: #b04a78; }
+      .ext { fill: #161b22; stroke: #8b949e; }
+      .sap { fill: #0c2135; stroke: #4493f8; }
+      .t, .h, .lbl { fill: #e6edf3; }
+      .s { fill: #8b949e; }
+      .line { stroke: #8b949e; }
+      .arrowhead { fill: #8b949e; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" class="arrowhead"/>
+    </marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" class="arrowpink"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1000" height="660"/>
+
+  <!-- Developer -->
+  <circle cx="60" cy="26" r="9" class="line"/>
+  <path d="M44 56c2-12 30-12 32 0" class="line"/>
+  <text x="84" y="40" class="h">Entwickler</text>
+  <text x="84" y="56" class="s">Rechtsklick · Chat · Tippen</text>
+  <path d="M60 60V96" class="line" marker-end="url(#a)"/>
+
+  <!-- Eclipse -->
+  <rect class="area" x="20" y="100" width="650" height="360" rx="14"/>
+  <text x="36" y="124" class="h">Eclipse (lokal, Entwickler-PC)</text>
+
+  <rect class="box" x="40" y="146" width="180" height="100" rx="10"/>
+  <text x="56" y="174" class="h">ADT ABAP-Editor</text>
+  <text x="56" y="194" class="s">Quelltext im Puffer</text>
+  <text x="56" y="212" class="s">Objekt gesperrt,</text>
+  <text x="56" y="228" class="s">solange es offen ist</text>
+
+  <rect class="bella" x="300" y="140" width="350" height="226" rx="12" stroke-width="2"/>
+  <path class="logo" fill-rule="evenodd" transform="translate(316 152) scale(1.35)" d="M3 1H9.2C12 1 13.6 2.4 13.6 4.6C13.6 6 12.9 7 11.8 7.5C13.3 8 14.2 9.2 14.2 10.9C14.2 13.4 12.4 15 9.5 15H3ZM6 3.6V6.6H8.8C9.9 6.6 10.5 6.1 10.5 5.1C10.5 4.1 9.9 3.6 8.8 3.6ZM6 9V12.4H9C10.3 12.4 11 11.8 11 10.7C11 9.6 10.3 9 9 9Z"/>
+  <text x="344" y="170" class="h">Bella</text>
+  <text x="392" y="170" class="s">Eclipse-Plugin</text>
+  <rect class="chip" x="316" y="186" width="96" height="30" rx="15"/><text x="364" y="206" class="lbl" text-anchor="middle">Chat</text>
+  <rect class="chip" x="420" y="186" width="110" height="30" rx="15"/><text x="475" y="206" class="lbl" text-anchor="middle">Kontextmenü</text>
+  <rect class="chip" x="538" y="186" width="98" height="30" rx="15"/><text x="587" y="206" class="lbl" text-anchor="middle">Completion</text>
+  <rect class="chip" x="316" y="224" width="96" height="30" rx="15"/><text x="364" y="244" class="lbl" text-anchor="middle">Router</text>
+  <rect class="chip" x="420" y="224" width="110" height="30" rx="15"/><text x="475" y="244" class="lbl" text-anchor="middle">Tool-Policy</text>
+  <rect class="chip" x="538" y="224" width="98" height="30" rx="15"/><text x="587" y="244" class="lbl" text-anchor="middle">Tool-Registry</text>
+  <rect class="box" x="316" y="270" width="150" height="80" rx="8"/>
+  <text x="330" y="294" class="t">AdtToolProvider</text>
+  <text x="330" y="312" class="s">adt_* Tools</text>
+  <text x="330" y="328" class="s">Standard</text>
+  <rect class="box" x="480" y="270" width="156" height="80" rx="8"/>
+  <text x="494" y="294" class="t">MCP-Client</text>
+  <text x="494" y="312" class="s">mcp_* Tools</text>
+  <text x="494" y="328" class="s">optional</text>
+
+  <rect class="box" x="40" y="392" width="440" height="50" rx="10"/>
+  <text x="56" y="422" class="t">ADT-Kommunikation · Projekt-Login / SSO</text>
+
+  <!-- 1 and 2: editor <-> Bella -->
+  <path d="M220 172H298" class="line" marker-end="url(#a)"/>
+  <path d="M298 214H220" class="line pink" marker-end="url(#p)"/>
+  <circle cx="252" cy="160" r="9" class="num"/><text x="252" y="164" class="numt" text-anchor="middle">1</text>
+  <circle cx="252" cy="200" r="9" class="num"/><text x="252" y="204" class="numt" text-anchor="middle">2</text>
+  <text x="228" y="240" class="s" style="font-size:11px">Puffer,</text>
+  <text x="228" y="254" class="s" style="font-size:11px">ungesichert</text>
+
+  <!-- 5a: ADT tools -> ADT communication -->
+  <path d="M390 350V390" class="line" marker-end="url(#a)"/>
+  <circle cx="406" cy="370" r="11" class="num"/><text x="406" y="374" class="numt" text-anchor="middle">5a</text>
+
+  <!-- 6: editor save/activate -->
+  <path d="M110 246V390" class="line" marker-end="url(#a)"/>
+  <circle cx="124" cy="300" r="9" class="num"/><text x="124" y="304" class="numt" text-anchor="middle">6</text>
+  <text x="138" y="296" class="s">Strg+S / Strg+F3</text>
+  <text x="138" y="312" class="s">durch dich</text>
+
+  <!-- ADT communication -> SAP -->
+  <path d="M260 442V568" class="line" marker-end="url(#a)"/>
+  <text x="272" y="510" class="s">ADT REST (/sap/bc/adt)</text>
+
+  <!-- Claude -->
+  <rect class="ext" x="720" y="140" width="260" height="112" rx="12"/>
+  <text x="738" y="168" class="h">Claude API</text>
+  <text x="738" y="188" class="s">oder OpenAI-kompatibel (Ollama …)</text>
+  <text x="738" y="212" class="s">liefert Text und tool_use,</text>
+  <text x="738" y="228" class="s">spricht nie direkt mit SAP</text>
+  <path d="M650 180H718" class="line" marker-end="url(#a)"/>
+  <path d="M718 222H650" class="line" marker-end="url(#a)"/>
+  <circle cx="684" cy="168" r="9" class="num"/><text x="684" y="172" class="numt" text-anchor="middle">3</text>
+
+  <!-- ARC-1 -->
+  <rect class="ext dash" x="720" y="292" width="260" height="96" rx="12"/>
+  <text x="738" y="320" class="h">ARC-1 · MCP-Server</text>
+  <text x="738" y="340" class="s">optional · lokal (npx) oder SAP BTP</text>
+  <text x="738" y="358" class="s">Audit, Rate-Limits, Allowlist</text>
+  <path d="M636 310H718" class="line dash" marker-end="url(#a)"/>
+  <circle cx="684" cy="298" r="9" class="num"/><text x="684" y="302" class="numt" text-anchor="middle">4</text>
+  <path d="M850 388V568" class="line dash" marker-end="url(#a)"/>
+  <circle cx="864" cy="470" r="11" class="num"/><text x="864" y="474" class="numt" text-anchor="middle">5b</text>
+  <text x="880" y="496" class="s">ADT REST</text>
+
+  <!-- SAP -->
+  <rect class="sap" x="20" y="570" width="960" height="70" rx="12" stroke-width="1.6"/>
+  <text x="40" y="600" class="h">SAP-System</text>
+  <text x="40" y="622" class="s">S/4HANA, BTP ABAP Environment, A4H · Repository · Sperren · Syntaxcheck · ABAP Unit · ATC · Aktivierung · Transporte</text>
+</svg>

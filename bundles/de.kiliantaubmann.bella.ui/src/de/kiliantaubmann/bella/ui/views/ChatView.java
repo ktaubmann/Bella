@@ -94,7 +94,22 @@ public class ChatView extends ViewPart {
 	public void createPartControl(Composite parent) {
 		EditorTracker.install();
 		GridLayoutFactory.fillDefaults().spacing(0, 0).applyTo(parent);
-		browser = new Browser(parent, SWT.NONE);
+		try {
+			browser = new Browser(parent, SWT.NONE);
+		} catch (org.eclipse.swt.SWTError e) {
+			// No browser engine (e.g. Linux without WebKitGTK): explain instead of failing.
+			Label missing = new Label(parent, SWT.WRAP);
+			missing.setText(Messages.fmt("chat.noBrowser", e.getMessage()));
+			GridDataFactory.fillDefaults().grab(true, true).applyTo(missing);
+			browser = null;
+		}
+		if (browser != null) {
+			createBrowser(parent);
+		}
+		createInput(parent);
+	}
+
+	private void createBrowser(Composite parent) {
 		GridDataFactory.fillDefaults().grab(true, true).applyTo(browser);
 		browser.setJavascriptEnabled(true);
 		browser.setText(template());
@@ -134,6 +149,9 @@ public class ChatView extends ViewPart {
 			}
 		};
 
+	}
+
+	private void createInput(Composite parent) {
 		Composite bottom = new Composite(parent, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).applyTo(bottom);
 		GridLayoutFactory.swtDefaults().numColumns(3).margins(6, 6).applyTo(bottom);

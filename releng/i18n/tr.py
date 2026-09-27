@@ -15,6 +15,7 @@ PLUGIN = {
 }
 MESSAGES = {
  "app.name": "Bella",
+ "chat.noBrowser": "Sohbet, kullanılamayan bir tarayıcı bileşenine ihtiyaç duyuyor: {0}\nLinux’ta WebKitGTK (libwebkit2gtk-4.1) kurun.",
  "editor.readOnly": "Düzenleyici salt okunur. Önce nesneyi değiştirme moduna alın.",
  "editor.none": "Önce bir ABAP düzenleyicisi açın.", "editor.noSelection": "Önce kodu seçin.",
  "editor.noMethod": "İmleci bir METHOD, FORM veya FUNCTION içine yerleştirin.",

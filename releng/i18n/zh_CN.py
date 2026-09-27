@@ -15,6 +15,7 @@ PLUGIN = {
 }
 MESSAGES = {
  "app.name": "Bella",
+ "chat.noBrowser": "聊天需要浏览器组件，但当前不可用：{0}\n在 Linux 上请安装 WebKitGTK（libwebkit2gtk-4.1）。",
  "editor.readOnly": "编辑器为只读。请先将对象切换到修改模式。",
  "editor.none": "请先打开 ABAP 编辑器。", "editor.noSelection": "请先选择代码。",
  "editor.noMethod": "请将光标放在 METHOD、FORM 或 FUNCTION 内。",

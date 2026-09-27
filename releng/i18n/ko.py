@@ -15,6 +15,7 @@ PLUGIN = {
 }
 MESSAGES = {
  "app.name": "Bella",
+ "chat.noBrowser": "채팅에 필요한 브라우저 구성 요소를 사용할 수 없습니다: {0}\nLinux에서는 WebKitGTK(libwebkit2gtk-4.1)를 설치하세요.",
  "editor.readOnly": "편집기가 읽기 전용입니다. 먼저 오브젝트를 변경 모드로 전환하세요.",
  "editor.none": "먼저 ABAP 편집기를 여세요.", "editor.noSelection": "먼저 코드를 선택하세요.",
  "editor.noMethod": "커서를 METHOD, FORM 또는 FUNCTION 안에 두세요.",

@@ -8,7 +8,7 @@
   <artifactId>bella.parent</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
-  <name>Bella – AI assistant for ABAP in Eclipse ADT</name>
+  <name>Bella - AI assistant for ABAP in Eclipse ADT</name>
 
   <properties>
     <tycho.version>4.0.13</tycho.version>
@@ -20,6 +20,7 @@
     <module>bundles/de.kiliantaubmann.bella.core</module>
     <module>bundles/de.kiliantaubmann.bella.ui</module>
     <module>tests/de.kiliantaubmann.bella.core.tests</module>
+    <module>tests/de.kiliantaubmann.bella.ui.tests</module>
     <module>features/de.kiliantaubmann.bella.feature</module>
   </modules>
 
