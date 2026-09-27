@@ -1,0 +1,23 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Bella Core
+Bundle-SymbolicName: de.kiliantaubmann.bella.core
+Bundle-Version: 0.1.0.qualifier
+Bundle-Vendor: Kilian Taubmann
+Bundle-RequiredExecutionEnvironment: JavaSE-21
+Automatic-Module-Name: de.kiliantaubmann.bella.core
+Import-Package: com.google.gson;version="2.8.0",
+ javax.xml,
+ javax.xml.parsers,
+ org.w3c.dom,
+ org.xml.sax,
+ com.google.gson.reflect;version="2.8.0",
+ com.google.gson.stream;version="2.8.0"
+Export-Package: de.kiliantaubmann.bella.core.abap,
+ de.kiliantaubmann.bella.core.adt,
+ de.kiliantaubmann.bella.core.agent,
+ de.kiliantaubmann.bella.core.llm,
+ de.kiliantaubmann.bella.core.mcp,
+ de.kiliantaubmann.bella.core.prompt,
+ de.kiliantaubmann.bella.core.tools,
+ de.kiliantaubmann.bella.core.util

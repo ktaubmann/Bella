@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>de.kiliantaubmann.bella</groupId>
+  <artifactId>bella.parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>Bella – AI assistant for ABAP in Eclipse ADT</name>
+
+  <properties>
+    <tycho.version>4.0.13</tycho.version>
+    <eclipse.release>2024-12</eclipse.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <modules>
+    <module>bundles/de.kiliantaubmann.bella.core</module>
+    <module>bundles/de.kiliantaubmann.bella.ui</module>
+    <module>tests/de.kiliantaubmann.bella.core.tests</module>
+    <module>features/de.kiliantaubmann.bella.feature</module>
+  </modules>
+
+  <repositories>
+    <repository>
+      <id>eclipse-release</id>
+      <url>https://download.eclipse.org/releases/${eclipse.release}/</url>
+      <layout>p2</layout>
+    </repository>
+  </repositories>
+
+  <profiles>
+    <!--
+      The ADT bundle compiles against SAP's ABAP Development Tools, which are
+      only available from SAP's p2 site. CI builds with -Padt; a plain local
+      build covers everything that does not need ADT.
+    -->
+    <profile>
+      <id>adt</id>
+      <properties>
+        <eclipse.release>2025-09</eclipse.release>
+      </properties>
+      <modules>
+        <module>bundles/de.kiliantaubmann.bella.adt</module>
+        <module>features/de.kiliantaubmann.bella.adt.feature</module>
+        <module>releng/de.kiliantaubmann.bella.updatesite</module>
+      </modules>
+      <repositories>
+        <repository>
+          <id>sap-adt</id>
+          <url>https://tools.hana.ondemand.com/latest/</url>
+          <layout>p2</layout>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-maven-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <extensions>true</extensions>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>target-platform-configuration</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <dependency-resolution>
+            <optionalDependencies>ignore</optionalDependencies>
+          </dependency-resolution>
+          <environments>
+            <environment><os>win32</os><ws>win32</ws><arch>x86_64</arch></environment>
+            <environment><os>linux</os><ws>gtk</ws><arch>x86_64</arch></environment>
+            <environment><os>macosx</os><ws>cocoa</ws><arch>x86_64</arch></environment>
+            <environment><os>macosx</os><ws>cocoa</ws><arch>aarch64</arch></environment>
+          </environments>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-compiler-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <release>21</release>
+        </configuration>
+      </plugin>
+    </plugins>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-surefire-plugin</artifactId>
+          <version>${tycho.version}</version>
+          <configuration>
+            <trimStackTrace>false</trimStackTrace>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

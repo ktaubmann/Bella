@@ -1,0 +1,234 @@
+package de.kiliantaubmann.bella.core.prompt;
+
+import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
+
+/**
+ * Prompts for Bella's actions. System prompts are kept stable per language
+ * setting so they stay in the prompt cache; everything that changes per
+ * request (source, selection) goes into the user message.
+ */
+public final class AbapPrompts {
+
+	/** Marker for the cursor position in generation prompts. */
+	public static final String CURSOR = "<<<CURSOR>>>";
+
+	/** Surrounding source sent with a selection, in characters on each side. */
+	private static final int CONTEXT_CHARS = 12_000;
+
+	private final String answerLanguage;
+	private final String commentLanguage;
+
+	/**
+	 * @param answerLanguage  language for explanations, e.g. {@code German};
+	 *                        {@code null} to answer in the language of the question
+	 * @param commentLanguage language for ABAP comments in generated code
+	 */
+	public AbapPrompts(String answerLanguage, String commentLanguage) {
+		this.answerLanguage = answerLanguage;
+		this.commentLanguage = commentLanguage == null ? "English" : commentLanguage;
+	}
+
+	private String languageRule() {
+		return answerLanguage == null
+				? "Answer in the language the developer writes in."
+				: "Answer in " + answerLanguage + ".";
+	}
+
+	public String chatSystem() {
+		return """
+				You are Bella, an assistant for SAP ABAP development inside Eclipse with the ABAP Development Tools (ADT).
+				You help developers understand, write, review and fix ABAP code (classic ABAP, ABAP Cloud, RAP, CDS).
+
+				Tools:
+				- Tools starting with adt_ act on the SAP system through the developer's own ADT logon.
+				- Tools starting with mcp_ come from connected MCP servers such as ARC-1.
+				- Read the current source before you change an object, and check syntax after a change.
+
+				Rules for changing code:
+				- If the object is open in the developer's editor, a write goes into the editor buffer only. It is not
+				  saved or activated; the developer reviews it and saves/activates in ADT. Tell them so.
+				- Objects that are not open are written to the SAP system; activate them only when asked to.
+				- Never release transport requests.
+				- Prefer released APIs and ABAP Cloud-compatible syntax when the object is ABAP Cloud.
+
+				Style:
+				- Be concise and concrete. Put ABAP code in ```abap fenced blocks.
+				- Write ABAP comments in %s.
+				- %s
+				""".formatted(commentLanguage, languageRule());
+	}
+
+	public Prompt explain(EditorContext ctx) {
+		String user = """
+				Explain what this ABAP code does: purpose, flow, important side effects (database access, \
+				authority checks, commits), and anything suspicious. Refer to line content, not line numbers.
+
+				Object: %s
+
+				Selected code:
+				```abap
+				%s
+				```
+
+				Surrounding source (for context only):
+				```abap
+				%s
+				```
+				""".formatted(ctx.describeObject(), ctx.selection(), surrounding(ctx));
+		return new Prompt(chatSystem(), user);
+	}
+
+	public Prompt suggestRefactoring(EditorContext ctx) {
+		String user = """
+				Suggest a refactoring of the selected ABAP code: readability, modern syntax, performance and \
+				testability. Explain the changes briefly and give the refactored code in one ```abap block that \
+				can replace the selection.
+
+				Object: %s
+
+				```abap
+				%s
+				```
+				""".formatted(ctx.describeObject(), ctx.selection());
+		return new Prompt(chatSystem(), user);
+	}
+
+	public Prompt suggestUnitTest(EditorContext ctx) {
+		String user = """
+				Write an ABAP Unit test class (FOR TESTING, RISK LEVEL HARMLESS, DURATION SHORT) for the selected \
+				code. Use test doubles for database and dependencies where needed. Put the complete local test \
+				class in one ```abap block.
+
+				Object: %s
+
+				Selected code:
+				```abap
+				%s
+				```
+
+				Surrounding source:
+				```abap
+				%s
+				```
+				""".formatted(ctx.describeObject(), ctx.selection(), surrounding(ctx));
+		return new Prompt(chatSystem(), user);
+	}
+
+	/** Code to insert at the cursor; the answer must be a single code block. */
+	public Prompt generateAtCursor(EditorContext ctx, String instruction) {
+		String marked = ctx.source().substring(0, ctx.selectionOffset()) + CURSOR
+				+ ctx.source().substring(ctx.selectionOffset());
+		String user = """
+				Write ABAP code to insert at the position marked %s.
+
+				Instruction: %s
+
+				Object: %s
+
+				Source with cursor marker:
+				```abap
+				%s
+				```
+
+				Reply with exactly one ```abap code block that contains only the code to insert at the marker. \
+				No explanation, do not repeat surrounding code.
+				""".formatted(CURSOR, instruction, ctx.describeObject(), window(marked, ctx.selectionOffset()));
+		return new Prompt(chatSystem(), user);
+	}
+
+	/** Replacement for the selection; the answer must be a single code block. */
+	public Prompt rewriteSelection(EditorContext ctx, String instruction) {
+		String user = """
+				Rewrite the selected ABAP code.
+
+				Instruction: %s
+
+				Object: %s
+
+				Selected code:
+				```abap
+				%s
+				```
+
+				Surrounding source (for context only):
+				```abap
+				%s
+				```
+
+				Reply with exactly one ```abap code block that replaces the selection. No explanation.
+				""".formatted(instruction, ctx.describeObject(), ctx.selection(), surrounding(ctx));
+		return new Prompt(chatSystem(), user);
+	}
+
+	/** New body for a METHOD/FORM/FUNCTION; the answer must be a single code block without the frame. */
+	public Prompt implementRoutine(EditorContext ctx, AbapStructureScanner.Block routine, String declaration,
+			String classDefinition, String instruction) {
+		String kind = routine.kind().name();
+		String user = """
+				Implement the ABAP %s %s.
+
+				%s
+				Declaration:
+				```abap
+				%s
+				```
+
+				Class definition (for context):
+				```abap
+				%s
+				```
+
+				Current implementation:
+				```abap
+				%s
+				```
+
+				Reply with exactly one ```abap code block that contains only the statements of the body, \
+				without the %s/END%s lines. No explanation.
+				""".formatted(kind.toLowerCase(), routine.name(),
+				instruction == null || instruction.isBlank() ? "" : "Instruction: " + instruction + "\n",
+				declaration == null ? "(not found in this source)" : declaration,
+				classDefinition == null ? "(not in this source)" : truncate(classDefinition, CONTEXT_CHARS),
+				ctx.source().substring(routine.start(), routine.end()), kind, kind);
+		return new Prompt(chatSystem(), user);
+	}
+
+	/** Fill-in-the-middle prompt for inline completion. */
+	public static Prompt completion(String prefix, String suffix, String objectName) {
+		String system = """
+				You are an ABAP code completion engine inside an IDE. You get the code before and after the cursor.
+				Reply with only the text to insert at the cursor: no explanation, no markdown fences, and no \
+				repetition of code that is already before or after the cursor. Complete the current statement or a \
+				small coherent block of at most eight lines, matching the surrounding style and indentation. If \
+				nothing useful can be inserted, reply with nothing.""";
+		String user = "Object: " + (objectName == null ? "unknown" : objectName) + "\n\n<before_cursor>\n" + prefix
+				+ "</before_cursor>\n<after_cursor>\n" + suffix + "\n</after_cursor>";
+		return new Prompt(system, user);
+	}
+
+	private static String surrounding(EditorContext ctx) {
+		return window(ctx.source(), ctx.selectionOffset());
+	}
+
+	/** The source around {@code offset}, at most {@link #CONTEXT_CHARS} on each side, cut at line breaks. */
+	static String window(String source, int offset) {
+		if (source.length() <= 2 * CONTEXT_CHARS) {
+			return source;
+		}
+		int from = Math.max(0, offset - CONTEXT_CHARS);
+		int to = Math.min(source.length(), offset + CONTEXT_CHARS);
+		int nlFrom = source.indexOf('\n', from);
+		int nlTo = source.lastIndexOf('\n', to);
+		if (from > 0 && nlFrom >= 0 && nlFrom < offset) {
+			from = nlFrom + 1;
+		}
+		if (to < source.length() && nlTo > offset) {
+			to = nlTo;
+		}
+		return (from > 0 ? "* …\n" : "") + source.substring(from, to) + (to < source.length() ? "\n* …" : "");
+	}
+
+	private static String truncate(String s, int max) {
+		return s.length() <= max ? s : s.substring(0, max) + "\n* …";
+	}
+}

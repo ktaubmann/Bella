@@ -1,0 +1,27 @@
+package de.kiliantaubmann.bella.core.adt;
+
+/**
+ * An ABAP project in the workspace.
+ *
+ * @param destinationId ADT destination id (unique key)
+ * @param projectName   Eclipse project name
+ * @param systemId      SID, e.g. {@code S4H}
+ * @param client        client, may be {@code null} for cloud systems
+ * @param user          logon user, may be {@code null}
+ * @param loggedOn      whether a logon exists (Bella never opens a logon dialog on its own)
+ */
+public record AdtSystem(String destinationId, String projectName, String systemId, String client, String user,
+		boolean loggedOn) {
+
+	public String label() {
+		StringBuilder sb = new StringBuilder(projectName);
+		if (systemId != null && !projectName.contains(systemId)) {
+			sb.append(" (").append(systemId);
+			if (client != null) {
+				sb.append('/').append(client);
+			}
+			sb.append(')');
+		}
+		return sb.toString();
+	}
+}
