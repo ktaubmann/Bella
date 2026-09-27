@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+
+   <extension point="org.eclipse.ui.startup">
+      <startup class="de.kiliantaubmann.bella.ui.internal.Startup"/>
+   </extension>
+
+   <extension point="org.eclipse.core.runtime.preferences">
+      <initializer class="de.kiliantaubmann.bella.ui.prefs.PreferenceInitializer"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.views">
+      <category id="de.kiliantaubmann.bella.ui.category" name="%category.name"/>
+      <view
+            id="de.kiliantaubmann.bella.ui.chatView"
+            name="%view.chat"
+            category="de.kiliantaubmann.bella.ui.category"
+            class="de.kiliantaubmann.bella.ui.views.ChatView"
+            icon="icons/bella.png"
+            restorable="true"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.commands">
+      <category id="de.kiliantaubmann.bella.ui.commands" name="%category.name"/>
+      <command id="de.kiliantaubmann.bella.ui.openChat" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.openChat" description="%cmd.openChat.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.explain" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.explain" description="%cmd.explain.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.refactor" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.refactor" description="%cmd.refactor.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.unitTest" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.unitTest" description="%cmd.unitTest.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.generate" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.generate" description="%cmd.generate.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.rewrite" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.rewrite" description="%cmd.rewrite.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.implementMethod" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.implementMethod" description="%cmd.implementMethod.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.complete" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.complete" description="%cmd.complete.desc"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.commandImages">
+      <image commandId="de.kiliantaubmann.bella.ui.openChat" icon="icons/bella.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.explain" icon="icons/explain.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.refactor" icon="icons/refactor.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.unitTest" icon="icons/test.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.generate" icon="icons/generate.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.rewrite" icon="icons/rewrite.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.implementMethod" icon="icons/method.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.complete" icon="icons/insert.png"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.handlers">
+      <handler commandId="de.kiliantaubmann.bella.ui.openChat" class="de.kiliantaubmann.bella.ui.handlers.OpenChatHandler"/>
+      <handler commandId="de.kiliantaubmann.bella.ui.explain" class="de.kiliantaubmann.bella.ui.handlers.ExplainHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.refactor" class="de.kiliantaubmann.bella.ui.handlers.RefactorHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.unitTest" class="de.kiliantaubmann.bella.ui.handlers.UnitTestHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.generate" class="de.kiliantaubmann.bella.ui.handlers.GenerateHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.rewrite" class="de.kiliantaubmann.bella.ui.handlers.RewriteHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.implementMethod" class="de.kiliantaubmann.bella.ui.handlers.ImplementMethodHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.complete" class="de.kiliantaubmann.bella.ui.handlers.CompletionHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+   </extension>
+
+   <extension point="org.eclipse.core.expressions.definitions">
+      <definition id="de.kiliantaubmann.bella.ui.inEditor">
+         <with variable="activePart">
+            <instanceof value="org.eclipse.ui.IEditorPart"/>
+         </with>
+      </definition>
+   </extension>
+
+   <extension point="org.eclipse.ui.menus">
+      <!-- Right-click in any editor: submenu "Bella" -->
+      <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
+         <menu id="de.kiliantaubmann.bella.ui.editorMenu" label="%menu.bella" icon="icons/bella.png">
+            <visibleWhen checkEnabled="false">
+               <reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/>
+            </visibleWhen>
+            <command commandId="de.kiliantaubmann.bella.ui.explain" label="%menu.explain" style="push"/>
+            <separator name="write" visible="true"/>
+            <command commandId="de.kiliantaubmann.bella.ui.generate" label="%menu.generate" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.rewrite" label="%menu.rewrite" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.implementMethod" label="%menu.implementMethod" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.complete" label="%menu.complete" style="push"/>
+            <separator name="chat" visible="true"/>
+            <command commandId="de.kiliantaubmann.bella.ui.refactor" label="%menu.refactor" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.unitTest" label="%menu.unitTest" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.openChat" label="%menu.openChat" style="push"/>
+         </menu>
+      </menuContribution>
+      <!-- Main menu "Bella" -->
+      <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">
+         <menu id="de.kiliantaubmann.bella.ui.mainMenu" label="%menu.bella">
+            <command commandId="de.kiliantaubmann.bella.ui.openChat" label="%menu.openChat" style="push"/>
+            <separator name="editor" visible="true"/>
+            <command commandId="de.kiliantaubmann.bella.ui.explain" label="%menu.explain" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.generate" label="%menu.generate" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.rewrite" label="%menu.rewrite" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.implementMethod" label="%menu.implementMethod" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.complete" label="%menu.complete" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.refactor" label="%menu.refactor" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.unitTest" label="%menu.unitTest" style="push"/>
+         </menu>
+      </menuContribution>
+      <!-- Toolbar button with the pink B -->
+      <menuContribution locationURI="toolbar:org.eclipse.ui.main.toolbar?after=additions">
+         <toolbar id="de.kiliantaubmann.bella.ui.toolbar" label="%category.name">
+            <command commandId="de.kiliantaubmann.bella.ui.openChat" icon="icons/bella.png"
+                  tooltip="%cmd.openChat.desc" style="push"/>
+         </toolbar>
+      </menuContribution>
+   </extension>
+
+   <extension point="org.eclipse.ui.bindings">
+      <key commandId="de.kiliantaubmann.bella.ui.complete" sequence="M1+M3+SPACE"
+            contextId="org.eclipse.ui.textEditorScope" schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"/>
+      <key commandId="de.kiliantaubmann.bella.ui.openChat" sequence="M1+M3+B"
+            contextId="org.eclipse.ui.contexts.window" schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.preferencePages">
+      <page id="de.kiliantaubmann.bella.ui.prefs.main" name="%prefs.name"
+            class="de.kiliantaubmann.bella.ui.prefs.BellaPreferencePage"/>
+      <page id="de.kiliantaubmann.bella.ui.prefs.tools" name="%prefs.tools"
+            category="de.kiliantaubmann.bella.ui.prefs.main"
+            class="de.kiliantaubmann.bella.ui.prefs.ToolsPreferencePage"/>
+   </extension>
+
+</plugin>

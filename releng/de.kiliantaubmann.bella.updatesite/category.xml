@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+   <feature id="de.kiliantaubmann.bella.feature" version="0.0.0">
+      <category name="bella"/>
+   </feature>
+   <feature id="de.kiliantaubmann.bella.adt.feature" version="0.0.0">
+      <category name="bella"/>
+   </feature>
+   <category-def name="bella" label="Bella – AI assistant for ABAP">
+      <description>Claude-native AI assistant for ABAP development in Eclipse ADT.</description>
+   </category-def>
+</site>

@@ -1,0 +1,212 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;">
+<style>
+:root {
+  --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --border: #d0d7de;
+  --user-bg: #fdf0f5; --code-bg: #f6f8fa; --accent: #e91e63; --accent-soft: #fce4ec;
+  --ok: #1a7f37; --err: #cf222e; --warn: #9a6700; --menu-bg: #ffffff; --shadow: rgba(0,0,0,.15);
+}
+body.dark {
+  --bg: #1e1f22; --fg: #e6e6e6; --muted: #9da5b0; --border: #3c3f45;
+  --user-bg: #3a2530; --code-bg: #2b2d31; --accent: #f06292; --accent-soft: #4a2735;
+  --ok: #57ab5a; --err: #f47067; --warn: #c69026; --menu-bg: #2b2d31; --shadow: rgba(0,0,0,.5);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+  font: 13px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; }
+#log { padding: 10px 12px 24px; }
+.msg { display: flex; gap: 8px; margin: 10px 0; align-items: flex-start; }
+.avatar { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 6px; display: flex;
+  align-items: center; justify-content: center; font-weight: 800; font-size: 14px; }
+.avatar.bella { background: var(--accent); color: #fff; font-family: Georgia, serif; }
+.avatar.user { background: var(--border); color: var(--fg); }
+.bubble { flex: 1; min-width: 0; }
+.msg.user .bubble { background: var(--user-bg); border-radius: 8px; padding: 6px 10px; white-space: pre-wrap; }
+.bubble p { margin: 4px 0 8px; }
+.bubble h3, .bubble h4, .bubble h5 { margin: 10px 0 4px; }
+.bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 20px; }
+.bubble code { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: 12px;
+  background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+.bubble table { border-collapse: collapse; margin: 6px 0; }
+.bubble th, .bubble td { border: 1px solid var(--border); padding: 3px 8px; text-align: left; }
+.bubble blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--muted); }
+.bubble a { color: var(--accent); }
+.code { border: 1px solid var(--border); border-radius: 6px; margin: 6px 0 10px; overflow: hidden; }
+.code-bar { display: flex; gap: 2px; align-items: center; padding: 2px 4px; background: var(--code-bg);
+  border-bottom: 1px solid var(--border); }
+.code-bar .lang { flex: 1; color: var(--muted); font-size: 11px; padding-left: 4px; text-transform: uppercase; }
+.code pre { margin: 0; padding: 8px 10px; overflow-x: auto; background: var(--code-bg); }
+.code pre code { background: none; padding: 0; white-space: pre; }
+button.icon { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent;
+  background: transparent; color: var(--fg); padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+button.icon:hover { background: var(--accent-soft); border-color: var(--accent); }
+button.icon svg { width: 14px; height: 14px; }
+.thinking { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+.thinking summary { cursor: pointer; }
+.thinking .t { white-space: pre-wrap; margin-top: 4px; }
+details.tool { border: 1px solid var(--border); border-radius: 6px; margin: 6px 0; font-size: 12px; }
+details.tool summary { padding: 4px 8px; cursor: pointer; display: flex; gap: 6px; align-items: center; list-style: none; }
+details.tool summary::-webkit-details-marker { display: none; }
+details.tool .name { font-family: Consolas, Menlo, monospace; }
+details.tool .state { margin-left: auto; font-size: 11px; color: var(--muted); }
+details.tool.ok .state { color: var(--ok); } details.tool.error .state { color: var(--err); }
+details.tool pre { margin: 0; padding: 6px 8px; border-top: 1px solid var(--border); background: var(--code-bg);
+  max-height: 220px; overflow: auto; white-space: pre-wrap; font-size: 11px; }
+.status-icon svg { width: 14px; height: 14px; vertical-align: -2px; }
+.notice { margin: 8px 0 8px 30px; padding: 6px 10px; border-radius: 6px; border-left: 3px solid var(--warn);
+  background: var(--code-bg); font-size: 12px; }
+.notice.error { border-left-color: var(--err); }
+.spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--accent); border-right-color: transparent;
+  border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.empty { margin: 40px 16px; text-align: center; color: var(--muted); }
+.empty .logo { font: 800 56px/1 Georgia, serif; color: var(--accent); }
+.empty h2 { margin: 8px 0 4px; color: var(--fg); font-size: 16px; }
+.empty ul { text-align: left; display: inline-block; margin-top: 12px; }
+#menu { position: fixed; display: none; background: var(--menu-bg); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 4px 16px var(--shadow); padding: 4px; z-index: 10; min-width: 220px; }
+#menu button { display: flex; width: 100%; text-align: left; padding: 5px 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="log"></div>
+<div id="menu"></div>
+<script>
+var ICONS = {
+  insert: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>',
+  replace: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h8l-2-2M13 11H5l2 2"/></svg>',
+  method: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3C4 3 4 5 4 6.5S3 8 2.5 8C3 8 4 8.5 4 9.5S4 13 6 13M10 3c2 0 2 2 2 3.5S13 8 13.5 8C13 8 12 8.5 12 9.5S12 13 10 13"/></svg>',
+  copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H10"/></svg>',
+  tool: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2"/></svg>',
+  ok: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8.5l3 3 7-7"/></svg>',
+  error: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  denied: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M4 12l8-8"/></svg>'
+};
+var T = {};
+var log = document.getElementById('log');
+var menu = document.getElementById('menu');
+
+function init(texts, dark) {
+  T = texts;
+  document.body.className = dark ? 'dark' : '';
+  showEmpty();
+}
+function showEmpty() {
+  log.innerHTML = '<div class="empty"><div class="logo">B</div><h2>' + T.welcomeTitle + '</h2><div>' + T.welcomeText +
+    '</div><ul><li>' + T.tip1 + '</li><li>' + T.tip2 + '</li><li>' + T.tip3 + '</li></ul></div>';
+}
+function clearEmpty() { var e = log.querySelector('.empty'); if (e) e.remove(); }
+function scrollDown() { window.scrollTo(0, document.body.scrollHeight); }
+function nearBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 60; }
+
+function addUser(id, text) {
+  clearEmpty();
+  var m = document.createElement('div');
+  m.className = 'msg user'; m.id = 'm' + id;
+  m.innerHTML = '<div class="avatar user">' + T.youInitial + '</div><div class="bubble"></div>';
+  m.querySelector('.bubble').textContent = text;
+  log.appendChild(m); scrollDown();
+}
+function startAssistant(id) {
+  clearEmpty();
+  var m = document.createElement('div');
+  m.className = 'msg bella'; m.id = 'm' + id;
+  m.innerHTML = '<div class="avatar bella">B</div><div class="bubble"><div class="parts"></div>' +
+    '<div class="pending"><span class="spinner"></span> ' + T.working + '</div></div>';
+  log.appendChild(m); scrollDown();
+}
+function parts(id) { return document.querySelector('#m' + id + ' .parts'); }
+function segment(id, seg) {
+  var p = parts(id), el = document.getElementById('s' + id + '_' + seg);
+  if (!el) { el = document.createElement('div'); el.id = 's' + id + '_' + seg; p.appendChild(el); }
+  return el;
+}
+function setText(id, seg, html) {
+  var stick = nearBottom();
+  var el = segment(id, seg);
+  el.innerHTML = html;
+  el.querySelectorAll('.code-bar[data-lang]').forEach(function (b) { b.outerHTML = codeBar(b.getAttribute('data-lang')); });
+  if (stick) scrollDown();
+}
+function setThinking(id, seg, text) {
+  var el = segment(id, seg);
+  if (!el.firstChild) {
+    el.innerHTML = '<details class="thinking"><summary>' + T.thinking + '</summary><div class="t"></div></details>';
+  }
+  el.querySelector('.t').textContent = text;
+}
+function addTool(id, seg, name, input) {
+  var stick = nearBottom();
+  var el = segment(id, seg);
+  el.innerHTML = '<details class="tool running"><summary><span class="status-icon">' + ICONS.tool +
+    '</span><span class="name"></span><span class="state"><span class="spinner"></span></span></summary><pre class="in"></pre></details>';
+  el.querySelector('.name').textContent = name;
+  el.querySelector('.in').textContent = input;
+  if (stick) scrollDown();
+}
+function finishTool(id, seg, status, label, output) {
+  var d = segment(id, seg).querySelector('details');
+  if (!d) return;
+  d.className = 'tool ' + status;
+  d.querySelector('.status-icon').innerHTML = ICONS[status === 'ok' ? 'ok' : (status === 'denied' ? 'denied' : 'error')];
+  d.querySelector('.state').textContent = label;
+  var pre = document.createElement('pre'); pre.textContent = output; d.appendChild(pre);
+}
+function endAssistant(id) {
+  var p = document.querySelector('#m' + id + ' .pending'); if (p) p.remove();
+}
+function notice(id, kind, html) {
+  var n = document.createElement('div'); n.className = 'notice ' + kind; n.innerHTML = html;
+  var m = document.getElementById('m' + id);
+  if (m && m.nextSibling) log.insertBefore(n, m.nextSibling); else log.appendChild(n);
+  scrollDown();
+}
+function codeBar(lang) {
+  return '<div class="code-bar"><span class="lang">' + (lang || '') + '</span>' +
+    '<button class="icon" data-action="insert" title="' + T.insertTip + '">' + ICONS.insert + T.insert + '</button>' +
+    '<button class="icon" data-action="replace" title="' + T.replaceTip + '">' + ICONS.replace + T.replace + '</button>' +
+    '<button class="icon" data-action="copy" title="' + T.copyTip + '">' + ICONS.copy + '</button></div>';
+}
+function locate(el) {
+  var code = el.closest('.code'); if (!code) return null;
+  var segEl = code.closest('[id^="s"]'); if (!segEl) return null;
+  return { key: segEl.id.substring(1), idx: parseInt(code.getAttribute('data-idx'), 10) };
+}
+function run(action, where) {
+  hideMenu();
+  if (!where) return;
+  var parts = where.key.split('_');
+  bellaAction(action, parseInt(parts[0], 10), parseInt(parts[1], 10), where.idx);
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('button[data-action]');
+  if (b && b.closest('.code-bar')) { run(b.getAttribute('data-action'), locate(b)); e.preventDefault(); return; }
+  if (b && b.closest('#menu')) { run(b.getAttribute('data-action'), menuTarget); e.preventDefault(); return; }
+  var a = e.target.closest('a[href]');
+  if (a) { bellaOpen(a.getAttribute('href')); e.preventDefault(); return; }
+  hideMenu();
+});
+var menuTarget = null;
+document.addEventListener('contextmenu', function (e) {
+  var where = locate(e.target);
+  if (!where) { hideMenu(); return; }
+  e.preventDefault();
+  menuTarget = where;
+  menu.innerHTML =
+    '<button class="icon" data-action="insert">' + ICONS.insert + T.insertAtCursor + '</button>' +
+    '<button class="icon" data-action="replace">' + ICONS.replace + T.replaceSelection + '</button>' +
+    '<button class="icon" data-action="method">' + ICONS.method + T.replaceMethod + '</button>' +
+    '<button class="icon" data-action="copy">' + ICONS.copy + T.copy + '</button>';
+  menu.style.display = 'block';
+  var x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 4);
+  var y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 4);
+  menu.style.left = x + 'px'; menu.style.top = y + 'px';
+});
+function hideMenu() { menu.style.display = 'none'; }
+window.addEventListener('blur', hideMenu);
+</script>
+</body>
+</html>

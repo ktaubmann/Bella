@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature
+      id="de.kiliantaubmann.bella.adt.feature"
+      label="%featureName"
+      version="0.1.0.qualifier"
+      provider-name="%providerName"
+      plugin="de.kiliantaubmann.bella.ui">
+
+   <description>%description</description>
+
+   <copyright>%copyright</copyright>
+
+   <license url="%licenseURL">%license</license>
+
+   <requires>
+      <import feature="de.kiliantaubmann.bella.feature" version="0.1.0" match="greaterOrEqual"/>
+   </requires>
+
+   <plugin
+         id="de.kiliantaubmann.bella.adt"
+         version="0.0.0"/>
+
+</feature>
