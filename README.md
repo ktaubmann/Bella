@@ -82,15 +82,20 @@ Requirements:
 - SAP ABAP Development Tools
 - on Linux also WebKitGTK (`libwebkit2gtk-4.1`) for the chat
 
-1. Download `bella-update-site-vX.Y.Z.zip` from [Releases](https://github.com/ktaubmann/Bella/releases). Do not unzip it; the ZIP is the update site.
-2. In Eclipse: *Help → Install New Software… → Add… → Archive…* and select the ZIP.
-3. Install both features:
+**From the update site (recommended):**
+
+1. In Eclipse: *Help → Install New Software… → Add…*, name *Bella*, location:
+   ```
+   https://bella.kilian-taubmann.de/
+   ```
+2. Install both features:
    - **Bella**: chat, editor actions, completion, MCP/ARC-1.
    - **Bella ADT integration**: Bella's own SAP tools through the ADT logon. Requires ADT.
+3. Restart Eclipse. New versions then arrive through *Help → Check for Updates*.
 
-Bella does not ship or download ADT. The update site contains only Bella's own bundles, and they accept any installed ADT version, so an existing ADT installation is left as it is. To be on the safe side, you can untick *Contact all update sites during install to find required software* in the install dialog; Eclipse then only looks at the Bella ZIP.
+**From a ZIP (offline):** download `bella-update-site-vX.Y.Z.zip` from [Releases](https://github.com/ktaubmann/Bella/releases), do not unzip it, and choose *Add… → Archive…* instead of entering the address. *Check for Updates* does not find new versions of a local ZIP; install the next ZIP the same way.
 
-For an update, install the new ZIP the same way. *Check for Updates* does not find new versions of a local ZIP.
+Bella does not ship or download ADT. The update site contains only Bella's own bundles, and they accept any installed ADT version, so an existing ADT installation is left as it is. To be on the safe side, you can untick *Contact all update sites during install to find required software* in the install dialog; Eclipse then only looks at Bella's update site.
 
 ## Setup
 
@@ -164,7 +169,7 @@ mvn -Padt verify              # plus the ADT bundle and the update site
 python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 ```
 
-**Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files (e.g. with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release.
+**Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files (e.g. with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release. When the repository variable `PAGES_ENABLED` is `true`, it then publishes the same update site on GitHub Pages (`pages.yml`, address from the variable `UPDATE_SITE_URL`); *Actions → Update site → Run workflow* publishes an existing release again.
 
 | Module | Contents |
 |---|---|

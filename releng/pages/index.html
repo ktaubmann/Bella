@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bella update site</title>
+<meta name="description" content="Eclipse update site for Bella, the AI assistant for ABAP in Eclipse ADT.">
+<link rel="icon" href="bella.png">
+<style>
+  :root {
+    --bg: #ffffff; --text: #1d1d24; --muted: #5b5b66; --line: #e4e4ea;
+    --pink: #e0115f; --code-bg: #f5f5f8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16161b; --text: #ececf1; --muted: #a3a3ad; --line: #2c2c35; --pink: #ff4f8b; --code-bg: #202028; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 16px 64px; }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  header img { width: 56px; height: 56px; }
+  h1 { font-size: 28px; margin: 0; }
+  .lead { color: var(--muted); margin: 0 0 32px; }
+  h2 { font-size: 18px; margin: 32px 0 8px; }
+  ol { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .url {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  }
+  .url code { font: 15px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; word-break: break-all; flex: 1; }
+  button {
+    font: inherit; font-size: 14px; border: 1px solid var(--pink); color: var(--pink); background: transparent;
+    border-radius: 6px; padding: 4px 12px; cursor: pointer;
+  }
+  button:hover { background: var(--pink); color: #fff; }
+  a { color: var(--pink); }
+  .meta { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); margin-top: 40px; padding-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="bella.png" alt="">
+    <h1>Bella update site</h1>
+  </header>
+  <p class="lead">AI assistant for ABAP in Eclipse ADT. Current version: <strong>@VERSION@</strong></p>
+
+  <p>This address is an Eclipse update site. Enter it in Eclipse; opening it in the browser only shows this page.</p>
+
+  <div class="url"><code id="site">@SITE_URL@</code><button type="button" id="copy">Copy</button></div>
+
+  <h2>Install</h2>
+  <ol>
+    <li>In Eclipse: <em>Help → Install New Software… → Add…</em></li>
+    <li>Name <em>Bella</em>, location: the address above.</li>
+    <li>Tick <em>Bella</em> and <em>Bella ADT integration</em>, finish and restart Eclipse.</li>
+    <li>Set up Claude under <em>Window → Preferences → Bella</em>: with an API key or with your Claude subscription through the Claude Code CLI.</li>
+  </ol>
+  <p>Bella uses the ABAP Development Tools you already have and does not install or update them. Later versions arrive through <em>Help → Check for Updates</em>.</p>
+
+  <h2>Requirements</h2>
+  <p>Eclipse 2024-12 or newer with Java 21 and SAP ABAP Development Tools.</p>
+
+  <p class="meta">
+    Documentation and source: <a href="https://github.com/ktaubmann/Bella">github.com/ktaubmann/Bella</a> ·
+    all versions as ZIP: <a href="https://github.com/ktaubmann/Bella/releases">Releases</a>
+  </p>
+</main>
+<script>
+  document.getElementById('copy').addEventListener('click', function () {
+    var text = document.getElementById('site').textContent;
+    var btn = this;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+      });
+    }
+  });
+</script>
+</body>
+</html>

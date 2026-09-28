@@ -1,0 +1,61 @@
+name: Update site
+
+# Publishes the update site of a release on GitHub Pages, so Eclipse can
+# install and update Bella from a URL (Help → Install New Software).
+# Runs after every release (see release.yml) once the repository variable
+# PAGES_ENABLED is "true", or by hand via "Run workflow" for any release.
+# The address comes from the repository variable UPDATE_SITE_URL.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v0.2.1 (empty = latest release)'
+        required: false
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publish update site
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SITE_URL: ${{ vars.UPDATE_SITE_URL || 'https://bella.kilian-taubmann.de/' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the release's update site
+        run: |
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then
+            tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern 'bella-update-site-*.zip' --dir download
+      - name: Build the site
+        run: |
+          mkdir site
+          unzip -q download/bella-update-site-*.zip -d site
+          test -f site/content.jar -o -f site/content.xml.xz -o -f site/content.xml
+          cp releng/pages/bella.png site/
+          sed -e "s|@VERSION@|${TAG}|g" -e "s|@SITE_URL@|${SITE_URL}|g" releng/pages/index.html > site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

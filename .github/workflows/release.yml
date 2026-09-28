@@ -19,6 +19,8 @@ jobs:
   release:
     name: Build update site and publish release
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -27,12 +29,15 @@ jobs:
           java-version: '21'
           cache: maven
       - name: Determine tag
+        id: tag
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "TAG=v${{ inputs.version }}" >> "$GITHUB_ENV"
+            tag="v${{ inputs.version }}"
           else
-            echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+            tag="${GITHUB_REF_NAME}"
           fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Check that the tag matches the project version
         run: |
           tag="${TAG#v}"
@@ -58,7 +63,20 @@ jobs:
           body: |
             Eclipse update site for Bella – AI assistant for ABAP.
 
-            **Install:** Eclipse → *Help → Install New Software… → Add… → Archive…* → select `bella-update-site-${{ env.TAG }}.zip`,
-            tick both features (*Bella* and *Bella ADT integration*), restart, then enter your API key under *Window → Preferences → Bella*.
+            **Install:** Eclipse → *Help → Install New Software… → Add…* and either enter the update site
+            ${{ vars.UPDATE_SITE_URL || 'https://bella.kilian-taubmann.de/' }} or choose *Archive…* and select `bella-update-site-${{ env.TAG }}.zip`.
+            Tick both features (*Bella* and *Bella ADT integration*), restart, then set up Claude (API key or Claude subscription) under *Window → Preferences → Bella*.
 
-            Requires Eclipse 2024-12+ with Java 21 and SAP ABAP Development Tools.
+            Requires Eclipse 2024-12+ with Java 21 and SAP ABAP Development Tools. Bella uses the installed ADT and does not update it.
+
+  pages:
+    name: Publish update site on GitHub Pages
+    needs: release
+    if: vars.PAGES_ENABLED == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
