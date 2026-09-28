@@ -71,7 +71,7 @@ Voraussetzungen:
 - SAP ABAP Development Tools
 - unter Linux zusätzlich WebKitGTK (`libwebkit2gtk-4.1`) für den Chat
 
-1. Update-Site bauen oder aus dem CI-Artefakt `bella-update-site` herunterladen (siehe unten).
+1. Unter [Releases](https://github.com/ktaubmann/Bella/releases) die Datei `bella-update-site-vX.Y.Z.zip` herunterladen. Nicht entpacken, das ZIP ist bereits die Update-Site.
 2. In Eclipse: *Help → Install New Software… → Add… → Local/Archive* und die Update-Site auswählen.
 3. Beide Features installieren:
    - **Bella**: Chat, Editor-Aktionen, Vervollständigung, MCP/ARC-1.
@@ -117,6 +117,8 @@ mvn -Padt verify              # zusätzlich ADT-Bundle und Update-Site
                               #   (lädt ADT von tools.hana.ondemand.com)
 python3 releng/i18n/generate.py   # Übersetzungen aus releng/i18n/*.py erzeugen
 ```
+
+**Release:** Version in allen `pom.xml`, `MANIFEST.MF` und `feature.xml` anheben (z. B. mit `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.2.0-SNAPSHOT`), committen, dann ein Tag `v0.2.0` pushen. Der Workflow `release.yml` baut alles inklusive ADT-Integration, testet und hängt `bella-update-site-v0.2.0.zip` an ein GitHub-Release.
 
 | Modul | Inhalt |
 |---|---|
