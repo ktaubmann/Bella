@@ -88,6 +88,8 @@ Requirements:
    - **Bella**: chat, editor actions, completion, MCP/ARC-1.
    - **Bella ADT integration**: Bella's own SAP tools through the ADT logon. Requires ADT.
 
+Bella does not ship or download ADT. The update site contains only Bella's own bundles, and they accept any installed ADT version, so an existing ADT installation is left as it is. To be on the safe side, you can untick *Contact all update sites during install to find required software* in the install dialog; Eclipse then only looks at the Bella ZIP.
+
 For an update, install the new ZIP the same way. *Check for Updates* does not find new versions of a local ZIP.
 
 ## Setup
