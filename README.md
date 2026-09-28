@@ -118,7 +118,7 @@ mvn -Padt verify              # zusätzlich ADT-Bundle und Update-Site
 python3 releng/i18n/generate.py   # Übersetzungen aus releng/i18n/*.py erzeugen
 ```
 
-**Release:** Version in allen `pom.xml`, `MANIFEST.MF` und `feature.xml` anheben (z. B. mit `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.2.0-SNAPSHOT`), committen, dann ein Tag `v0.2.0` pushen. Der Workflow `release.yml` baut alles inklusive ADT-Integration, testet und hängt `bella-update-site-v0.2.0.zip` an ein GitHub-Release.
+**Release:** Version in allen `pom.xml`, `MANIFEST.MF` und `feature.xml` anheben (z. B. mit `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.2.0-SNAPSHOT`), committen, dann ein Tag `v0.2.0` pushen oder unter *Actions → Release → Run workflow* die Version `0.2.0` eingeben. Der Workflow `release.yml` baut alles inklusive ADT-Integration, testet und hängt `bella-update-site-v0.2.0.zip` an ein GitHub-Release.
 
 | Modul | Inhalt |
 |---|---|

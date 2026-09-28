@@ -1,9 +1,16 @@
 name: Release
 
-# Push a tag like v0.1.0 to build the update site and publish it as a GitHub Release.
+# Publishes the update site as a GitHub Release, either by pushing a tag like
+# v0.1.0 or via "Run workflow" (Actions tab) with the version number; the
+# latter creates the tag itself.
 on:
   push:
     tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without "v", e.g. 0.1.0 (must match pom.xml)'
+        required: true
 
 permissions:
   contents: write
@@ -19,9 +26,16 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - name: Determine tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TAG=v${{ inputs.version }}" >> "$GITHUB_ENV"
+          else
+            echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          fi
       - name: Check that the tag matches the project version
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${TAG#v}"
           version=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout | sed 's/-SNAPSHOT$//')
           if [ "$tag" != "$version" ]; then
             echo "::error::Tag v$tag does not match project version $version (pom.xml)"
@@ -32,17 +46,19 @@ jobs:
       - name: Package update site
         run: |
           cd releng/de.kiliantaubmann.bella.updatesite/target/repository
-          zip -r "$GITHUB_WORKSPACE/bella-update-site-${GITHUB_REF_NAME}.zip" .
+          zip -r "$GITHUB_WORKSPACE/bella-update-site-${TAG}.zip" .
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          name: Bella ${{ github.ref_name }}
-          files: bella-update-site-${{ github.ref_name }}.zip
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Bella ${{ env.TAG }}
+          files: bella-update-site-${{ env.TAG }}.zip
           generate_release_notes: true
           body: |
             Eclipse update site for Bella – AI assistant for ABAP.
 
-            **Install:** Eclipse → *Help → Install New Software… → Add… → Archive…* → select `bella-update-site-${{ github.ref_name }}.zip`,
+            **Install:** Eclipse → *Help → Install New Software… → Add… → Archive…* → select `bella-update-site-${{ env.TAG }}.zip`,
             tick both features (*Bella* and *Bella ADT integration*), restart, then enter your API key under *Window → Preferences → Bella*.
 
             Requires Eclipse 2024-12+ with Java 21 and SAP ABAP Development Tools.
