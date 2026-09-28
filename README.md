@@ -1,185 +1,182 @@
 <p align="center"><img src="docs/bella-logo.png" width="96" alt="Bella"></p>
 
-# Bella – KI-Assistentin für ABAP in Eclipse
+# Bella – AI assistant for ABAP in Eclipse
 
-Bella bringt Claude (per API-Key **oder über dein Claude-Abo**) oder ein anderes Sprachmodell direkt in die ABAP Development Tools (ADT):
+Bella brings Claude into the SAP ABAP Development Tools (ADT). You can use it with an API key, **with your Claude subscription**, or with another model through an OpenAI-compatible endpoint.
 
-- Code erklären lassen
-- im Chat arbeiten
-- Code direkt in Methoden und Klassen schreiben lassen
-- Inline-Vervollständigung
+- Explain code: right-click → *What happens here?*
+- Chat with the code in your editor as context
+- Generate code, rework a selection or implement a method, written **into the editor only**
+- Inline AI completion as ghost text
 
-Bella greift über die vorhandene ADT-Anmeldung auf das SAP-System zu. Optional lässt sich ARC-1 anbinden. Die Oberfläche gibt es in 14 Sprachen.
+Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other MCP server can be added. The user interface is available in 14 languages.
 
-*English summary at the end.*
+<p align="center"><img src="docs/screenshots/diff-preview.png" width="760" alt="Bella shows a diff preview before it writes generated code into the ABAP editor"></p>
 
-<p align="center"><img src="docs/chat-preview.png" width="460" alt="Bella-Chat in Eclipse"></p>
+## Features
 
-## Funktionen
-
-| | Funktion | Wo |
+| | Feature | Where |
 |---|---|---|
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/explain.png"> | **Was passiert hier?**: erklärt die Markierung oder, ohne Markierung, die Methode am Cursor | Rechtsklick im Editor → Bella |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/generate.png"> | **Code hier generieren…**: schreibt Code an der Cursorposition | Rechtsklick → Bella |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/rewrite.png"> | **Markierung überarbeiten…**: Fehler beheben, moderne Syntax, ABAP Cloud, Performance, Kommentare | Rechtsklick → Bella |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/method.png"> | **Methode implementieren**: schreibt den Rumpf von METHOD/FORM/FUNCTION am Cursor | Rechtsklick → Bella |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **KI-Vervollständigung** als grauer Ghost-Text; Tab übernimmt, Esc verwirft | `Strg+↑` (macOS: `Cmd+Option+Enter`) oder automatisch beim Tippen (nicht im Abo-Modus) |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Refactoring / Unit-Test vorschlagen** | Rechtsklick → Bella (Chat) |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** mit Editor-Kontext, Streaming, Tool-Aufrufen; Codeblöcke per Button oder Rechtsklick einfügen, ersetzen oder als Methode übernehmen | `Strg+Alt+B`, Toolbar-B, Menü *Bella* |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP-Tools**: suchen, lesen, Verwendungsnachweis, Syntaxcheck (auch für ungesicherten Code), ABAP Unit, ATC, schreiben, anlegen, aktivieren | automatisch im Chat |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/explain.png"> | **What happens here?** Explains the selection or, without a selection, the method at the cursor | Right-click in the editor → Bella |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/generate.png"> | **Generate code here…** Writes code at the cursor position | Right-click → Bella |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/rewrite.png"> | **Rework selection…** Fix errors, modern syntax, ABAP Cloud, performance, comments | Right-click → Bella |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/method.png"> | **Implement method** Writes the body of the METHOD/FORM/FUNCTION at the cursor | Right-click → Bella |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **AI completion** as grey ghost text; Tab accepts, Esc dismisses | `Ctrl+↑` (macOS: `Cmd+Option+Enter`), or automatically while typing (not with the subscription) |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Suggest refactoring / unit test** | Right-click → Bella (chat) |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** with editor context, streaming and tool calls; insert code blocks, replace the selection or take them over as a method body | `Ctrl+Alt+B`, pink B in the toolbar, menu *Bella* |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, write, create, activate | automatically in the chat |
 
-**Tastenkürzel ändern:** *Einstellungen → Allgemein → Tasten*, nach „Bella“ filtern. `Strg+↑` gilt nur in Editoren, in die Bella eingebunden ist, und ersetzt dort „Eine Zeile hochscrollen“. Das frühere `Strg+Alt+Leertaste` entfällt, weil die Claude-Desktop-App es unter Windows für die Schnelleingabe belegt.
+**Changing shortcuts:** *Preferences → General → Keys*, filter for "Bella". `Ctrl+↑` only applies in editors Bella is attached to and replaces "Scroll Line Up" there. Bella does not use `Ctrl+Alt+Space`, because the Claude desktop app takes it for its quick entry on Windows.
 
-### Grundregel: geöffnete Objekte werden nur im Editor geändert
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/generate-dialog.png" alt="Dialog 'Generate code at the cursor' with suggestions"><br><sub><b>Generate code at the cursor.</b> Describe what you need or pick a suggestion.</sub></td>
+<td width="50%"><img src="docs/screenshots/explain-findings.png" alt="Bella explains a report and lists side effects and suspicious points"><br><sub><b>What happens here?</b> The explanation also lists side effects and suspicious points, here a missing authority check.</sub></td>
+</tr>
+</table>
 
-- **Code für eine geöffnete Methode oder Klasse landet nur im Eclipse-Editor**, nie direkt im SAP-System. Das Objekt ist durch den Editor gesperrt.
-  - Vorher zeigt eine Diff-Vorschau alt und neu nebeneinander (abschaltbar).
-  - Danach ist der Editor „dirty“: nicht gesichert und nicht aktiviert. Ein `Strg+Z` macht die Änderung rückgängig.
-  - Sichern und Aktivieren machst du wie gewohnt mit `Strg+S` und `Strg+F3`.
-- Will Claude im Chat ein offenes Objekt über ein Tool ändern, leitet Bellas **Router** den Schreibzugriff in den Editor um.
-- **Nicht geöffnete Objekte** darf Bella im SAP-System schreiben, anlegen und aktivieren, nach deiner Bestätigung.
+### Ground rule: open objects are only changed in the editor
 
-## Architektur: wer ruft wen auf
+- **Code for an open method or class goes only into the Eclipse editor**, never directly into the SAP system. The editor holds the lock on the object.
+  - A diff preview first shows old and new side by side (can be switched off).
+  - Afterwards the editor is dirty: nothing is saved or activated. `Ctrl+Z` undoes the change.
+  - You save and activate as usual with `Ctrl+S` and `Ctrl+F3`.
+- If Claude tries to change an open object through a tool in the chat, Bella's **router** redirects the write into the editor.
+- **Objects that are not open** may be written, created and activated in the SAP system, after you confirm.
 
-<p align="center"><img src="docs/architecture.svg" alt="Architektur: Entwickler, Eclipse mit ADT-Editor und Bella, Claude API, optional ARC-1, SAP-System"></p>
+## Architecture: who calls whom
 
-1. und 2. Bella liest den Quelltext aus dem ADT-Editor und schreibt Vorschläge nur in dessen Puffer.
-3. **Nur Bella ruft das Sprachmodell auf.** Hin gehen Prompt, Code-Kontext und Tool-Liste, zurück kommen Text und `tool_use`-Anfragen.
-4. Optional führt Bella Tool-Anfragen über ARC-1 oder einen anderen MCP-Server aus.
-5. Tools erreichen das SAP-System auf einem von zwei Wegen:
-   - **5a (Standard):** Bellas eigene `adt_*`-Tools laufen über die ADT-Kommunikationsschicht mit der Anmeldung deiner ABAP-Projekte (auch SSO). Es gibt kein zweites Login und keinen Zusatzprozess.
-   - **5b (optional):** ARC-1 spricht mit dem SAP-System und bringt Audit, Rate-Limits und eine Paket-Allowlist mit.
-6. Sichern und Aktivieren geöffneter Objekte machst du selbst in ADT.
+<p align="center"><img src="docs/architecture.svg" alt="Architecture: developer, Eclipse with ADT editor and Bella, Claude, optional ARC-1, SAP system"></p>
 
-**Die Claude API spricht nie direkt mit dem SAP-System.** Dein System muss nicht aus dem Internet erreichbar sein.
+1. and 2. Bella reads the source from the ADT editor and writes suggestions only into its buffer.
+3. **Only Bella calls the model.** Prompt, code context and tool list go out; text and `tool_use` requests come back. With the subscription, the local Claude Code CLI makes this call for Bella.
+4. Optionally Bella runs tool requests through ARC-1 or another MCP server.
+5. Tools reach the SAP system in one of two ways:
+   - **5a (default):** Bella's own `adt_*` tools use the ADT communication layer with the logon of your ABAP projects, including SSO. There is no second logon and no extra process.
+   - **5b (optional):** ARC-1 talks to the SAP system and adds audit, rate limits and a package allowlist.
+6. You save and activate open objects yourself in ADT.
 
-<p align="center"><img src="docs/sequence-tool-call.svg" alt="Ablauf eines Tool-Aufrufs"></p>
+**The model never talks to the SAP system directly.** Your system does not need to be reachable from the internet.
 
-### Tool-Regeln
+<p align="center"><img src="docs/sequence-tool-call.svg" alt="Sequence of a tool call"></p>
 
-| Tool | Standard |
+### Tool policy
+
+| Tool | Default |
 |---|---|
-| Lesen (`adt_search_objects`, `adt_read_source`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, ARC-1: SAPRead, SAPSearch, …) | läuft automatisch |
-| Schreiben, Anlegen, Aktivieren (`adt_write_source`, `adt_create_object`, `adt_activate`, ARC-1: SAPWrite, SAPActivate, …) | fragt nach |
-| Transporte freigeben | wird immer abgelehnt |
+| Read (`adt_search_objects`, `adt_read_source`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
+| Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
+| Release transports | always refused |
 
-- Eigene Regeln trägst du unter *Einstellungen → Bella → SAP-Tools & ARC-1* ein, eine pro Zeile im Format `muster=AUTO|CONFIRM|DENY`.
-- Bei ARC-1 gelten zusätzlich dessen serverseitige Sicherheitsflags.
+- Add your own rules under *Preferences → Bella → SAP-Tools & ARC-1*, one per line as `pattern=AUTO|CONFIRM|DENY`.
+- With ARC-1, its server-side safety flags apply in addition.
+
+<p align="center"><img src="docs/screenshots/preferences-sap-tools.png" width="760" alt="Preferences page SAP-Tools and ARC-1 with MCP servers and tool policy"></p>
 
 ## Installation
 
-Voraussetzungen:
-- Eclipse 2024-12 oder neuer mit Java 21
+Requirements:
+- Eclipse 2024-12 or newer with Java 21
 - SAP ABAP Development Tools
-- unter Linux zusätzlich WebKitGTK (`libwebkit2gtk-4.1`) für den Chat
+- on Linux also WebKitGTK (`libwebkit2gtk-4.1`) for the chat
 
-1. Unter [Releases](https://github.com/ktaubmann/Bella/releases) die Datei `bella-update-site-vX.Y.Z.zip` herunterladen. Nicht entpacken, das ZIP ist bereits die Update-Site.
-2. In Eclipse: *Help → Install New Software… → Add… → Local/Archive* und die Update-Site auswählen.
-3. Beide Features installieren:
-   - **Bella**: Chat, Editor-Aktionen, Vervollständigung, MCP/ARC-1.
-   - **Bella ADT integration**: eigene SAP-Tools über die ADT-Anmeldung. Benötigt ADT.
+1. Download `bella-update-site-vX.Y.Z.zip` from [Releases](https://github.com/ktaubmann/Bella/releases). Do not unzip it; the ZIP is the update site.
+2. In Eclipse: *Help → Install New Software… → Add… → Archive…* and select the ZIP.
+3. Install both features:
+   - **Bella**: chat, editor actions, completion, MCP/ARC-1.
+   - **Bella ADT integration**: Bella's own SAP tools through the ADT logon. Requires ADT.
 
-## Einrichtung
+For an update, install the new ZIP the same way. *Check for Updates* does not find new versions of a local ZIP.
+
+## Setup
 
 *Window → Preferences → Bella*
 
-- **Anbieter** (Dropdown ganz oben): *Claude (API-Key)*, *Claude-Abo (Claude Code CLI)* oder *OpenAI-kompatibel*. Die Seite zeigt nur die Felder des gewählten Anbieters und darunter einen Hinweis zur Code-Vervollständigung.
-- **Claude (API-Key)**:
-  - API-Key von [console.anthropic.com](https://console.anthropic.com/settings/keys) eintragen. Er liegt verschlüsselt im Secure Storage von Eclipse.
-  - Standardmodelle: `claude-opus-5` für Chat und Code, `claude-haiku-4-5` für die schnelle Vervollständigung.
-  - Aufwand (*effort*) und die serverseitige Ersatzmodell-Option bei abgelehnten Anfragen sind einstellbar.
-- **Claude-Abo**: siehe nächster Abschnitt.
-- **OpenAI-kompatibel** (optional): Basis-URL, Key und Modell, z. B. `http://localhost:11434/v1` für Ollama. Damit bleibt der Quelltext im Haus.
-- **Sprachen**:
-  - Oberfläche: wie Eclipse oder fest.
-  - Antworten: wie die Oberfläche, wie die Frage oder fest.
-  - ABAP-Kommentare im generierten Code: eigene Einstellung, Standard Englisch.
-- **Editor**: Diff-Vorschau, automatische Vervollständigung beim Tippen und deren Verzögerung.
+- **Provider** (drop-down at the top): *Claude (API key)*, *Claude subscription (Claude Code CLI)* or *OpenAI-compatible*. The page only shows the fields of the selected provider, plus a note on code completion.
+- **Claude (API key)**:
+  - Enter an API key from [console.anthropic.com](https://console.anthropic.com/settings/keys). It is stored encrypted in Eclipse secure storage.
+  - Default models: `claude-opus-5` for chat and code, `claude-haiku-4-5` for fast completion.
+  - Effort and the server-side fallback model for declined requests can be set.
+- **Claude subscription**: see the next section.
+- **OpenAI-compatible** (optional): base URL, key and model, e.g. `http://localhost:11434/v1` for Ollama. The source code then stays in-house.
+- **Languages**:
+  - User interface: like Eclipse or fixed. Menus switch right away, no restart needed.
+  - Answers: like the user interface, like the question, or fixed.
+  - ABAP comments in generated code: separate setting, English by default.
+- **Editor**: diff preview, automatic completion while typing and its delay.
 
-### Claude-Abo statt API-Key
+### Claude subscription instead of an API key
 
-Mit einem Claude-Abo (Pro, Max, Team oder Enterprise) brauchst du keinen API-Key. Bella nutzt dann das lokal installierte [Claude Code CLI](https://claude.com/claude-code), das Anmeldung und Abrechnung über dein Abo übernimmt.
+With a Claude subscription (Pro, Max, Team or Enterprise) you do not need an API key. Bella then uses the locally installed [Claude Code CLI](https://claude.com/claude-code), which handles logon and billing through your subscription.
 
-1. Claude Code installieren und einmal im Terminal anmelden:
+1. Install Claude Code and log in once in a terminal:
    ```bash
-   claude auth login        # im Browser mit dem Claude-Konto anmelden
+   claude auth login        # log in with your Claude account in the browser
    ```
-   Sieht Eclipse diese Anmeldung nicht (z. B. anderer Benutzer), erzeugt `claude setup-token` ein langlebiges Abo-Token. Das trägst du in Bella als *Abo-Token* ein; es liegt im Secure Storage.
-2. *Einstellungen → Bella → Anbieter: Claude-Abo (Claude Code CLI)* wählen und auf **Prüfen** klicken. Die Statuszeile zeigt z. B. „angemeldet (max)“.
-   - Den Pfad zu `claude` musst du nur angeben, wenn Bella ihn nicht findet. Gesucht wird in `PATH`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` und unter Windows `%APPDATA%\npm`.
-   - Modelle: Alias oder volle ID, Standard `opus` für den Chat und `haiku` für die Vervollständigung. Welche Modelle verfügbar sind, hängt von deinem Plan ab.
+   If Eclipse does not see this logon (e.g. a different user), `claude setup-token` creates a long-lived subscription token. Enter it in Bella as *Subscription token*; it is kept in secure storage.
+2. Choose *Preferences → Bella → Provider: Claude subscription (Claude Code CLI)* and click **Check**. The status line shows e.g. "logged in (max)".
+   - You only need to set the path to `claude` if Bella does not find it. Bella searches `PATH`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and on Windows `%USERPROFILE%\.local\bin` and `%APPDATA%\npm`.
+   - Models: alias or full ID, default `opus` for the chat and `haiku` for completion. Which models are available depends on your plan.
 
-Was dabei passiert:
+What happens:
 
-- Bella startet `claude` im Headless-Modus (`-p`, `stream-json`) in einem eigenen Arbeitsverzeichnis im Eclipse-Workspace. Pro Chat läuft ein CLI-Prozess; *Neuer Chat* beendet ihn.
-- Die eingebauten Tools des CLI sind abgeschaltet (`--tools ""`): Claude kann weder Dateien lesen noch Befehle ausführen.
-- Bellas SAP-Tools bekommt das CLI über einen **lokalen MCP-Server** in Bella. Er lauscht nur auf `127.0.0.1` und verlangt ein zufälliges Token. Andere MCP-Konfigurationen des Benutzers werden ignoriert (`--strict-mcp-config`).
-- Jeder Tool-Aufruf läuft durch dieselben Regeln wie mit API-Key: Tool-Regeln, Bestätigungsdialog und Router für offene Objekte (Code landet nur im Editor).
-- Ein gesetztes `ANTHROPIC_API_KEY` entfernt Bella für das CLI, damit wirklich das Abo genutzt wird.
+- Bella starts `claude` headless (`-p`, `stream-json`) in its own working directory in the Eclipse workspace metadata. One CLI process runs per chat; *New chat* ends it.
+- The CLI's built-in tools are switched off (`--tools ""`), so Claude can neither read files nor run commands.
+- The CLI gets Bella's SAP tools through a **local MCP server** inside Bella. It listens on `127.0.0.1` only and requires a random token. Other MCP configurations of the user are ignored (`--strict-mcp-config`).
+- Every tool call passes the same rules as with an API key: tool policy, confirmation dialog and the router for open objects (code only goes into the editor).
+- Bella removes an `ANTHROPIC_API_KEY` from the CLI's environment so that the subscription is really used.
 
-Grenzen:
+Limits:
 
-- **Vervollständigung:** Jeder Vorschlag startet das CLI und dauert 2–5 Sekunden. Deshalb gibt es im Abo-Modus keine automatischen Vorschläge beim Tippen, nur per `Strg+↑`.
-- Es gelten die Nutzungslimits deines Abos. Ist das Limit erreicht, meldet Bella das im Chat.
-- *Stopp* unterbricht die laufende Antwort. Reagiert das CLI nicht innerhalb von 3 Sekunden, beendet Bella den Prozess; der nächste Chat-Beitrag startet dann ohne den bisherigen Verlauf, und Bella weist darauf hin.
+- **Completion:** every suggestion starts the CLI and takes 2–5 seconds. With the subscription there are therefore no automatic suggestions while typing, only on `Ctrl+↑`.
+- Your subscription's usage limits apply. When the limit is reached, Bella says so in the chat.
+- *Stop* interrupts the running answer. If the CLI does not react within 3 seconds, Bella ends the process; the next message then starts without the earlier conversation, and Bella tells you.
 
-### ARC-1 anbinden (optional)
+### Connecting ARC-1 (optional)
 
-Unter *Preferences → Bella → SAP-Tools & ARC-1 → Hinzufügen…*:
+Under *Preferences → Bella → SAP-Tools & ARC-1 → Add…*:
 
-- **HTTP**: URL des ARC-1-Servers, z. B. lokal `http://localhost:3000/mcp` oder eine BTP-Instanz, dazu optional ein Bearer-Token.
-- **stdio**: Bella startet ARC-1 selbst, z. B. mit `npx -y arc-1@latest`. Die SAP-Verbindung konfigurierst du dann nach der [ARC-1-Doku](https://github.com/arc-mcp/arc-1).
+- **HTTP**: URL of the ARC-1 server, e.g. locally `http://localhost:3000/mcp` or a BTP instance, optionally with a bearer token.
+- **stdio**: Bella starts ARC-1 itself, e.g. with `npx -y arc-1@latest`. Configure the SAP connection as described in the [ARC-1 documentation](https://github.com/arc-mcp/arc-1).
 
-Mit **Testen** siehst du die angebotenen Tools. Bei gleichen Fähigkeiten (z. B. Quelltext lesen) gewinnen standardmäßig Bellas ADT-Tools. Du kannst auch ARC-1 bevorzugen, etwa wenn Governance zentral über ARC-1 laufen soll.
+**Test** lists the tools a server offers. When two tools offer the same capability (e.g. reading source code), Bella's ADT tools win by default. You can prefer ARC-1 instead, e.g. when governance should run centrally through ARC-1.
 
-## Sicherheit und Datenschutz
+## Security and privacy
 
-- An den gewählten Modellanbieter gehen deine Frage, Quelltext-Ausschnitte aus dem Editor und Tool-Ergebnisse. Mit Ollama bleibt alles lokal.
-- API-Keys und Tokens liegen im Eclipse Secure Storage, nicht in Klartext-Einstellungen.
-- Bella öffnet nie selbst einen SAP-Logon. Tools nutzen nur Projekte, die bereits angemeldet sind.
-- Schreibende Tools fragen nach, Transportfreigaben sind gesperrt, und offene Objekte werden nur im Editor geändert.
+- The selected model provider receives your question, source excerpts from the editor and tool results. With Ollama everything stays local.
+- API keys and tokens are kept in Eclipse secure storage, not in plain-text preferences.
+- Bella never opens an SAP logon itself. Tools only use projects that are already logged on.
+- Writing tools ask first, releasing transports is blocked, and open objects are only changed in the editor.
 
-## Entwicklung
+## Development
 
 ```bash
-mvn verify                    # Core, UI, Unit-Tests (ohne SAP-SDK)
-xvfb-run -a mvn verify        # dazu der Workbench-Smoke-Test unter Linux
-mvn -Padt verify              # zusätzlich ADT-Bundle und Update-Site
-                              #   (lädt ADT von tools.hana.ondemand.com)
-python3 releng/i18n/generate.py   # Übersetzungen aus releng/i18n/*.py erzeugen
+mvn verify                    # core, UI, unit tests (without the SAP SDK)
+xvfb-run -a mvn verify        # plus the workbench smoke test on Linux
+mvn -Padt verify              # plus the ADT bundle and the update site
+                              #   (downloads ADT from tools.hana.ondemand.com)
+python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 ```
 
-**Release:** Version in allen `pom.xml`, `MANIFEST.MF` und `feature.xml` anheben (z. B. mit `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.2.0-SNAPSHOT`), committen, dann ein Tag `v0.2.0` pushen oder unter *Actions → Release → Run workflow* die Version `0.2.0` eingeben. Der Workflow `release.yml` baut alles inklusive ADT-Integration, testet und hängt `bella-update-site-v0.2.0.zip` an ein GitHub-Release.
+**Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files (e.g. with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release.
 
-| Modul | Inhalt |
+| Module | Contents |
 |---|---|
-| `bundles/de.kiliantaubmann.bella.core` | ohne UI und ohne ADT: Anthropic- und OpenAI-kompatible Provider (Streaming, Tool Use, Prompt Caching), Claude-Code-Anbindung (CLI, `stream-json`, lokaler MCP-Server), Tool-Registry und Tool-Regeln, MCP-Client (HTTP und stdio), Chat-Tool-Schleife, ABAP-Scanner, Prompts, ADT-REST-Client und `adt_*`-Tools |
-| `bundles/de.kiliantaubmann.bella.ui` | Chat-View, Kontextmenü, Diff-Vorschau, Router, Ghost-Text, Einstellungen, Icons, Übersetzungen |
-| `bundles/de.kiliantaubmann.bella.adt` | einzige Abhängigkeit zum ADT SDK: Projekte, Anmeldung und REST-Transport als OSGi-Service |
-| `tests/…core.tests` | Unit-Tests für Provider, MCP-Client und -Server, Claude-Code-Sitzung (mit Fake-CLI), Tool-Schleife, ABAP-Scanner, ADT-Client, Übersetzungen |
-| `tests/…ui.tests` | Workbench-Smoke-Test: Befehle, Chat, Einstellungen (Anbieter-Dropdown, Abo-Hinweis), `Strg+↑` ohne Tastenkonflikt, Schreiben in den Editor ohne Sichern, Router, Sprachumschaltung |
+| `bundles/de.kiliantaubmann.bella.core` | no UI and no ADT: Anthropic and OpenAI-compatible providers (streaming, tool use, prompt caching), Claude Code integration (CLI, `stream-json`, local MCP server), tool registry and policy, MCP client (HTTP and stdio), chat tool loop, ABAP scanner, prompts, ADT REST client and `adt_*` tools |
+| `bundles/de.kiliantaubmann.bella.ui` | chat view, context menu, diff preview, router, ghost text, preferences, icons, translations |
+| `bundles/de.kiliantaubmann.bella.adt` | the only dependency on the ADT SDK: projects, logon and REST transport as an OSGi service |
+| `tests/…core.tests` | unit tests for providers, MCP client and server, Claude Code session (with a fake CLI), tool loop, ABAP scanner, ADT client, translations |
+| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription hint), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, router, language switch |
 
-Die Claude-Anbindung nutzt bewusst `java.net.http` statt des Anthropic-Java-SDK. So bleibt das OSGi-Bundle frei von OkHttp, Kotlin und Jackson.
+The Claude integration deliberately uses `java.net.http` instead of the Anthropic Java SDK. This keeps the OSGi bundle free of OkHttp, Kotlin and Jackson.
 
-### Stand und bekannte Grenzen
+### Status and known limits
 
-- Das **ADT-Bundle** kompiliert in CI (`-Padt`) gegen das aktuelle ADT SDK von SAPs p2-Site. Zur Laufzeit gegen ein echtes SAP-System ist es noch nicht getestet.
-  - Zustandsbehaftete Sessions (für Sperren) und die Objektreferenz eines Editors liest es per Reflection.
-  - Fehlt eine API in deiner ADT-Version, meldet Bella das im Chat. ARC-1 bleibt dann als Weg für die SAP-Tools.
-- Die ADT-REST-Aufrufe (Suche, Quelltext, Verwendungsnachweis, Syntaxcheck, ABAP Unit, ATC, Sperren/Schreiben, Anlegen, Aktivierung) folgen den bekannten ADT-Endpunkten. Gegen ein echtes System sind sie noch nicht getestet.
-- Die **Claude-Abo-Anbindung** ist mit einem simulierten CLI getestet, das dasselbe `stream-json`-Protokoll spricht und Bellas MCP-Server wirklich aufruft. Mit dem echten `claude` gegen ein Abo ist sie noch nicht getestet.
-- Ob ADT im ABAP-Editor `Strg+↑` selbst belegt, zeigt *Einstellungen → Allgemein → Tasten* als Konflikt an. Dann das Kürzel dort ändern.
-- Die Übersetzungen außer Deutsch und Englisch sind maschinell erstellt. Korrekturen sind willkommen.
-
-## English summary
-
-Bella is a Claude-native AI assistant for ABAP development in Eclipse ADT:
-- chat with editor context
-- "what happens here?" explanations
-- code generation, rework and method implementation written **into the editor buffer only** (nothing is saved or activated for objects that are open)
-- inline ghost-text completion (`Ctrl+Up`, macOS `Cmd+Option+Enter`)
-- SAP tools (search, read, where-used, syntax check, ABAP Unit, ATC, write, create, activate) through your existing ADT logon, optionally complemented by ARC-1 or any MCP server
-
-Claude is reached either with an API key or **through your Claude subscription** via the locally installed Claude Code CLI (`claude auth login` once): Bella runs the CLI headless with its built-in tools disabled and offers only Bella's own tools through a loopback MCP server, so policy, confirmation and the open-editor router apply as usual. Other LLMs can be used through any OpenAI-compatible endpoint (OpenAI, Azure, Ollama, LM Studio). The UI is available in 14 languages. Build with `mvn verify`; the ADT integration and update site with `mvn -Padt verify`.
+- The **ADT bundle** compiles in CI (`-Padt`) against the current ADT SDK from SAP's p2 site. Generating, explaining and writing into the editor have been used with a real ABAP system; the SAP tools in the chat (search, where-used, ATC, activation …) still need broader testing.
+  - Stateful sessions (for locks) and the object reference of an editor are read via reflection.
+  - If an API is missing in your ADT version, Bella reports it in the chat. ARC-1 remains available as a route for the SAP tools.
+- If ADT itself uses `Ctrl+↑` in the ABAP editor, *Preferences → General → Keys* shows a conflict. Change the shortcut there.
+- Command names in *Keys* and *Quick Access* still follow the operating system language; Eclipse resolves them before Bella starts.
+- All translations except German and English were machine-generated. Corrections are welcome.
 
 © 2026 Kilian Taubmann. All rights reserved.

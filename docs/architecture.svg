@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 660" width="1000" height="660" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
-  <title>Bella – wer ruft wen auf</title>
+  <title>Bella – who calls whom</title>
   <style>
     .bg { fill: #ffffff; }
     .box { fill: #f6f8fa; stroke: #d0d7de; }
@@ -47,49 +47,49 @@
   <!-- Developer -->
   <circle cx="60" cy="26" r="9" class="line"/>
   <path d="M44 56c2-12 30-12 32 0" class="line"/>
-  <text x="84" y="40" class="h">Entwickler</text>
-  <text x="84" y="56" class="s">Rechtsklick · Chat · Tippen</text>
+  <text x="84" y="40" class="h">Developer</text>
+  <text x="84" y="56" class="s">Right-click · chat · typing</text>
   <path d="M60 60V96" class="line" marker-end="url(#a)"/>
 
   <!-- Eclipse -->
   <rect class="area" x="20" y="100" width="650" height="360" rx="14"/>
-  <text x="36" y="124" class="h">Eclipse (lokal, Entwickler-PC)</text>
+  <text x="36" y="124" class="h">Eclipse (local, developer PC)</text>
 
   <rect class="box" x="40" y="146" width="180" height="100" rx="10"/>
-  <text x="56" y="174" class="h">ADT ABAP-Editor</text>
-  <text x="56" y="194" class="s">Quelltext im Puffer</text>
-  <text x="56" y="212" class="s">Objekt gesperrt,</text>
-  <text x="56" y="228" class="s">solange es offen ist</text>
+  <text x="56" y="174" class="h">ADT ABAP editor</text>
+  <text x="56" y="194" class="s">Source in the buffer</text>
+  <text x="56" y="212" class="s">Object locked</text>
+  <text x="56" y="228" class="s">while it is open</text>
 
   <rect class="bella" x="300" y="140" width="350" height="226" rx="12" stroke-width="2"/>
   <path class="logo" fill-rule="evenodd" transform="translate(316 152) scale(1.35)" d="M3 1H9.2C12 1 13.6 2.4 13.6 4.6C13.6 6 12.9 7 11.8 7.5C13.3 8 14.2 9.2 14.2 10.9C14.2 13.4 12.4 15 9.5 15H3ZM6 3.6V6.6H8.8C9.9 6.6 10.5 6.1 10.5 5.1C10.5 4.1 9.9 3.6 8.8 3.6ZM6 9V12.4H9C10.3 12.4 11 11.8 11 10.7C11 9.6 10.3 9 9 9Z"/>
   <text x="344" y="170" class="h">Bella</text>
-  <text x="392" y="170" class="s">Eclipse-Plugin</text>
+  <text x="392" y="170" class="s">Eclipse plug-in</text>
   <rect class="chip" x="316" y="186" width="96" height="30" rx="15"/><text x="364" y="206" class="lbl" text-anchor="middle">Chat</text>
-  <rect class="chip" x="420" y="186" width="110" height="30" rx="15"/><text x="475" y="206" class="lbl" text-anchor="middle">Kontextmenü</text>
+  <rect class="chip" x="420" y="186" width="110" height="30" rx="15"/><text x="475" y="206" class="lbl" text-anchor="middle">Context menu</text>
   <rect class="chip" x="538" y="186" width="98" height="30" rx="15"/><text x="587" y="206" class="lbl" text-anchor="middle">Completion</text>
   <rect class="chip" x="316" y="224" width="96" height="30" rx="15"/><text x="364" y="244" class="lbl" text-anchor="middle">Router</text>
-  <rect class="chip" x="420" y="224" width="110" height="30" rx="15"/><text x="475" y="244" class="lbl" text-anchor="middle">Tool-Policy</text>
-  <rect class="chip" x="538" y="224" width="98" height="30" rx="15"/><text x="587" y="244" class="lbl" text-anchor="middle">Tool-Registry</text>
+  <rect class="chip" x="420" y="224" width="110" height="30" rx="15"/><text x="475" y="244" class="lbl" text-anchor="middle">Tool policy</text>
+  <rect class="chip" x="538" y="224" width="98" height="30" rx="15"/><text x="587" y="244" class="lbl" text-anchor="middle">Tool registry</text>
   <rect class="box" x="316" y="270" width="150" height="80" rx="8"/>
   <text x="330" y="294" class="t">AdtToolProvider</text>
-  <text x="330" y="312" class="s">adt_* Tools</text>
-  <text x="330" y="328" class="s">Standard</text>
+  <text x="330" y="312" class="s">adt_* tools</text>
+  <text x="330" y="328" class="s">default</text>
   <rect class="box" x="480" y="270" width="156" height="80" rx="8"/>
-  <text x="494" y="294" class="t">MCP-Client</text>
-  <text x="494" y="312" class="s">mcp_* Tools</text>
+  <text x="494" y="294" class="t">MCP client</text>
+  <text x="494" y="312" class="s">mcp_* tools</text>
   <text x="494" y="328" class="s">optional</text>
 
   <rect class="box" x="40" y="392" width="440" height="50" rx="10"/>
-  <text x="56" y="422" class="t">ADT-Kommunikation · Projekt-Login / SSO</text>
+  <text x="56" y="422" class="t">ADT communication · project logon / SSO</text>
 
   <!-- 1 and 2: editor <-> Bella -->
   <path d="M220 172H298" class="line" marker-end="url(#a)"/>
   <path d="M298 214H220" class="line pink" marker-end="url(#p)"/>
   <circle cx="252" cy="160" r="9" class="num"/><text x="252" y="164" class="numt" text-anchor="middle">1</text>
   <circle cx="252" cy="200" r="9" class="num"/><text x="252" y="204" class="numt" text-anchor="middle">2</text>
-  <text x="228" y="240" class="s" style="font-size:11px">Puffer,</text>
-  <text x="228" y="254" class="s" style="font-size:11px">ungesichert</text>
+  <text x="228" y="240" class="s" style="font-size:11px">buffer,</text>
+  <text x="228" y="254" class="s" style="font-size:11px">unsaved</text>
 
   <!-- 5a: ADT tools -> ADT communication -->
   <path d="M390 350V390" class="line" marker-end="url(#a)"/>
@@ -98,8 +98,8 @@
   <!-- 6: editor save/activate -->
   <path d="M110 246V390" class="line" marker-end="url(#a)"/>
   <circle cx="124" cy="300" r="9" class="num"/><text x="124" y="304" class="numt" text-anchor="middle">6</text>
-  <text x="138" y="296" class="s">Strg+S / Strg+F3</text>
-  <text x="138" y="312" class="s">durch dich</text>
+  <text x="138" y="296" class="s">Ctrl+S / Ctrl+F3</text>
+  <text x="138" y="312" class="s">by you</text>
 
   <!-- ADT communication -> SAP -->
   <path d="M260 442V568" class="line" marker-end="url(#a)"/>
@@ -108,19 +108,19 @@
   <!-- Claude -->
   <rect class="ext" x="720" y="140" width="260" height="112" rx="12"/>
   <text x="738" y="168" class="h">Claude API</text>
-  <text x="738" y="187" class="s">oder Claude Code (Abo, lokales CLI)</text>
-  <text x="738" y="203" class="s">oder OpenAI-kompatibel (Ollama …)</text>
-  <text x="738" y="225" class="s">liefert Text und tool_use,</text>
-  <text x="738" y="241" class="s">spricht nie direkt mit SAP</text>
+  <text x="738" y="187" class="s">or Claude Code (subscription, local CLI)</text>
+  <text x="738" y="203" class="s">or OpenAI-compatible (Ollama …)</text>
+  <text x="738" y="225" class="s">returns text and tool_use,</text>
+  <text x="738" y="241" class="s">never talks to SAP directly</text>
   <path d="M650 180H718" class="line" marker-end="url(#a)"/>
   <path d="M718 222H650" class="line" marker-end="url(#a)"/>
   <circle cx="684" cy="168" r="9" class="num"/><text x="684" y="172" class="numt" text-anchor="middle">3</text>
 
   <!-- ARC-1 -->
   <rect class="ext dash" x="720" y="292" width="260" height="96" rx="12"/>
-  <text x="738" y="320" class="h">ARC-1 · MCP-Server</text>
-  <text x="738" y="340" class="s">optional · lokal (npx) oder SAP BTP</text>
-  <text x="738" y="358" class="s">Audit, Rate-Limits, Allowlist</text>
+  <text x="738" y="320" class="h">ARC-1 · MCP server</text>
+  <text x="738" y="340" class="s">optional · local (npx) or SAP BTP</text>
+  <text x="738" y="358" class="s">audit, rate limits, allowlist</text>
   <path d="M636 310H718" class="line dash" marker-end="url(#a)"/>
   <circle cx="684" cy="298" r="9" class="num"/><text x="684" y="302" class="numt" text-anchor="middle">4</text>
   <path d="M850 388V568" class="line dash" marker-end="url(#a)"/>
@@ -129,6 +129,6 @@
 
   <!-- SAP -->
   <rect class="sap" x="20" y="570" width="960" height="70" rx="12" stroke-width="1.6"/>
-  <text x="40" y="600" class="h">SAP-System</text>
-  <text x="40" y="622" class="s">S/4HANA, BTP ABAP Environment, A4H · Repository · Sperren · Syntaxcheck · ABAP Unit · ATC · Aktivierung · Transporte</text>
+  <text x="40" y="600" class="h">SAP system</text>
+  <text x="40" y="622" class="s">S/4HANA, BTP ABAP Environment, A4H · repository · locks · syntax check · ABAP Unit · ATC · activation · transports</text>
 </svg>

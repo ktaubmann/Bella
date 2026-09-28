@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
-  <title>Bella – Ablauf eines Tool-Aufrufs</title>
+  <title>Bella – sequence of a tool call</title>
   <style>
     .bg { fill: #ffffff; }
     .p { fill: #f6f8fa; stroke: #d0d7de; }
@@ -37,21 +37,21 @@
   <rect class="bg" width="960" height="640"/>
 
   <!-- participants -->
-  <rect class="p" x="20" y="20" width="120" height="40" rx="8"/><text x="80" y="45" class="h" text-anchor="middle">Entwickler</text>
+  <rect class="p" x="20" y="20" width="120" height="40" rx="8"/><text x="80" y="45" class="h" text-anchor="middle">Developer</text>
   <rect class="pb" x="220" y="20" width="120" height="40" rx="8"/><text x="280" y="45" class="h" text-anchor="middle">Bella</text>
   <rect class="p" x="420" y="20" width="120" height="40" rx="8"/><text x="480" y="45" class="h" text-anchor="middle">Claude API</text>
-  <rect class="p" x="600" y="20" width="160" height="40" rx="8"/><text x="680" y="39" class="h" text-anchor="middle">ADT-Tools</text><text x="680" y="54" class="s" text-anchor="middle">oder ARC-1</text>
-  <rect class="ps" x="820" y="20" width="120" height="40" rx="8"/><text x="880" y="45" class="h" text-anchor="middle">SAP-System</text>
+  <rect class="p" x="600" y="20" width="160" height="40" rx="8"/><text x="680" y="39" class="h" text-anchor="middle">ADT tools</text><text x="680" y="54" class="s" text-anchor="middle">or ARC-1</text>
+  <rect class="ps" x="820" y="20" width="120" height="40" rx="8"/><text x="880" y="45" class="h" text-anchor="middle">SAP system</text>
   <path class="life" d="M80 60V570M280 60V570M480 60V570M680 60V570M880 60V570"/>
 
   <!-- 1 -->
   <path class="m" d="M80 100H278" marker-end="url(#a)"/>
   <circle cx="96" cy="88" r="8" class="num"/><text x="96" y="92" class="numt" text-anchor="middle">1</text>
-  <text x="110" y="92" class="t">Frage + Editor-Kontext</text>
+  <text x="110" y="92" class="t">Question + editor context</text>
   <!-- 2 -->
   <path class="m" d="M280 142H478" marker-end="url(#a)"/>
   <circle cx="296" cy="130" r="8" class="num"/><text x="296" y="134" class="numt" text-anchor="middle">2</text>
-  <text x="310" y="134" class="t">Prompt + Tool-Liste</text>
+  <text x="310" y="134" class="t">Prompt + tool list</text>
   <!-- 3 -->
   <path class="r" d="M480 184H282" marker-end="url(#a)"/>
   <circle cx="296" cy="172" r="8" class="num"/><text x="296" y="176" class="numt" text-anchor="middle">3</text>
@@ -59,24 +59,24 @@
   <!-- 4 note -->
   <rect class="note" x="150" y="202" width="300" height="52" rx="8"/>
   <circle cx="168" cy="218" r="8" class="num"/><text x="168" y="222" class="numt" text-anchor="middle">4</text>
-  <text x="182" y="222" class="t">Tool-Policy: AUTO · CONFIRM · DENY</text>
-  <text x="182" y="242" class="t">Router: Objekt im Editor offen?</text>
+  <text x="182" y="222" class="t">Tool policy: AUTO · CONFIRM · DENY</text>
+  <text x="182" y="242" class="t">Router: object open in an editor?</text>
   <!-- 5 -->
   <path class="m" d="M280 290H678" marker-end="url(#a)"/>
   <circle cx="296" cy="278" r="8" class="num"/><text x="296" y="282" class="numt" text-anchor="middle">5</text>
-  <text x="310" y="282" class="t">Tool ausführen</text>
+  <text x="310" y="282" class="t">Run tool</text>
   <!-- 6 -->
   <path class="m" d="M680 332H878" marker-end="url(#a)"/>
   <circle cx="696" cy="320" r="8" class="num"/><text x="696" y="324" class="numt" text-anchor="middle">6</text>
-  <text x="710" y="324" class="t">ADT REST (Login des Projekts)</text>
+  <text x="710" y="324" class="t">ADT REST (project logon)</text>
   <!-- 7 -->
   <path class="r" d="M880 374H682" marker-end="url(#a)"/>
   <circle cx="696" cy="362" r="8" class="num"/><text x="696" y="366" class="numt" text-anchor="middle">7</text>
-  <text x="710" y="366" class="t">Quelltext / Meldungen</text>
+  <text x="710" y="366" class="t">Source / messages</text>
   <!-- 8 -->
   <path class="r" d="M680 416H282" marker-end="url(#a)"/>
   <circle cx="296" cy="404" r="8" class="num"/><text x="296" y="408" class="numt" text-anchor="middle">8</text>
-  <text x="310" y="408" class="t">Ergebnis</text>
+  <text x="310" y="408" class="t">Result</text>
   <!-- 9 -->
   <path class="m" d="M280 458H478" marker-end="url(#a)"/>
   <circle cx="296" cy="446" r="8" class="num"/><text x="296" y="450" class="numt" text-anchor="middle">9</text>
@@ -84,14 +84,14 @@
   <!-- 10 -->
   <path class="r" d="M480 500H282" marker-end="url(#a)"/>
   <circle cx="296" cy="488" r="8" class="num"/><text x="296" y="492" class="numt" text-anchor="middle">10</text>
-  <text x="310" y="492" class="t">Antwort: Text + Code</text>
+  <text x="310" y="492" class="t">Answer: text + code</text>
   <!-- 11 -->
   <path class="r" d="M280 542H82" marker-end="url(#a)"/>
   <circle cx="96" cy="530" r="8" class="num"/><text x="96" y="534" class="numt" text-anchor="middle">11</text>
-  <text x="110" y="534" class="t">Antwort + Aktionen</text>
+  <text x="110" y="534" class="t">Answer + actions</text>
 
   <!-- footnote -->
   <rect class="bar" x="20" y="588" width="4" height="36"/>
-  <text x="34" y="602" class="t">Ist das Objekt im Editor geöffnet, schreibt der Router in Schritt 4 in den Editor-Puffer (Diff-Vorschau, ungesichert).</text>
-  <text x="34" y="620" class="t">Die Schritte 5 bis 7 entfallen dann; gesichert und aktiviert wird wie gewohnt in ADT.</text>
+  <text x="34" y="602" class="t">If the object is open in an editor, the router writes into the editor buffer in step 4 (diff preview, unsaved).</text>
+  <text x="34" y="620" class="t">Steps 5 to 7 are skipped then; you save and activate in ADT as usual.</text>
 </svg>
