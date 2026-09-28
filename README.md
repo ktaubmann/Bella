@@ -26,6 +26,8 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** with editor context, streaming and tool calls; insert code blocks, replace the selection or take them over as a method body | `Ctrl+Alt+B`, pink B in the toolbar, menu *Bella* |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, write, create, activate | automatically in the chat |
 
+<p align="center"><img src="docs/screenshots/context-menu.png" width="560" alt="Right-click in the ABAP editor: submenu Bella with its actions"></p>
+
 **Changing shortcuts:** *Preferences → General → Keys*, filter for "Bella". `Ctrl+↑` only applies in editors Bella is attached to and replaces "Scroll Line Up" there. Bella does not use `Ctrl+Alt+Space`, because the Claude desktop app takes it for its quick entry on Windows.
 
 <table>
@@ -91,6 +93,8 @@ For an update, install the new ZIP the same way. *Check for Updates* does not fi
 ## Setup
 
 *Window → Preferences → Bella*
+
+<p align="center"><img src="docs/screenshots/preferences-provider.png" width="760" alt="Bella preferences with the provider drop-down and the Claude subscription settings"></p>
 
 - **Provider** (drop-down at the top): *Claude (API key)*, *Claude subscription (Claude Code CLI)* or *OpenAI-compatible*. The page only shows the fields of the selected provider, plus a note on code completion.
 - **Claude (API key)**:
