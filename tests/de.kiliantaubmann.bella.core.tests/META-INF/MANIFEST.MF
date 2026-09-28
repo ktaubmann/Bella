@@ -8,4 +8,5 @@ Fragment-Host: de.kiliantaubmann.bella.core
 Bundle-RequiredExecutionEnvironment: JavaSE-21
 Automatic-Module-Name: de.kiliantaubmann.bella.core.tests
 Import-Package: org.junit.jupiter.api;version="[5.9.0,6.0.0)",
- org.junit.jupiter.api.function;version="[5.9.0,6.0.0)"
+ org.junit.jupiter.api.function;version="[5.9.0,6.0.0)",
+ org.junit.jupiter.api.io;version="[5.9.0,6.0.0)"

@@ -2,7 +2,6 @@ package de.kiliantaubmann.bella.core.agent;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Supplier;
 
 import com.google.gson.JsonArray;
@@ -13,10 +12,9 @@ import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.llm.LlmProvider;
 import de.kiliantaubmann.bella.core.llm.StopReason;
-import de.kiliantaubmann.bella.core.llm.StreamListener;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.tools.ToolPolicy;
-import de.kiliantaubmann.bella.core.tools.ToolProvider;
+import de.kiliantaubmann.bella.core.tools.ToolExecutor;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
@@ -32,31 +30,14 @@ import de.kiliantaubmann.bella.core.util.Json;
  * The history is append-only, so thinking blocks stay valid and the prompt
  * cache keeps hitting.
  */
-public final class ChatSession {
+public final class ChatSession implements Conversation {
 
-	/** Progress callbacks, called on the thread that runs {@link #send}. */
-	public interface Listener extends StreamListener {
-
-		default void onTurnStart() {
-		}
-
-		default void onToolCall(ToolSpec tool, ToolCall call) {
-		}
-
-		default void onToolResult(ToolSpec tool, ToolCall call, ToolResult result) {
-		}
-
-		/** Something the developer should know that is not model text (refusal, truncation, policy). */
-		default void onNotice(String message) {
-		}
-
-		default void onTurnEnd(ChatResult last) {
-		}
+	/** Progress callbacks; kept for callers written against the chat session. */
+	public interface Listener extends ConversationListener {
 	}
 
 	/** Asks the developer whether a tool call may run. Blocks until answered. */
-	public interface Confirmer {
-		boolean confirm(ToolSpec tool, JsonObject input);
+	public interface Confirmer extends ToolExecutor.Confirmer {
 	}
 
 	/** Model settings for a chat. */
@@ -69,9 +50,7 @@ public final class ChatSession {
 	private final Supplier<LlmProvider> provider;
 	private final Supplier<Settings> settings;
 	private final ToolRegistry tools;
-	private final Supplier<ToolPolicy> policy;
-	private final Confirmer confirmer;
-	private final WriteGuard writeGuard;
+	private final ToolExecutor executor;
 	private volatile String system;
 
 	public ChatSession(Supplier<LlmProvider> provider, Supplier<Settings> settings, String system, ToolRegistry tools,
@@ -80,15 +59,25 @@ public final class ChatSession {
 		this.settings = settings;
 		this.system = system;
 		this.tools = tools;
-		this.policy = policy;
-		this.confirmer = confirmer;
-		this.writeGuard = writeGuard == null ? WriteGuard.NONE : writeGuard;
+		this.executor = new ToolExecutor(tools, policy, confirmer, writeGuard);
 	}
 
 	public synchronized List<JsonObject> history() {
 		return List.copyOf(history);
 	}
 
+	@Override
+	public void ask(String userText, ConversationListener listener, CancelToken cancel)
+			throws LlmException, CancelledException {
+		send(userText, listener, cancel);
+	}
+
+	@Override
+	public String describe() {
+		return settings.get().model();
+	}
+
+	@Override
 	public synchronized void reset(String newSystem) {
 		history.clear();
 		system = newSystem;
@@ -99,7 +88,7 @@ public final class ChatSession {
 	 *
 	 * @return the last model result
 	 */
-	public ChatResult send(String userText, Listener listener, CancelToken cancel)
+	public ChatResult send(String userText, ConversationListener listener, CancelToken cancel)
 			throws LlmException, CancelledException {
 		synchronized (this) {
 			history.add(Json.userText(userText));
@@ -210,48 +199,7 @@ public final class ChatSession {
 		}
 	}
 
-	ToolResult runTool(ToolCall call, Listener listener, CancelToken cancel) {
-		Optional<ToolSpec> spec = tools == null ? Optional.empty() : tools.find(call.name());
-		if (spec.isEmpty()) {
-			return ToolResult.error("Unknown tool: " + call.name());
-		}
-		ToolSpec tool = spec.get();
-		listener.onToolCall(tool, call);
-		ToolResult result;
-		if (!call.inputValid()) {
-			JsonObject err = new JsonObject();
-			err.addProperty("INVALID_JSON", call.rawInput());
-			err.addProperty("reason", call.inputError());
-			result = ToolResult.error(Json.GSON.toJson(err));
-		} else {
-			result = decideAndRun(tool, call, cancel);
-		}
-		listener.onToolResult(tool, call, result);
-		return result;
-	}
-
-	private ToolResult decideAndRun(ToolSpec tool, ToolCall call, CancelToken cancel) {
-		ToolPolicy.Decision decision = policy.get().decide(tool, call.input());
-		if (decision == ToolPolicy.Decision.DENY) {
-			return ToolResult.error("Refused by Bella's tool policy. Do not retry this call; tell the developer.");
-		}
-		// The write guard runs before confirmation: writing into an open editor
-		// is harmless (nothing is saved) and the developer sees the diff there.
-		Optional<ToolResult> intercepted = writeGuard.intercept(tool, call.input());
-		if (intercepted.isPresent()) {
-			return intercepted.get();
-		}
-		if (decision == ToolPolicy.Decision.CONFIRM && !confirmer.confirm(tool, call.input())) {
-			return ToolResult.error("The developer declined this tool call.");
-		}
-		Optional<ToolProvider> owner = tools.providerOf(tool.name());
-		if (owner.isEmpty()) {
-			return ToolResult.error("Tool provider is no longer available: " + tool.name());
-		}
-		try {
-			return owner.get().call(tool.remoteName(), call.input(), cancel);
-		} catch (Exception e) {
-			return ToolResult.error(e.getClass().getSimpleName() + ": " + e.getMessage());
-		}
+	ToolResult runTool(ToolCall call, ConversationListener listener, CancelToken cancel) {
+		return executor.run(call, listener, cancel);
 	}
 }
