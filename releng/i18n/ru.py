@@ -76,7 +76,7 @@ MESSAGES = {
  "prefs.openai": "Совместимый с OpenAI", "prefs.openai.baseUrl.tip": "напр. https://api.openai.com/v1 или http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Общие", "prefs.maxTokens": "Макс. выходных токенов:", "prefs.lang.eclipse": "Как в Eclipse",
  "prefs.lang.likeUi": "Как интерфейс", "prefs.lang.likeQuestion": "Как вопрос",
- "prefs.uiLanguage": "Язык интерфейса (меню после перезапуска):", "prefs.answerLanguage": "Язык ответов:",
+ "prefs.uiLanguage": "Язык интерфейса:", "prefs.answerLanguage": "Язык ответов:",
  "prefs.commentLanguage": "Язык комментариев ABAP:", "prefs.editor": "Редактор",
  "prefs.diffPreview": "Показывать сравнение перед записью в редактор",
  "prefs.autoCompletion": "Автоматически предлагать дополнения при вводе", "prefs.autoCompletionDelay": "Задержка (мс):",

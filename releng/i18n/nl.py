@@ -76,7 +76,7 @@ MESSAGES = {
  "prefs.openai": "OpenAI-compatibel", "prefs.openai.baseUrl.tip": "bijv. https://api.openai.com/v1 of http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Algemeen", "prefs.maxTokens": "Max. uitvoertokens:", "prefs.lang.eclipse": "Zoals Eclipse",
  "prefs.lang.likeUi": "Zoals de interface", "prefs.lang.likeQuestion": "Zoals de vraag",
- "prefs.uiLanguage": "Taal van de interface (menu’s na herstart):", "prefs.answerLanguage": "Taal van antwoorden:",
+ "prefs.uiLanguage": "Taal van de interface:", "prefs.answerLanguage": "Taal van antwoorden:",
  "prefs.commentLanguage": "Taal van ABAP-commentaar:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Een diff-voorbeeld tonen voordat er in de editor wordt geschreven",
  "prefs.autoCompletion": "Tijdens het typen automatisch aanvullingen voorstellen", "prefs.autoCompletionDelay": "Vertraging (ms):",

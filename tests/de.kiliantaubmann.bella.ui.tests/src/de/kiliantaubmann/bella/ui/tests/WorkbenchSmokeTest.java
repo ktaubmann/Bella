@@ -28,6 +28,8 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Menu;
+import org.eclipse.swt.widgets.MenuItem;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IWorkbenchPage;
@@ -54,6 +56,7 @@ import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
 import de.kiliantaubmann.bella.ui.Shortcuts;
 import de.kiliantaubmann.bella.ui.editor.CodeActions;
+import de.kiliantaubmann.bella.ui.internal.BellaMenuItems;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.editor.OpenEditorRouter;
 import de.kiliantaubmann.bella.ui.prefs.BellaPreferencePage;
@@ -276,6 +279,33 @@ class WorkbenchSmokeTest {
 		assertFalse(Shortcuts.completion().isBlank());
 		assertFalse(bindings.isPerfectMatch(KeySequence.getInstance("M1+M3+SPACE")),
 				"Ctrl+Alt+Space is left to the Claude desktop app");
+	}
+
+	@Test
+	void menusFollowBellasLanguageNotTheSystemLanguage() {
+		IPreferenceStore prefs = BellaPlugin.getDefault().prefs();
+		Shell shell = new Shell(Display.getCurrent());
+		try {
+			for (String[] lang : new String[][] { { "en", "What happens here?", "Bella Chat" },
+					{ "de", "Was passiert hier?", "Bella-Chat" } }) {
+				prefs.setValue(Prefs.UI_LANGUAGE, lang[0]);
+				Menu menu = new Menu(shell, SWT.POP_UP);
+				BellaMenuItems items = new BellaMenuItems(BellaMenuItems.POPUP_ID);
+				items.initialize(PlatformUI.getWorkbench());
+				items.fill(menu, 0);
+				List<String> labels = java.util.Arrays.stream(menu.getItems()).map(MenuItem::getText)
+						.filter(t -> !t.isEmpty()).toList();
+				assertTrue(labels.get(0).startsWith(lang[1]), labels.toString());
+				assertEquals(8, labels.size(), labels.toString());
+				menu.dispose();
+				ChatView view = ChatView.open().orElseThrow();
+				pump();
+				assertEquals(lang[2], view.getPartName());
+			}
+		} finally {
+			prefs.setValue(Prefs.UI_LANGUAGE, "");
+			shell.dispose();
+		}
 	}
 
 	@Test

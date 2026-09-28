@@ -82,6 +82,20 @@ public class ChatView extends ViewPart {
 	private final List<String> pendingScripts = new ArrayList<>();
 	private boolean pageLoaded;
 
+	/** The chat view if it is open, without opening it. UI thread. */
+	public static Optional<ChatView> find() {
+		var window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+		if (window == null || window.getActivePage() == null) {
+			return Optional.empty();
+		}
+		return Optional.ofNullable((ChatView) window.getActivePage().findView(ID));
+	}
+
+	/** Tab title in Bella's UI language (plugin.xml only knows the system language). */
+	public void updateTitle() {
+		setPartName(Messages.plugin("view.chat"));
+	}
+
 	/** Shows the chat view and returns it. UI thread. */
 	public static Optional<ChatView> open() {
 		try {
@@ -96,6 +110,7 @@ public class ChatView extends ViewPart {
 	@Override
 	public void createPartControl(Composite parent) {
 		EditorTracker.install();
+		updateTitle();
 		GridLayoutFactory.fillDefaults().spacing(0, 0).applyTo(parent);
 		try {
 			browser = new Browser(parent, SWT.NONE);

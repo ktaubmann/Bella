@@ -76,7 +76,7 @@ MESSAGES = {
  "prefs.openai": "Kompatibilní s OpenAI", "prefs.openai.baseUrl.tip": "např. https://api.openai.com/v1 nebo http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Obecné", "prefs.maxTokens": "Max. výstupních tokenů:", "prefs.lang.eclipse": "Jako Eclipse",
  "prefs.lang.likeUi": "Jako rozhraní", "prefs.lang.likeQuestion": "Jako dotaz",
- "prefs.uiLanguage": "Jazyk rozhraní (nabídky po restartu):", "prefs.answerLanguage": "Jazyk odpovědí:",
+ "prefs.uiLanguage": "Jazyk rozhraní:", "prefs.answerLanguage": "Jazyk odpovědí:",
  "prefs.commentLanguage": "Jazyk komentářů ABAP:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Před zápisem do editoru zobrazit náhled rozdílů",
  "prefs.autoCompletion": "Při psaní automaticky navrhovat doplnění", "prefs.autoCompletionDelay": "Zpoždění (ms):",

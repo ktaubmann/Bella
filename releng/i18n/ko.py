@@ -76,7 +76,7 @@ MESSAGES = {
  "prefs.openai": "OpenAI 호환", "prefs.openai.baseUrl.tip": "예: https://api.openai.com/v1 또는 http://localhost:11434/v1(Ollama)",
  "prefs.general": "일반", "prefs.maxTokens": "최대 출력 토큰:", "prefs.lang.eclipse": "Eclipse와 동일",
  "prefs.lang.likeUi": "UI와 동일", "prefs.lang.likeQuestion": "질문과 동일",
- "prefs.uiLanguage": "UI 언어(메뉴는 재시작 후):", "prefs.answerLanguage": "답변 언어:",
+ "prefs.uiLanguage": "UI 언어:", "prefs.answerLanguage": "답변 언어:",
  "prefs.commentLanguage": "ABAP 주석 언어:", "prefs.editor": "편집기",
  "prefs.diffPreview": "편집기에 작성하기 전에 차이 미리 보기 표시",
  "prefs.autoCompletion": "입력하는 동안 자동으로 완성 제안", "prefs.autoCompletionDelay": "지연(ms):",

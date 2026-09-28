@@ -84,6 +84,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 				reconnectMcpServers();
 			} else if (Prefs.UI_LANGUAGE.equals(e.getProperty())) {
 				Messages.reload();
+				refreshLabels();
 			}
 		});
 		reconnectMcpServers();
@@ -97,6 +98,21 @@ public class BellaPlugin extends AbstractUIPlugin {
 		}
 		plugin = null;
 		super.stop(context);
+	}
+
+	/** Menus are rebuilt when opened; the toolbar tooltip and the chat tab title need a nudge. */
+	private void refreshLabels() {
+		if (!org.eclipse.ui.PlatformUI.isWorkbenchRunning()) {
+			return;
+		}
+		org.eclipse.ui.PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+			org.eclipse.ui.commands.ICommandService commands = org.eclipse.ui.PlatformUI.getWorkbench()
+					.getService(org.eclipse.ui.commands.ICommandService.class);
+			if (commands != null) {
+				commands.refreshElements(de.kiliantaubmann.bella.ui.handlers.OpenChatHandler.COMMAND, null);
+			}
+			de.kiliantaubmann.bella.ui.views.ChatView.find().ifPresent(v -> v.updateTitle());
+		});
 	}
 
 	// ---- images ----------------------------------------------------------------

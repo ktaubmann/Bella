@@ -76,7 +76,7 @@ MESSAGES = {
  "prefs.openai": "Compatível com OpenAI", "prefs.openai.baseUrl.tip": "ex.: https://api.openai.com/v1 ou http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Geral", "prefs.maxTokens": "Máx. de tokens de saída:", "prefs.lang.eclipse": "Como o Eclipse",
  "prefs.lang.likeUi": "Como a interface", "prefs.lang.likeQuestion": "Como a pergunta",
- "prefs.uiLanguage": "Idioma da interface (menus após reiniciar):", "prefs.answerLanguage": "Idioma das respostas:",
+ "prefs.uiLanguage": "Idioma da interface:", "prefs.answerLanguage": "Idioma das respostas:",
  "prefs.commentLanguage": "Idioma dos comentários ABAP:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Mostrar uma prévia das diferenças antes de escrever no editor",
  "prefs.autoCompletion": "Sugerir autocompletar automaticamente ao digitar", "prefs.autoCompletionDelay": "Atraso (ms):",

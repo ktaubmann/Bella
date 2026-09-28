@@ -76,7 +76,7 @@ MESSAGES = {
  "prefs.openai": "OpenAI 互換", "prefs.openai.baseUrl.tip": "例：https://api.openai.com/v1 または http://localhost:11434/v1（Ollama）",
  "prefs.general": "一般", "prefs.maxTokens": "最大出力トークン数：", "prefs.lang.eclipse": "Eclipse と同じ",
  "prefs.lang.likeUi": "UI と同じ", "prefs.lang.likeQuestion": "質問と同じ",
- "prefs.uiLanguage": "UI の言語（メニューは再起動後）：", "prefs.answerLanguage": "回答の言語：",
+ "prefs.uiLanguage": "UI の言語：", "prefs.answerLanguage": "回答の言語：",
  "prefs.commentLanguage": "ABAP コメントの言語：", "prefs.editor": "エディター",
  "prefs.diffPreview": "エディターに書き込む前に差分プレビューを表示",
  "prefs.autoCompletion": "入力中に補完を自動で提案", "prefs.autoCompletionDelay": "遅延（ミリ秒）：",

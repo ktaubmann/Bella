@@ -92,30 +92,14 @@
             <visibleWhen checkEnabled="false">
                <reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/>
             </visibleWhen>
-            <command commandId="de.kiliantaubmann.bella.ui.explain" label="%menu.explain" style="push"/>
-            <separator name="write" visible="true"/>
-            <command commandId="de.kiliantaubmann.bella.ui.generate" label="%menu.generate" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.rewrite" label="%menu.rewrite" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.implementMethod" label="%menu.implementMethod" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.complete" label="%menu.complete" style="push"/>
-            <separator name="chat" visible="true"/>
-            <command commandId="de.kiliantaubmann.bella.ui.refactor" label="%menu.refactor" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.unitTest" label="%menu.unitTest" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.openChat" label="%menu.openChat" style="push"/>
+            <!-- Built at runtime so the texts follow Bella's UI language. -->
+            <dynamic id="de.kiliantaubmann.bella.ui.editorMenu.items" class="de.kiliantaubmann.bella.ui.internal.BellaMenuItems"/>
          </menu>
       </menuContribution>
       <!-- Main menu "Bella" -->
       <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">
          <menu id="de.kiliantaubmann.bella.ui.mainMenu" label="%menu.bella">
-            <command commandId="de.kiliantaubmann.bella.ui.openChat" label="%menu.openChat" style="push"/>
-            <separator name="editor" visible="true"/>
-            <command commandId="de.kiliantaubmann.bella.ui.explain" label="%menu.explain" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.generate" label="%menu.generate" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.rewrite" label="%menu.rewrite" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.implementMethod" label="%menu.implementMethod" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.complete" label="%menu.complete" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.refactor" label="%menu.refactor" style="push"/>
-            <command commandId="de.kiliantaubmann.bella.ui.unitTest" label="%menu.unitTest" style="push"/>
+            <dynamic id="de.kiliantaubmann.bella.ui.mainMenu.items" class="de.kiliantaubmann.bella.ui.internal.BellaMenuItems"/>
          </menu>
       </menuContribution>
       <!-- Toolbar button with the pink B -->

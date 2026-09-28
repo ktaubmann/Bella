@@ -76,7 +76,7 @@ MESSAGES = {
  "prefs.openai": "OpenAI 兼容", "prefs.openai.baseUrl.tip": "例如 https://api.openai.com/v1 或 http://localhost:11434/v1（Ollama）",
  "prefs.general": "常规", "prefs.maxTokens": "最大输出令牌数：", "prefs.lang.eclipse": "与 Eclipse 相同",
  "prefs.lang.likeUi": "与界面相同", "prefs.lang.likeQuestion": "与提问相同",
- "prefs.uiLanguage": "界面语言（菜单需重启）：", "prefs.answerLanguage": "回答语言：",
+ "prefs.uiLanguage": "界面语言：", "prefs.answerLanguage": "回答语言：",
  "prefs.commentLanguage": "ABAP 注释语言：", "prefs.editor": "编辑器",
  "prefs.diffPreview": "写入编辑器前显示差异预览",
  "prefs.autoCompletion": "输入时自动建议补全", "prefs.autoCompletionDelay": "延迟（毫秒）：",

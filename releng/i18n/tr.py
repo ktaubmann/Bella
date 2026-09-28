@@ -76,7 +76,7 @@ MESSAGES = {
  "prefs.openai": "OpenAI uyumlu", "prefs.openai.baseUrl.tip": "ör. https://api.openai.com/v1 veya http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Genel", "prefs.maxTokens": "Azami çıktı belirteci:", "prefs.lang.eclipse": "Eclipse gibi",
  "prefs.lang.likeUi": "Arayüz gibi", "prefs.lang.likeQuestion": "Soru gibi",
- "prefs.uiLanguage": "Arayüz dili (menüler yeniden başlatınca):", "prefs.answerLanguage": "Yanıt dili:",
+ "prefs.uiLanguage": "Arayüz dili:", "prefs.answerLanguage": "Yanıt dili:",
  "prefs.commentLanguage": "ABAP yorumlarının dili:", "prefs.editor": "Düzenleyici",
  "prefs.diffPreview": "Düzenleyiciye yazmadan önce fark önizlemesi göster",
  "prefs.autoCompletion": "Yazarken otomatik tamamlama öner", "prefs.autoCompletionDelay": "Gecikme (ms):",

@@ -138,7 +138,7 @@ MESSAGES = {
  "prefs.lang.eclipse": "Wie Eclipse",
  "prefs.lang.likeUi": "Wie die Oberfläche",
  "prefs.lang.likeQuestion": "Wie die Frage",
- "prefs.uiLanguage": "Sprache der Oberfläche (Menüs nach Neustart):",
+ "prefs.uiLanguage": "Sprache der Oberfläche:",
  "prefs.answerLanguage": "Antwortsprache:",
  "prefs.commentLanguage": "Sprache der ABAP-Kommentare:",
  "prefs.editor": "Editor",
