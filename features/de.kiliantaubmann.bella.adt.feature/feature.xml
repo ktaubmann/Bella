@@ -2,7 +2,7 @@
 <feature
       id="de.kiliantaubmann.bella.adt.feature"
       label="%featureName"
-      version="0.1.0.qualifier"
+      version="0.2.0.qualifier"
       provider-name="%providerName"
       plugin="de.kiliantaubmann.bella.ui">
 
@@ -13,7 +13,7 @@
    <license url="%licenseURL">%license</license>
 
    <requires>
-      <import feature="de.kiliantaubmann.bella.feature" version="0.1.0" match="greaterOrEqual"/>
+      <import feature="de.kiliantaubmann.bella.feature" version="0.2.0" match="greaterOrEqual"/>
    </requires>
 
    <plugin

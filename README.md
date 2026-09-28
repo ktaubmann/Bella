@@ -2,7 +2,7 @@
 
 # Bella – KI-Assistentin für ABAP in Eclipse
 
-Bella bringt Claude (oder ein anderes Sprachmodell) direkt in die ABAP Development Tools (ADT):
+Bella bringt Claude (per API-Key **oder über dein Claude-Abo**) oder ein anderes Sprachmodell direkt in die ABAP Development Tools (ADT):
 
 - Code erklären lassen
 - im Chat arbeiten
@@ -23,10 +23,12 @@ Bella greift über die vorhandene ADT-Anmeldung auf das SAP-System zu. Optional 
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/generate.png"> | **Code hier generieren…**: schreibt Code an der Cursorposition | Rechtsklick → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/rewrite.png"> | **Markierung überarbeiten…**: Fehler beheben, moderne Syntax, ABAP Cloud, Performance, Kommentare | Rechtsklick → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/method.png"> | **Methode implementieren**: schreibt den Rumpf von METHOD/FORM/FUNCTION am Cursor | Rechtsklick → Bella |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **KI-Vervollständigung** als grauer Ghost-Text; Tab übernimmt, Esc verwirft | `Strg+Alt+Leertaste` oder automatisch |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **KI-Vervollständigung** als grauer Ghost-Text; Tab übernimmt, Esc verwirft | `Strg+↑` (macOS: `Cmd+Option+Enter`) oder automatisch beim Tippen (nicht im Abo-Modus) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Refactoring / Unit-Test vorschlagen** | Rechtsklick → Bella (Chat) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** mit Editor-Kontext, Streaming, Tool-Aufrufen; Codeblöcke per Button oder Rechtsklick einfügen, ersetzen oder als Methode übernehmen | `Strg+Alt+B`, Toolbar-B, Menü *Bella* |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP-Tools**: suchen, lesen, Verwendungsnachweis, Syntaxcheck (auch für ungesicherten Code), ABAP Unit, ATC, schreiben, anlegen, aktivieren | automatisch im Chat |
+
+**Tastenkürzel ändern:** *Einstellungen → Allgemein → Tasten*, nach „Bella“ filtern. `Strg+↑` gilt nur in Editoren, in die Bella eingebunden ist, und ersetzt dort „Eine Zeile hochscrollen“. Das frühere `Strg+Alt+Leertaste` entfällt, weil die Claude-Desktop-App es unter Windows für die Schnelleingabe belegt.
 
 ### Grundregel: geöffnete Objekte werden nur im Editor geändert
 
@@ -81,16 +83,45 @@ Voraussetzungen:
 
 *Window → Preferences → Bella*
 
-- **Claude**:
+- **Anbieter** (Dropdown ganz oben): *Claude (API-Key)*, *Claude-Abo (Claude Code CLI)* oder *OpenAI-kompatibel*. Die Seite zeigt nur die Felder des gewählten Anbieters und darunter einen Hinweis zur Code-Vervollständigung.
+- **Claude (API-Key)**:
   - API-Key von [console.anthropic.com](https://console.anthropic.com/settings/keys) eintragen. Er liegt verschlüsselt im Secure Storage von Eclipse.
   - Standardmodelle: `claude-opus-5` für Chat und Code, `claude-haiku-4-5` für die schnelle Vervollständigung.
   - Aufwand (*effort*) und die serverseitige Ersatzmodell-Option bei abgelehnten Anfragen sind einstellbar.
+- **Claude-Abo**: siehe nächster Abschnitt.
 - **OpenAI-kompatibel** (optional): Basis-URL, Key und Modell, z. B. `http://localhost:11434/v1` für Ollama. Damit bleibt der Quelltext im Haus.
 - **Sprachen**:
   - Oberfläche: wie Eclipse oder fest.
   - Antworten: wie die Oberfläche, wie die Frage oder fest.
   - ABAP-Kommentare im generierten Code: eigene Einstellung, Standard Englisch.
 - **Editor**: Diff-Vorschau, automatische Vervollständigung beim Tippen und deren Verzögerung.
+
+### Claude-Abo statt API-Key
+
+Mit einem Claude-Abo (Pro, Max, Team oder Enterprise) brauchst du keinen API-Key. Bella nutzt dann das lokal installierte [Claude Code CLI](https://claude.com/claude-code), das Anmeldung und Abrechnung über dein Abo übernimmt.
+
+1. Claude Code installieren und einmal im Terminal anmelden:
+   ```bash
+   claude auth login        # im Browser mit dem Claude-Konto anmelden
+   ```
+   Sieht Eclipse diese Anmeldung nicht (z. B. anderer Benutzer), erzeugt `claude setup-token` ein langlebiges Abo-Token. Das trägst du in Bella als *Abo-Token* ein; es liegt im Secure Storage.
+2. *Einstellungen → Bella → Anbieter: Claude-Abo (Claude Code CLI)* wählen und auf **Prüfen** klicken. Die Statuszeile zeigt z. B. „angemeldet (max)“.
+   - Den Pfad zu `claude` musst du nur angeben, wenn Bella ihn nicht findet. Gesucht wird in `PATH`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` und unter Windows `%APPDATA%\npm`.
+   - Modelle: Alias oder volle ID, Standard `opus` für den Chat und `haiku` für die Vervollständigung. Welche Modelle verfügbar sind, hängt von deinem Plan ab.
+
+Was dabei passiert:
+
+- Bella startet `claude` im Headless-Modus (`-p`, `stream-json`) in einem eigenen Arbeitsverzeichnis im Eclipse-Workspace. Pro Chat läuft ein CLI-Prozess; *Neuer Chat* beendet ihn.
+- Die eingebauten Tools des CLI sind abgeschaltet (`--tools ""`): Claude kann weder Dateien lesen noch Befehle ausführen.
+- Bellas SAP-Tools bekommt das CLI über einen **lokalen MCP-Server** in Bella. Er lauscht nur auf `127.0.0.1` und verlangt ein zufälliges Token. Andere MCP-Konfigurationen des Benutzers werden ignoriert (`--strict-mcp-config`).
+- Jeder Tool-Aufruf läuft durch dieselben Regeln wie mit API-Key: Tool-Regeln, Bestätigungsdialog und Router für offene Objekte (Code landet nur im Editor).
+- Ein gesetztes `ANTHROPIC_API_KEY` entfernt Bella für das CLI, damit wirklich das Abo genutzt wird.
+
+Grenzen:
+
+- **Vervollständigung:** Jeder Vorschlag startet das CLI und dauert 2–5 Sekunden. Deshalb gibt es im Abo-Modus keine automatischen Vorschläge beim Tippen, nur per `Strg+↑`.
+- Es gelten die Nutzungslimits deines Abos. Ist das Limit erreicht, meldet Bella das im Chat.
+- *Stopp* unterbricht die laufende Antwort. Reagiert das CLI nicht innerhalb von 3 Sekunden, beendet Bella den Prozess; der nächste Chat-Beitrag startet dann ohne den bisherigen Verlauf, und Bella weist darauf hin.
 
 ### ARC-1 anbinden (optional)
 
@@ -122,11 +153,11 @@ python3 releng/i18n/generate.py   # Übersetzungen aus releng/i18n/*.py erzeugen
 
 | Modul | Inhalt |
 |---|---|
-| `bundles/de.kiliantaubmann.bella.core` | ohne UI und ohne ADT: Anthropic- und OpenAI-kompatible Provider (Streaming, Tool Use, Prompt Caching), Tool-Registry und Tool-Regeln, MCP-Client (HTTP und stdio), Chat-Tool-Schleife, ABAP-Scanner, Prompts, ADT-REST-Client und `adt_*`-Tools |
+| `bundles/de.kiliantaubmann.bella.core` | ohne UI und ohne ADT: Anthropic- und OpenAI-kompatible Provider (Streaming, Tool Use, Prompt Caching), Claude-Code-Anbindung (CLI, `stream-json`, lokaler MCP-Server), Tool-Registry und Tool-Regeln, MCP-Client (HTTP und stdio), Chat-Tool-Schleife, ABAP-Scanner, Prompts, ADT-REST-Client und `adt_*`-Tools |
 | `bundles/de.kiliantaubmann.bella.ui` | Chat-View, Kontextmenü, Diff-Vorschau, Router, Ghost-Text, Einstellungen, Icons, Übersetzungen |
 | `bundles/de.kiliantaubmann.bella.adt` | einzige Abhängigkeit zum ADT SDK: Projekte, Anmeldung und REST-Transport als OSGi-Service |
-| `tests/…core.tests` | Unit-Tests für Provider, MCP, Tool-Schleife, ABAP-Scanner, ADT-Client, Übersetzungen |
-| `tests/…ui.tests` | Workbench-Smoke-Test: Befehle, Chat, Einstellungen, Schreiben in den Editor ohne Sichern, Router, Sprachumschaltung |
+| `tests/…core.tests` | Unit-Tests für Provider, MCP-Client und -Server, Claude-Code-Sitzung (mit Fake-CLI), Tool-Schleife, ABAP-Scanner, ADT-Client, Übersetzungen |
+| `tests/…ui.tests` | Workbench-Smoke-Test: Befehle, Chat, Einstellungen (Anbieter-Dropdown, Abo-Hinweis), `Strg+↑` ohne Tastenkonflikt, Schreiben in den Editor ohne Sichern, Router, Sprachumschaltung |
 
 Die Claude-Anbindung nutzt bewusst `java.net.http` statt des Anthropic-Java-SDK. So bleibt das OSGi-Bundle frei von OkHttp, Kotlin und Jackson.
 
@@ -136,6 +167,8 @@ Die Claude-Anbindung nutzt bewusst `java.net.http` statt des Anthropic-Java-SDK.
   - Zustandsbehaftete Sessions (für Sperren) und die Objektreferenz eines Editors liest es per Reflection.
   - Fehlt eine API in deiner ADT-Version, meldet Bella das im Chat. ARC-1 bleibt dann als Weg für die SAP-Tools.
 - Die ADT-REST-Aufrufe (Suche, Quelltext, Verwendungsnachweis, Syntaxcheck, ABAP Unit, ATC, Sperren/Schreiben, Anlegen, Aktivierung) folgen den bekannten ADT-Endpunkten. Gegen ein echtes System sind sie noch nicht getestet.
+- Die **Claude-Abo-Anbindung** ist mit einem simulierten CLI getestet, das dasselbe `stream-json`-Protokoll spricht und Bellas MCP-Server wirklich aufruft. Mit dem echten `claude` gegen ein Abo ist sie noch nicht getestet.
+- Ob ADT im ABAP-Editor `Strg+↑` selbst belegt, zeigt *Einstellungen → Allgemein → Tasten* als Konflikt an. Dann das Kürzel dort ändern.
 - Die Übersetzungen außer Deutsch und Englisch sind maschinell erstellt. Korrekturen sind willkommen.
 
 ## English summary
@@ -144,9 +177,9 @@ Bella is a Claude-native AI assistant for ABAP development in Eclipse ADT:
 - chat with editor context
 - "what happens here?" explanations
 - code generation, rework and method implementation written **into the editor buffer only** (nothing is saved or activated for objects that are open)
-- inline ghost-text completion
+- inline ghost-text completion (`Ctrl+Up`, macOS `Cmd+Option+Enter`)
 - SAP tools (search, read, where-used, syntax check, ABAP Unit, ATC, write, create, activate) through your existing ADT logon, optionally complemented by ARC-1 or any MCP server
 
-Other LLMs can be used through any OpenAI-compatible endpoint (OpenAI, Azure, Ollama, LM Studio). The UI is available in 14 languages. Build with `mvn verify`; the ADT integration and update site with `mvn -Padt verify`.
+Claude is reached either with an API key or **through your Claude subscription** via the locally installed Claude Code CLI (`claude auth login` once): Bella runs the CLI headless with its built-in tools disabled and offers only Bella's own tools through a loopback MCP server, so policy, confirmation and the open-editor router apply as usual. Other LLMs can be used through any OpenAI-compatible endpoint (OpenAI, Azure, Ollama, LM Studio). The UI is available in 14 languages. Build with `mvn verify`; the ADT integration and update site with `mvn -Padt verify`.
 
 © 2026 Kilian Taubmann. All rights reserved.

@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version without "v", e.g. 0.1.0 (must match pom.xml)'
+        description: 'Version without "v", e.g. 0.2.0 (must match pom.xml)'
         required: true
 
 permissions:
