@@ -127,9 +127,22 @@
       </menuContribution>
    </extension>
 
+   <extension point="org.eclipse.ui.contexts">
+      <!-- Active in text editors Bella is attached to; as a child of the text editor
+           scope its Ctrl+Up wins over "Scroll Line Up" without a key conflict. -->
+      <context id="de.kiliantaubmann.bella.editorScope" name="%context.editor.name"
+            description="%context.editor.description" parentId="org.eclipse.ui.textEditorScope"/>
+   </extension>
+
    <extension point="org.eclipse.ui.bindings">
-      <key commandId="de.kiliantaubmann.bella.ui.complete" sequence="M1+M3+SPACE"
-            contextId="org.eclipse.ui.textEditorScope" schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"/>
+      <!-- Ctrl+Alt+Space is taken by the Claude desktop app's quick entry on Windows. -->
+      <key commandId="de.kiliantaubmann.bella.ui.complete" sequence="M1+ARROW_UP"
+            contextId="de.kiliantaubmann.bella.editorScope" schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"/>
+      <!-- macOS: Ctrl+Up is Mission Control and Cmd+Up jumps to the top; use Cmd+Option+Enter. -->
+      <key sequence="M1+ARROW_UP" platform="cocoa"
+            contextId="de.kiliantaubmann.bella.editorScope" schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"/>
+      <key commandId="de.kiliantaubmann.bella.ui.complete" sequence="M1+M3+ENTER" platform="cocoa"
+            contextId="de.kiliantaubmann.bella.editorScope" schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"/>
       <key commandId="de.kiliantaubmann.bella.ui.openChat" sequence="M1+M3+B"
             contextId="org.eclipse.ui.contexts.window" schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"/>
    </extension>

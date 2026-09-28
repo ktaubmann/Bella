@@ -7,32 +7,52 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.core.commands.Command;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.jface.bindings.Binding;
+import org.eclipse.jface.bindings.keys.KeySequence;
+import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.preference.PreferencePage;
 import org.eclipse.jface.text.IDocument;
+import org.eclipse.swt.SWT;
+import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Combo;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Event;
+import org.eclipse.swt.widgets.Group;
+import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.commands.ICommandService;
+import org.eclipse.ui.contexts.IContextService;
 import org.eclipse.ui.ide.IDE;
+import org.eclipse.ui.keys.IBindingService;
 import org.eclipse.ui.texteditor.ITextEditor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import com.google.gson.JsonObject;
 
+import de.kiliantaubmann.bella.core.agent.ChatSession;
+import de.kiliantaubmann.bella.core.agent.Conversation;
+import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
+import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
+import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
+import de.kiliantaubmann.bella.ui.Shortcuts;
 import de.kiliantaubmann.bella.ui.editor.CodeActions;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.editor.OpenEditorRouter;
@@ -155,6 +175,107 @@ class WorkbenchSmokeTest {
 		other.addProperty("name", "ZCL_OTHER");
 		other.addProperty("source", "x");
 		assertTrue(new OpenEditorRouter().intercept(write, other).isEmpty(), "closed objects are not intercepted");
+	}
+
+	private static <T extends Control> List<T> find(Composite root, Class<T> type) {
+		List<T> out = new ArrayList<>();
+		for (Control c : root.getChildren()) {
+			if (type.isInstance(c)) {
+				out.add(type.cast(c));
+			}
+			if (c instanceof Composite comp) {
+				out.addAll(find(comp, type));
+			}
+		}
+		return out;
+	}
+
+	@Test
+	void providerDropdownOffersTheSubscriptionWithCompletionHint() {
+		IPreferenceStore prefs = BellaPlugin.getDefault().prefs();
+		prefs.setValue(Prefs.UI_LANGUAGE, "en");
+		Shell shell = new Shell(Display.getCurrent());
+		try {
+			BellaPreferencePage page = new BellaPreferencePage();
+			page.init(PlatformUI.getWorkbench());
+			page.createControl(shell);
+			Composite root = (Composite) page.getControl();
+			Combo provider = find(root, Combo.class).stream()
+					.filter(c -> List.of(c.getItems()).contains(Messages.get("prefs.provider.claudeCode"))).findFirst()
+					.orElseThrow();
+			assertEquals(List.of(Messages.get("prefs.provider.anthropic"), Messages.get("prefs.provider.claudeCode"),
+					Messages.get("prefs.provider.openai")), List.of(provider.getItems()));
+			Group subscription = find(root, Group.class).stream()
+					.filter(g -> g.getText().equals(Messages.get("prefs.cc"))).findFirst().orElseThrow();
+			Group apiKey = find(root, Group.class).stream()
+					.filter(g -> g.getText().equals(Messages.get("prefs.claude"))).findFirst().orElseThrow();
+			Button auto = find(root, Button.class).stream()
+					.filter(b -> b.getText().equals(Messages.get("prefs.autoCompletion"))).findFirst().orElseThrow();
+
+			provider.select(1);
+			provider.notifyListeners(SWT.Selection, new Event());
+			assertTrue(subscription.getVisible());
+			assertFalse(apiKey.getVisible());
+			assertFalse(auto.getEnabled(), "automatic suggestions are off with the subscription");
+			String shortcut = Shortcuts.completion();
+			List<String> hints = find(root, Label.class).stream().map(Label::getText)
+					.filter(t -> t.contains("2–5")).toList();
+			assertEquals(2, hints.size(), "hint under the dropdown and in the editor group");
+			assertTrue(hints.get(0).contains(shortcut), hints.get(0));
+
+			provider.select(0);
+			provider.notifyListeners(SWT.Selection, new Event());
+			assertFalse(subscription.getVisible());
+			assertTrue(apiKey.getVisible());
+			assertTrue(auto.getEnabled());
+			assertTrue(find(root, Label.class).stream().map(Label::getText)
+					.anyMatch(t -> t.contains(shortcut) && t.contains("Tab")));
+		} finally {
+			shell.dispose();
+			prefs.setValue(Prefs.UI_LANGUAGE, "");
+		}
+	}
+
+	@Test
+	void newConversationFollowsTheProvider() {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		IPreferenceStore prefs = plugin.prefs();
+		try {
+			prefs.setValue(Prefs.PROVIDER, ClaudeCodeProvider.ID);
+			prefs.setValue(Prefs.AUTO_COMPLETION, true);
+			try (Conversation c = plugin.newConversation((tool, input) -> false, null)) {
+				assertTrue(c instanceof ClaudeCodeSession);
+			}
+			assertTrue(plugin.provider() instanceof ClaudeCodeProvider);
+			assertEquals("opus", plugin.chatModel());
+			assertEquals("haiku", plugin.completionModel());
+			assertFalse(plugin.autoCompletion());
+
+			prefs.setValue(Prefs.PROVIDER, AnthropicProvider.ID);
+			try (Conversation c = plugin.newConversation((tool, input) -> false, null)) {
+				assertTrue(c instanceof ChatSession);
+			}
+			assertTrue(plugin.autoCompletion());
+		} finally {
+			prefs.setToDefault(Prefs.PROVIDER);
+			prefs.setToDefault(Prefs.AUTO_COMPLETION);
+		}
+	}
+
+	@Test
+	void completionShortcutWinsInTextEditors() throws Exception {
+		openDemoEditor();
+		pump();
+		IContextService contexts = PlatformUI.getWorkbench().getService(IContextService.class);
+		assertTrue(contexts.getActiveContextIds().contains(Shortcuts.EDITOR_CONTEXT),
+				contexts.getActiveContextIds().toString());
+		IBindingService bindings = PlatformUI.getWorkbench().getService(IBindingService.class);
+		Binding match = bindings.getPerfectMatch(KeySequence.getInstance(Shortcuts.defaultCompletion()));
+		assertNotNull(match, "no conflict with Scroll Line Up");
+		assertEquals(Shortcuts.COMPLETE_COMMAND, match.getParameterizedCommand().getId());
+		assertFalse(Shortcuts.completion().isBlank());
+		assertFalse(bindings.isPerfectMatch(KeySequence.getInstance("M1+M3+SPACE")),
+				"Ctrl+Alt+Space is left to the Claude desktop app");
 	}
 
 	@Test

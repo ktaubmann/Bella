@@ -3,7 +3,7 @@ package de.kiliantaubmann.bella.ui.prefs;
 /** Preference keys (instance scope of the UI bundle). */
 public final class Prefs {
 
-	/** {@code anthropic} or {@code openai}. */
+	/** {@code anthropic}, {@code claude-code} or {@code openai}. */
 	public static final String PROVIDER = "provider";
 	public static final String ANTHROPIC_BASE_URL = "anthropic.baseUrl";
 	public static final String CHAT_MODEL = "chat.model";
@@ -12,6 +12,11 @@ public final class Prefs {
 	public static final String EFFORT = "chat.effort";
 	public static final String MAX_TOKENS = "chat.maxTokens";
 	public static final String REFUSAL_FALLBACK = "anthropic.refusalFallback";
+
+	/** Path to the {@code claude} executable, empty for automatic detection. */
+	public static final String CC_EXECUTABLE = "claudeCode.executable";
+	public static final String CC_CHAT_MODEL = "claudeCode.chatModel";
+	public static final String CC_COMPLETION_MODEL = "claudeCode.completionModel";
 
 	public static final String OPENAI_BASE_URL = "openai.baseUrl";
 	public static final String OPENAI_CHAT_MODEL = "openai.chatModel";

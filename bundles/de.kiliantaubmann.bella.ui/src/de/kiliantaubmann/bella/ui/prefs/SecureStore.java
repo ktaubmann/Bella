@@ -11,6 +11,8 @@ public final class SecureStore {
 
 	public static final String ANTHROPIC_KEY = "anthropic.apiKey";
 	public static final String OPENAI_KEY = "openai.apiKey";
+	/** Long-lived subscription token from {@code claude setup-token}. */
+	public static final String CLAUDE_CODE_TOKEN = "claudeCode.oauthToken";
 
 	private static final String NODE = "de.kiliantaubmann.bella";
 

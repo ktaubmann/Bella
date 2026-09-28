@@ -43,7 +43,9 @@ import org.eclipse.ui.texteditor.ITextEditor;
 
 import com.google.gson.JsonObject;
 
-import de.kiliantaubmann.bella.core.agent.ChatSession;
+import de.kiliantaubmann.bella.core.agent.ConversationListener;
+import de.kiliantaubmann.bella.core.agent.Conversation;
+import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.prompt.EditorContext;
@@ -54,6 +56,7 @@ import de.kiliantaubmann.bella.core.util.Json;
 import de.kiliantaubmann.bella.core.util.Markdown;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
+import de.kiliantaubmann.bella.ui.Shortcuts;
 import de.kiliantaubmann.bella.ui.editor.CodeActions;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.editor.EditorTracker;
@@ -70,7 +73,7 @@ public class ChatView extends ViewPart {
 	private Button stop;
 	private Button withContext;
 	private Label status;
-	private ChatSession session;
+	private Conversation session;
 	private volatile CancelToken running;
 	private int nextMessageId = 1;
 	/** "messageId_segment" → code blocks of that text segment. */
@@ -223,13 +226,16 @@ public class ChatView extends ViewPart {
 				"replaceSelection", "replaceMethod", "copy")) {
 			t.put(k, Markdown.escape(Messages.get("chat.js." + k)));
 		}
+		t.put("tip3", Markdown.escape(Messages.fmt("chat.js.tip3", Shortcuts.completion())));
 		return t;
 	}
 
 	private void newSession() {
 		BellaPlugin plugin = BellaPlugin.getDefault();
-		session = new ChatSession(plugin::provider, plugin::chatSettings, plugin.prompts().chatSystem(), plugin.tools(),
-				plugin::policy, this::confirmTool, new OpenEditorRouter());
+		if (session != null) {
+			session.close();
+		}
+		session = plugin.newConversation(this::confirmTool, new OpenEditorRouter());
 	}
 
 	private void newChat() {
@@ -248,7 +254,7 @@ public class ChatView extends ViewPart {
 		String system = EditorBridge.activeTextEditor().isPresent()
 				? Optional.ofNullable(EditorBridge.systemLabel(activeEditor())).orElse("")
 				: "";
-		status.setText(Messages.fmt("chat.status", plugin.chatModel(), system.isEmpty() ? "–" : system));
+		status.setText(Messages.fmt("chat.status", plugin.chatModelLabel(), system.isEmpty() ? "–" : system));
 		status.getParent().layout();
 	}
 
@@ -318,6 +324,10 @@ public class ChatView extends ViewPart {
 		if (running != null) {
 			return;
 		}
+		if (BellaPlugin.getDefault().usesClaudeCode() != (session instanceof ClaudeCodeSession)) {
+			newSession(); // provider switched in the preferences: the old chat cannot continue
+			updateStatus();
+		}
 		int userId = nextMessageId++;
 		int botId = nextMessageId++;
 		js("addUser(" + userId + "," + str(display) + ")");
@@ -329,7 +339,7 @@ public class ChatView extends ViewPart {
 		Job job = Job.create(Messages.get("chat.jobName"), (IProgressMonitor monitor) -> {
 			try {
 				BellaPlugin.getDefault().tools().refresh(err -> renderer.notice("warn", Markdown.escape(err)));
-				session.send(prompt, renderer, cancel);
+				session.ask(prompt, renderer, cancel);
 			} catch (CancelToken.CancelledException e) {
 				renderer.notice("warn", Messages.get("chat.cancelled"));
 			} catch (Exception e) {
@@ -366,6 +376,9 @@ public class ChatView extends ViewPart {
 	@Override
 	public void dispose() {
 		cancel();
+		if (session != null) {
+			session.close();
+		}
 		super.dispose();
 	}
 
@@ -403,7 +416,7 @@ public class ChatView extends ViewPart {
 	// ---- streaming into the browser ----------------------------------------------------------
 
 	/** Turns session callbacks into throttled browser updates. Called on the job thread. */
-	private final class Renderer implements ChatSession.Listener {
+	private final class Renderer implements ConversationListener {
 		private final int id;
 		private int segment;
 		private String kind = "";
@@ -475,8 +488,10 @@ public class ChatView extends ViewPart {
 
 		@Override
 		public void onNotice(String message) {
-			String key = message.startsWith("refusal:") ? "chat.notice.refusal" : "chat.notice." + message;
-			String detail = message.startsWith("refusal:") ? message.substring(8) : "";
+				// "key" or "key:detail", e.g. "refusal:…" or "cc_limit:…"
+			int colon = message.indexOf(':');
+			String key = "chat.notice." + (colon < 0 ? message : message.substring(0, colon));
+			String detail = colon < 0 ? "" : message.substring(colon + 1);
 			notice("warn", Markdown.escape(Messages.fmt(key, detail)));
 		}
 

@@ -7,11 +7,14 @@ import java.util.Map;
 
 import org.eclipse.jface.layout.GridDataFactory;
 import org.eclipse.jface.layout.GridLayoutFactory;
+import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.preference.IPreferenceStore;
+import org.eclipse.jface.resource.JFaceResources;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Spinner;
@@ -51,6 +54,49 @@ final class Form {
 		Text t = new Text(parent, SWT.BORDER);
 		t.setToolTipText(tooltip);
 		GridDataFactory.fillDefaults().grab(true, false).hint(260, SWT.DEFAULT).applyTo(t);
+		bindText(t, key);
+		return t;
+	}
+
+	/** Text field for a file path with a "Browse…" button. */
+	Text file(Composite parent, String label, String key, String tooltip, String browse) {
+		label(parent, label);
+		Composite row = new Composite(parent, SWT.NONE);
+		GridLayoutFactory.fillDefaults().numColumns(2).applyTo(row);
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(row);
+		Text t = new Text(row, SWT.BORDER);
+		t.setToolTipText(tooltip);
+		GridDataFactory.fillDefaults().grab(true, false).hint(220, SWT.DEFAULT).applyTo(t);
+		Button b = new Button(row, SWT.PUSH);
+		b.setText(browse);
+		b.addListener(SWT.Selection, e -> {
+			FileDialog d = new FileDialog(parent.getShell(), SWT.OPEN);
+			if (!t.getText().isBlank()) {
+				d.setFileName(t.getText().trim());
+			}
+			String f = d.open();
+			if (f != null) {
+				t.setText(f);
+			}
+		});
+		bindText(t, key);
+		return t;
+	}
+
+	/** Info icon with a wrapping text over both columns; the text is set by the caller. */
+	static Label hint(Composite parent) {
+		Composite row = new Composite(parent, SWT.NONE);
+		GridLayoutFactory.fillDefaults().numColumns(2).applyTo(row);
+		GridDataFactory.fillDefaults().span(2, 1).grab(true, false).applyTo(row);
+		Label icon = new Label(row, SWT.NONE);
+		icon.setImage(JFaceResources.getImage(Dialog.DLG_IMG_MESSAGE_INFO));
+		GridDataFactory.fillDefaults().align(SWT.BEGINNING, SWT.BEGINNING).applyTo(icon);
+		Label text = new Label(row, SWT.WRAP);
+		GridDataFactory.fillDefaults().grab(true, false).hint(380, SWT.DEFAULT).applyTo(text);
+		return text;
+	}
+
+	private void bindText(Text t, String key) {
 		bindings.add(new Binding() {
 			@Override
 			public void load(boolean d) {
@@ -62,7 +108,6 @@ final class Form {
 				store.setValue(key, t.getText().trim());
 			}
 		});
-		return t;
 	}
 
 	/** Password field kept in secure storage instead of the preference store. */

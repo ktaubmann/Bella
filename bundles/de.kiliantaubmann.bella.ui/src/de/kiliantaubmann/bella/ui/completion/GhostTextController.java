@@ -286,7 +286,7 @@ public final class GhostTextController implements PaintListener, VerifyKeyListen
 			return;
 		}
 		dismiss();
-		if (!BellaPlugin.getDefault().prefs().getBoolean(Prefs.AUTO_COMPLETION) || event.getText() == null
+		if (!BellaPlugin.getDefault().autoCompletion() || event.getText() == null
 				|| event.getText().isEmpty() || event.getText().contains("\n")) {
 			return;
 		}

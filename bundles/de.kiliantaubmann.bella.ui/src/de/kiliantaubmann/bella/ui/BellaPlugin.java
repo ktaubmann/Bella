@@ -20,6 +20,11 @@ import org.osgi.util.tracker.ServiceTracker;
 import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
+import de.kiliantaubmann.bella.core.agent.Conversation;
+import de.kiliantaubmann.bella.core.claudecode.ClaudeCli;
+import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
+import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
+import de.kiliantaubmann.bella.core.claudecode.ProcessLauncher;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.llm.LlmProvider;
 import de.kiliantaubmann.bella.core.llm.OpenAiCompatibleProvider;
@@ -28,8 +33,10 @@ import de.kiliantaubmann.bella.core.mcp.McpToolProvider;
 import de.kiliantaubmann.bella.core.mcp.StdioTransport;
 import de.kiliantaubmann.bella.core.mcp.StreamableHttpTransport;
 import de.kiliantaubmann.bella.core.prompt.AbapPrompts;
+import de.kiliantaubmann.bella.core.tools.ToolExecutor;
 import de.kiliantaubmann.bella.core.tools.ToolPolicy;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
+import de.kiliantaubmann.bella.core.tools.WriteGuard;
 import de.kiliantaubmann.bella.core.util.HttpTransport;
 import de.kiliantaubmann.bella.ui.prefs.McpServerConfig;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
@@ -39,7 +46,7 @@ import de.kiliantaubmann.bella.ui.prefs.SecureStore;
 public class BellaPlugin extends AbstractUIPlugin {
 
 	public static final String ID = "de.kiliantaubmann.bella.ui";
-	public static final String VERSION = "0.1.0";
+	public static final String VERSION = "0.2.0";
 
 	private static BellaPlugin plugin;
 
@@ -126,12 +133,26 @@ public class BellaPlugin extends AbstractUIPlugin {
 		return getPreferenceStore();
 	}
 
+	/** {@code anthropic}, {@code claude-code} or {@code openai}. */
+	public String providerId() {
+		String id = prefs().getString(Prefs.PROVIDER);
+		return ClaudeCodeProvider.ID.equals(id) || OpenAiCompatibleProvider.ID.equals(id) ? id : AnthropicProvider.ID;
+	}
+
+	/** Claude through the developer's subscription (Claude Code CLI) instead of an API key. */
+	public boolean usesClaudeCode() {
+		return ClaudeCodeProvider.ID.equals(providerId());
+	}
+
 	public boolean usesAnthropic() {
-		return !OpenAiCompatibleProvider.ID.equals(prefs().getString(Prefs.PROVIDER));
+		return AnthropicProvider.ID.equals(providerId());
 	}
 
 	public LlmProvider provider() {
 		IPreferenceStore s = prefs();
+		if (usesClaudeCode()) {
+			return new ClaudeCodeProvider(claudeCli());
+		}
 		if (usesAnthropic()) {
 			return new AnthropicProvider(() -> SecureStore.get(SecureStore.ANTHROPIC_KEY),
 					s.getString(Prefs.ANTHROPIC_BASE_URL), s.getBoolean(Prefs.REFUSAL_FALLBACK), http);
@@ -140,13 +161,53 @@ public class BellaPlugin extends AbstractUIPlugin {
 				s.getString(Prefs.OPENAI_BASE_URL), http);
 	}
 
+	/** The Claude Code CLI as configured; {@code executable} and {@code token} override the stored values. */
+	public ClaudeCli claudeCli(String executable, String token) {
+		java.nio.file.Path workDir = getStateLocation().append("claude-code").toPath();
+		return new ClaudeCli(new ClaudeCli.Config(executable, token), ProcessLauncher.SYSTEM, workDir);
+	}
+
+	public ClaudeCli claudeCli() {
+		return claudeCli(prefs().getString(Prefs.CC_EXECUTABLE), SecureStore.get(SecureStore.CLAUDE_CODE_TOKEN));
+	}
+
+	/**
+	 * A new chat for the configured provider. With the subscription the CLI
+	 * runs the tool loop and calls Bella's tools through a private MCP server;
+	 * confirmation and the open-editor router apply either way.
+	 */
+	public Conversation newConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard) {
+		if (usesClaudeCode()) {
+			return new ClaudeCodeSession(claudeCli(), this::chatSettings, prompts().chatSystem(),
+					new ToolExecutor(tools(), this::policy, confirmer, writeGuard), VERSION);
+		}
+		return new ChatSession(this::provider, this::chatSettings, prompts().chatSystem(), tools(), this::policy,
+				confirmer::confirm, writeGuard);
+	}
+
 	public String chatModel() {
-		return prefs().getString(usesAnthropic() ? Prefs.CHAT_MODEL : Prefs.OPENAI_CHAT_MODEL).trim();
+		String key = usesClaudeCode() ? Prefs.CC_CHAT_MODEL : usesAnthropic() ? Prefs.CHAT_MODEL : Prefs.OPENAI_CHAT_MODEL;
+		return prefs().getString(key).trim();
+	}
+
+	/** Model for the status line, e.g. "opus (subscription)". */
+	public String chatModelLabel() {
+		return usesClaudeCode() ? Messages.fmt("chat.status.subscription", chatModel()) : chatModel();
 	}
 
 	public String completionModel() {
-		String m = prefs().getString(usesAnthropic() ? Prefs.COMPLETION_MODEL : Prefs.OPENAI_COMPLETION_MODEL).trim();
+		String key = usesClaudeCode() ? Prefs.CC_COMPLETION_MODEL
+				: usesAnthropic() ? Prefs.COMPLETION_MODEL : Prefs.OPENAI_COMPLETION_MODEL;
+		String m = prefs().getString(key).trim();
 		return m.isEmpty() ? chatModel() : m;
+	}
+
+	/**
+	 * Suggestions while typing. Off with the subscription: every suggestion
+	 * starts the CLI, which takes seconds; the shortcut still works.
+	 */
+	public boolean autoCompletion() {
+		return prefs().getBoolean(Prefs.AUTO_COMPLETION) && !usesClaudeCode();
 	}
 
 	public ChatSession.Settings chatSettings() {
