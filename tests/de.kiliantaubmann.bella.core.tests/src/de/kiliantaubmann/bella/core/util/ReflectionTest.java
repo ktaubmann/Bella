@@ -117,4 +117,41 @@ class ReflectionTest {
 				.orElseThrow().invoke(r);
 		assertEquals("put:0", result);
 	}
+
+	/** The overloads of ADT 3.60's IRestResource (all with trailing query parameters). */
+	interface Adt360Resource {
+		<T> T get(Monitor m, Class<T> type, Param... p);
+
+		<T> T get(Monitor m, Headers h, Class<T> type, Param... p);
+
+		<T> T post(Monitor m, Class<T> type, Object body, Param... p);
+
+		<T> T post(Monitor m, Headers h, Class<T> type, Object body, Param... p);
+
+		<T> T post(Monitor m, Class<T> type, Param... p);
+
+		<T> T post(Monitor m, Headers h, Class<T> type, Param... p);
+
+		<T> T put(Monitor m, Class<T> type, Object body, Param... p);
+
+		<T> T put(Monitor m, Headers h, Class<T> type, Object body, Param... p);
+	}
+
+	@Test
+	void adt360OverloadsKeepHeadersAndBody() {
+		for (String name : List.of("post", "put")) {
+			Reflection.Call c = Reflection.bestMatch(Adt360Resource.class, name, monitor, headers, Response.class, body)
+					.orElseThrow();
+			assertEquals(5, c.method().getParameterCount(), name);
+			assertSame(headers, c.args()[1], name);
+			assertSame(body, c.args()[3], name);
+			assertArrayEquals(new Param[0], (Param[]) c.args()[4], name);
+		}
+		// no body (e.g. LOCK): headers are kept, the body stays null
+		Reflection.Call lock = Reflection.bestMatch(Adt360Resource.class, "post", monitor, headers, Response.class, null)
+				.orElseThrow();
+		assertSame(headers, lock.args()[1]);
+		assertEquals(Response.class, lock.args()[2]);
+		assertTrue(lock.args().length == 4 || lock.args()[3] == null);
+	}
 }
