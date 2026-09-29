@@ -18,13 +18,13 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 | | Feature | Where |
 |---|---|---|
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/explain.png"> | **What happens here?** Explains the selection or, without a selection, the method at the cursor | Right-click in the editor → Bella |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/generate.png"> | **Generate code here…** Writes code at the cursor position | Right-click → Bella |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/generate.png"> | **Generate code here…** Writes code at the cursor position, using the real definitions of the tables, classes and function modules involved | Right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/rewrite.png"> | **Rework selection…** Fix errors, modern syntax, ABAP Cloud, performance, comments | Right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/method.png"> | **Implement method** Writes the body of the METHOD/FORM/FUNCTION at the cursor | Right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **AI completion** as grey ghost text; Tab accepts, Esc dismisses | `Ctrl+↑` (macOS: `Cmd+Option+Enter`), or automatically while typing (not with the Claude subscription or GitHub Copilot) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Suggest refactoring / unit test** | Right-click → Bella (chat) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** with editor context, streaming and tool calls; insert code blocks, replace the selection or take them over as a method body | `Ctrl+Alt+B`, pink B in the toolbar, menu *Bella* |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, write, create, activate | automatically in the chat |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read (also DDIC tables, structures, data elements, domains, table types, function modules, message classes), context of used objects, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, style check, write, create, activate | automatically in the chat |
 
 <p align="center"><img src="docs/screenshots/context-menu.png" width="560" alt="Right-click in the ABAP editor: submenu Bella with its actions"></p>
 
@@ -36,6 +36,18 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 <td width="50%"><img src="docs/screenshots/explain-findings.png" alt="Bella explains a report and lists side effects and suspicious points"><br><sub><b>What happens here?</b> The explanation also lists side effects and suspicious points, here a missing authority check.</sub></td>
 </tr>
 </table>
+
+### How Bella gets SAP context
+
+A model that does not know your system guesses field names and signatures. Bella therefore reads them from the system through your ADT logon:
+
+- **Editor actions** (*Generate code here…*, *Rework selection…*, *Implement method*) first collect the objects the code and your instruction mention: tables in `SELECT`, types after `TYPE`, classes before `=>` or after `NEW`, function modules in `CALL FUNCTION`, and names such as `MARA` in "select mara and show". Bella loads their definitions (at most 12 objects, 8 seconds), adds them to the request and lists them in the diff preview under *SAP definitions used*. You can switch this off under *Preferences → Bella → Editor*. It needs ADT and an ABAP editor of a logged-on system; the completion (`Ctrl+↑`) stays without it so that it stays fast.
+- **In the chat** the model calls `adt_context` or `adt_read_source` itself. `adt_context` takes an object name, a piece of code or a list of names and returns in one call: the public section of classes, interfaces, table and structure fields, CDS views, function module signatures, data elements and table types.
+- **Style check**: `abap_lint` checks code without SAP access for obsolete statements (`MOVE`, `CALL METHOD`, `CREATE OBJECT`, header lines, `FORM` …), `SELECT *`, `SELECT` in loops, `SELECT … ENDSELECT`, unchecked `SELECT SINGLE`, `CATCH cx_root`, empty `CATCH` blocks, break-points and aborting messages. The diff preview shows its findings for generated code. It is a small rule set of Bella's own, not abaplint and no replacement for ATC.
+
+Tables and structures are read as source on newer ABAP releases (7.52 and later). On older releases, and for data elements, domains, table types and message classes, Bella summarizes the object's ADT description.
+
+**Compared with ARC-1:** with Bella's tools the model now gets the same kind of system knowledge ARC-1's `SAPRead` and `SAPContext` provide. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log, rate limits and a package allowlist, or when the tools should run on a server instead of in Eclipse.
 
 ### Ground rule: open objects are only changed in the editor
 
@@ -66,7 +78,7 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 
 | Tool | Default |
 |---|---|
-| Read (`adt_search_objects`, `adt_read_source`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
+| Read and check (`adt_search_objects`, `adt_read_source`, `adt_context`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, `abap_lint`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
 | Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
 | Release transports | always refused |
 
@@ -201,11 +213,11 @@ python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 
 | Module | Contents |
 |---|---|
-| `bundles/de.kiliantaubmann.bella.core` | no UI and no ADT: Anthropic and OpenAI-compatible providers (streaming, tool use, prompt caching), Claude Code integration (CLI, `stream-json`, local MCP server), GitHub Copilot integration (Copilot CLI, Agent Client Protocol), tool registry and policy, MCP client (HTTP and stdio), chat tool loop, ABAP scanner, prompts, ADT REST client and `adt_*` tools |
+| `bundles/de.kiliantaubmann.bella.core` | no UI and no ADT: Anthropic and OpenAI-compatible providers (streaming, tool use, prompt caching), Claude Code integration (CLI, `stream-json`, local MCP server), GitHub Copilot integration (Copilot CLI, Agent Client Protocol), tool registry and policy, MCP client (HTTP and stdio), chat tool loop, ABAP scanner, reference finder and style check, prompts, ADT REST client, `adt_*` tools and the context builder |
 | `bundles/de.kiliantaubmann.bella.ui` | chat view, context menu, diff preview, router, ghost text, preferences, icons, translations |
 | `bundles/de.kiliantaubmann.bella.adt` | the only dependency on the ADT SDK: projects, logon and REST transport as an OSGi service |
-| `tests/…core.tests` | unit tests for providers, MCP client and server, Claude Code and Copilot sessions (with simulated CLIs), tool loop, ABAP scanner, ADT client, translations |
-| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription and Copilot hints), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, router, language switch |
+| `tests/…core.tests` | unit tests for providers, MCP client and server, Claude Code and Copilot sessions (with simulated CLIs), tool loop, ABAP scanner, reference finder, style check, ADT client and context (with a simulated ADT backend), translations |
+| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription and Copilot hints), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, style check in the diff preview, router, language switch |
 
 The Claude integration deliberately uses `java.net.http` instead of the Anthropic Java SDK. This keeps the OSGi bundle free of OkHttp, Kotlin and Jackson.
 
@@ -216,6 +228,7 @@ The Claude integration deliberately uses `java.net.http` instead of the Anthropi
 - The **ADT bundle** compiles in CI (`-Padt`) against the current ADT SDK from SAP's p2 site. Generating, explaining and writing into the editor have been used with a real ABAP system; the SAP tools in the chat (search, where-used, ATC, activation …) still need broader testing.
   - Stateful sessions (for locks) and the object reference of an editor are read via reflection.
   - If an API is missing in your ADT version, Bella reports it in the chat. ARC-1 remains available as a route for the SAP tools.
+  - Reading DDIC objects and loading definitions for editor actions was tested against a simulated ADT backend. The ADT endpoints for tables, structures and data elements differ between releases, so please report objects Bella cannot read.
 - If ADT itself uses `Ctrl+↑` in the ABAP editor, *Preferences → General → Keys* shows a conflict. Change the shortcut there.
 - Command names in *Keys* and *Quick Access* still follow the operating system language; Eclipse resolves them before Bella starts.
 - All translations except German and English were machine-generated. Corrections are welcome.
