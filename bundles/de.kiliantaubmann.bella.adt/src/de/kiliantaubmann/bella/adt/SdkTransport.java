@@ -149,7 +149,7 @@ final class SdkTransport implements AdtTransport.Session {
 				throw re;
 			}
 			throw new IOException(String.valueOf(e.getCause()), e.getCause());
-		} catch (IllegalAccessException | IllegalArgumentException e) {
+		} catch (ReflectiveOperationException | IllegalArgumentException e) {
 			throw new IOException(e);
 		}
 	}

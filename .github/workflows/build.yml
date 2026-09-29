@@ -35,6 +35,7 @@ jobs:
       - name: Build with ADT (SAP tools p2 repository)
         run: mvn -B -ntp -Padt verify -DskipTests
       - name: Show ADT REST resource overloads (diagnostics)
+        if: always()
         run: |
           for jar in $(find ~/.m2/repository -name 'com.sap.adt.communication*.jar'); do
             if unzip -l "$jar" | grep -q 'com/sap/adt/communication/resources/IRestResource.class'; then
