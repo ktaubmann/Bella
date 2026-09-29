@@ -1,7 +1,10 @@
 package de.kiliantaubmann.bella.core.mcp;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
+import java.net.UnknownHostException;
+import java.net.http.HttpConnectTimeoutException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -58,11 +61,11 @@ public final class StreamableHttpTransport implements McpTransport {
 	@Override
 	public JsonObject request(JsonObject request, CancelToken cancel) throws IOException {
 		JsonElement id = request.get("id");
-		try (HttpTransport.Response response = http.post(endpoint, headers(), Json.GSON.toJson(request), cancel)) {
+		try (HttpTransport.Response response = post(Json.GSON.toJson(request), cancel)) {
 			response.header("mcp-session-id").ifPresent(s -> sessionId = s);
 			if (response.status() == 404 && sessionId != null) {
 				sessionId = null;
-				throw new IOException("MCP session expired, please retry");
+				throw new McpSessionExpiredException("MCP session expired (server restarted?)");
 			}
 			if (response.status() / 100 != 2) {
 				String body = new String(response.body().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
@@ -104,10 +107,27 @@ public final class StreamableHttpTransport implements McpTransport {
 
 	@Override
 	public void notify(JsonObject notification) throws IOException {
-		try (HttpTransport.Response response = http.post(endpoint, headers(), Json.GSON.toJson(notification),
-				CancelToken.NONE)) {
+		try (HttpTransport.Response response = post(Json.GSON.toJson(notification), CancelToken.NONE)) {
 			response.body().readAllBytes();
 		}
+	}
+
+	/** Posts to the endpoint; an unreachable server becomes a message the developer can act on. */
+	private HttpTransport.Response post(String body, CancelToken cancel) throws IOException {
+		try {
+			return http.post(endpoint, headers(), body, cancel);
+		} catch (ConnectException e) {
+			throw unreachable("connection refused", e);
+		} catch (HttpConnectTimeoutException e) {
+			throw unreachable("connect timed out", e);
+		} catch (UnknownHostException e) {
+			throw unreachable("unknown host", e);
+		}
+	}
+
+	private IOException unreachable(String reason, IOException cause) {
+		return new IOException("MCP server not reachable at " + HttpTransport.display(endpoint) + " (" + reason
+				+ "). Is the server running? Check the URL under Preferences > Bella > SAP-Tools & ARC-1.", cause);
 	}
 
 	@Override

@@ -141,7 +141,13 @@ public final class McpClient implements AutoCloseable {
 		req.addProperty("id", ids.incrementAndGet());
 		req.addProperty("method", method);
 		req.add("params", params);
-		JsonObject response = transport.request(req, cancel);
+		JsonObject response;
+		try {
+			response = transport.request(req, cancel);
+		} catch (McpSessionExpiredException e) {
+			initialized = false; // the next initialize() starts a new session
+			throw e;
+		}
 		JsonObject error = Json.obj(response, "error");
 		if (error != null) {
 			Log.warn("mcp", method + " failed: " + Json.integer(error, "code", -1) + " " + Json.str(error, "message"));

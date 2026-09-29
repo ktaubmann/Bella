@@ -39,8 +39,10 @@ public final class AdtContext {
 	 * @param used     names of the objects in {@code text}
 	 * @param notFound candidates that do not exist in the system (or could not be read)
 	 * @param skipped  candidates left out because a limit was reached
+	 * @param error    why loading stopped early (connection lost), otherwise {@code null}
 	 */
-	public record Result(String text, List<String> used, List<String> notFound, List<String> skipped) {
+	public record Result(String text, List<String> used, List<String> notFound, List<String> skipped,
+			String error) {
 
 		public boolean isEmpty() {
 			return used.isEmpty();
@@ -71,6 +73,7 @@ public final class AdtContext {
 		List<String> used = new ArrayList<>();
 		List<String> notFound = new ArrayList<>();
 		List<String> skipped = new ArrayList<>();
+		String error = null;
 		for (Reference ref : candidates) {
 			cancel.throwIfCancelled();
 			if (used.size() >= limits.maxObjects() || text.length() >= limits.maxChars()
@@ -96,6 +99,10 @@ public final class AdtContext {
 				}
 				text.append(block);
 				used.add(obj.name());
+			} catch (AdtConnectionException e) {
+				// every further request would fail the same way
+				error = e.getMessage();
+				break;
 			} catch (IOException | RuntimeException e) {
 				cancel.throwIfCancelled();
 				Log.info("adt", "context: " + ref.name() + " not readable: " + e.getMessage());
@@ -106,9 +113,9 @@ public final class AdtContext {
 			text.append("Not found: ").append(String.join(", ", notFound)).append('\n');
 		}
 		Log.info("adt", "context: " + candidates.size() + " candidates, used " + used + ", not found " + notFound
-				+ (skipped.isEmpty() ? "" : ", skipped " + skipped) + ", " + text.length() + " chars ("
-				+ Log.millisSince(start) + " ms)");
-		return new Result(text.toString(), List.copyOf(used), List.copyOf(notFound), List.copyOf(skipped));
+				+ (skipped.isEmpty() ? "" : ", skipped " + skipped) + (error == null ? "" : ", stopped: " + error)
+				+ ", " + text.length() + " chars (" + Log.millisSince(start) + " ms)");
+		return new Result(text.toString(), List.copyOf(used), List.copyOf(notFound), List.copyOf(skipped), error);
 	}
 
 	/** Exact-name search; among several hits the object type the code position suggests wins. */

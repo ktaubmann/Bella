@@ -16,6 +16,8 @@ final class FakeAdt implements AdtBackend {
 	final Map<String, Function<AdtRequest, AdtResponse>> routes = new LinkedHashMap<>();
 	final List<AdtSystem> systems = new ArrayList<>();
 	int openSessions;
+	/** When set, stateless requests fail with it, e.g. a lost connection. */
+	java.io.IOException down;
 
 	FakeAdt route(String pathPrefix, Function<AdtRequest, AdtResponse> handler) {
 		routes.put(pathPrefix, handler);
@@ -39,7 +41,13 @@ final class FakeAdt implements AdtBackend {
 
 	@Override
 	public AdtTransport stateless(String destinationId) {
-		return (r, c) -> handle(r, false);
+		return (r, c) -> {
+			if (down != null) {
+				log.add(r.method() + " " + r.path());
+				throw down;
+			}
+			return handle(r, false);
+		};
 	}
 
 	@Override

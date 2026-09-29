@@ -190,6 +190,8 @@ Under *Preferences → Bella → SAP-Tools & ARC-1 → Add…*:
 - **HTTP**: URL of the ARC-1 server, e.g. locally `http://localhost:3000/mcp` or a BTP instance, optionally with a bearer token.
 - **stdio**: Bella starts ARC-1 itself, e.g. with `npx -y arc-1@latest`. Configure the SAP connection as described in the [ARC-1 documentation](https://github.com/arc-mcp/arc-1).
 
+Bella does not start an HTTP server itself. If the server is not reachable, the chat shows this once with the URL, and **Test** shows the same message. When the server comes back, or after it was restarted, Bella reconnects on the next question.
+
 **Test** lists the tools a server offers. When two tools offer the same capability (e.g. reading source code), Bella's ADT tools win by default. You can prefer ARC-1 instead, e.g. when governance should run centrally through ARC-1.
 
 ## Troubleshooting: log file
@@ -244,6 +246,7 @@ The Claude integration deliberately uses `java.net.http` instead of the Anthropi
 - The **ADT bundle** compiles in CI (`-Padt`) against the current ADT SDK from SAP's p2 site. Generating, explaining and writing into the editor have been used with a real ABAP system; the SAP tools in the chat (search, where-used, ATC, activation …) still need broader testing.
   - Stateful sessions (for locks) and the object reference of an editor are read via reflection.
   - If an API is missing in your ADT version, Bella reports it in the chat. ARC-1 remains available as a route for the SAP tools.
+  - If the connection to the SAP system breaks (network, VPN), ADT may still show the project as logged on. Bella tries a read once more; after that, the tools report the lost connection instead of claiming objects do not exist. Writes are never repeated.
   - Reading DDIC objects and loading definitions for editor actions was tested against a simulated ADT backend. The ADT endpoints for tables, structures and data elements differ between releases, so please report objects Bella cannot read.
 - If ADT itself uses `Ctrl+↑` in the ABAP editor, *Preferences → General → Keys* shows a conflict. Change the shortcut there.
 - Command names in *Keys* and *Quick Access* still follow the operating system language; Eclipse resolves them before Bella starts.

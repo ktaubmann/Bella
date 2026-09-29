@@ -82,7 +82,7 @@ public final class AdtToolProvider implements ToolProvider {
 	@Override
 	public List<ToolSpec> listTools() {
 		List<ToolSpec> t = new ArrayList<>();
-		t.add(ToolSpec.of("adt_list_systems", "List the ABAP projects (SAP systems) in the workspace and whether they are logged on.",
+		t.add(ToolSpec.of("adt_list_systems", "List the ABAP projects (SAP systems) in the workspace and whether they are logged on. The logon state does not test the network connection.",
 				schema(new String[0]), null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_search_objects",
 				"Search repository objects by name pattern (wildcard *), e.g. ZCL_SALES*. Returns name, type, package and description.",
@@ -179,7 +179,7 @@ public final class AdtToolProvider implements ToolProvider {
 		StringBuilder sb = new StringBuilder();
 		for (AdtSystem s : backend.systems()) {
 			sb.append("- ").append(s.label()).append(" [destination ").append(s.destinationId()).append("]")
-					.append(s.loggedOn() ? " logged on" : " NOT logged on").append('\n');
+					.append(s.loggedOn() ? " logged on (connection not tested)" : " NOT logged on").append('\n');
 		}
 		return ToolResult.ok(sb.isEmpty() ? "No ABAP projects in the workspace." : sb.toString());
 	}
@@ -294,6 +294,9 @@ public final class AdtToolProvider implements ToolProvider {
 		} catch (CancelToken.CancelledException e) {
 			return ToolResult.error("Cancelled.");
 		}
+		if (r.error() != null && r.isEmpty()) {
+			return ToolResult.error(r.error());
+		}
 		if (r.isEmpty()) {
 			return ToolResult.ok("None of these objects exist in the system: "
 					+ String.join(", ", candidates.stream().map(AbapReferences.Reference::name).toList()));
@@ -301,6 +304,9 @@ public final class AdtToolProvider implements ToolProvider {
 		String text = r.text();
 		if (!r.skipped().isEmpty()) {
 			text += "Not loaded (limit reached, use adt_read_source): " + String.join(", ", r.skipped()) + "\n";
+		}
+		if (r.error() != null) {
+			text += "Loading stopped: " + r.error() + "\n";
 		}
 		return ToolResult.ok(text);
 	}

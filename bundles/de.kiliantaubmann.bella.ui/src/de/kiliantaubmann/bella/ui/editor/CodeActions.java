@@ -115,7 +115,16 @@ public final class CodeActions {
 
 	/** Text for the diff preview: which definitions were used and what the style check found. */
 	public static String previewNotes(List<String> usedDefinitions, List<AbapLint.Finding> findings) {
+		return previewNotes(usedDefinitions, null, findings);
+	}
+
+	/** @param definitionsError why the SAP definitions could not be loaded, or {@code null} */
+	public static String previewNotes(List<String> usedDefinitions, String definitionsError,
+			List<AbapLint.Finding> findings) {
 		StringBuilder sb = new StringBuilder();
+		if (definitionsError != null) {
+			sb.append(Messages.fmt("diff.definitions.failed", definitionsError)).append('\n');
+		}
 		if (!usedDefinitions.isEmpty()) {
 			sb.append(Messages.fmt("diff.definitions", String.join(", ", usedDefinitions))).append('\n');
 		}

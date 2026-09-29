@@ -97,12 +97,16 @@ abstract class EditorHandler extends AbstractHandler {
 				try {
 					Prompt p = prompt;
 					List<String> used = List.of();
+					String definitionsError = null;
 					if (sap != null) {
 						monitor.subTask(Messages.get("generate.loadingDefinitions"));
 						AdtContext.Result defs = sap.load(cancel);
 						if (defs != null && !defs.isEmpty()) {
 							p = AbapPrompts.withDefinitions(p, defs.text());
 							used = defs.used();
+						}
+						if (defs != null && defs.error() != null) {
+							definitionsError = defs.error();
 						}
 						monitor.subTask(Messages.get("generate.jobName"));
 					}
@@ -122,7 +126,7 @@ abstract class EditorHandler extends AbstractHandler {
 					List<AbapLint.Finding> findings = AbapLint.check(code);
 					Log.info("editor", "proposal for " + objectName + ": " + code.length() + " chars, "
 							+ findings.size() + " style findings, definitions " + used);
-					String notes = CodeActions.previewNotes(used, findings);
+					String notes = CodeActions.previewNotes(used, definitionsError, findings);
 					Display.getDefault().asyncExec(() -> CodeActions.apply(part, editor, target, code, notes));
 				} catch (CancelToken.CancelledException e) {
 					return Status.CANCEL_STATUS;
