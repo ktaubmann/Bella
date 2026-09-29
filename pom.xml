@@ -6,7 +6,7 @@
 
   <groupId>de.kiliantaubmann.bella</groupId>
   <artifactId>bella.parent</artifactId>
-  <version>0.4.2-SNAPSHOT</version>
+  <version>0.4.3-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Bella - AI assistant for ABAP in Eclipse ADT</name>
 
