@@ -15,12 +15,27 @@ import java.util.Locale;
  */
 public record AdtObjectRef(String uri, String name, String type, String packageName, String description) {
 
-	/** URI path for an object of a main type ({@code CLAS}, {@code INTF}, {@code PROG}, …), or {@code null}. */
+	/**
+	 * URI path for an object of a main type ({@code CLAS}, {@code INTF},
+	 * {@code PROG}, {@code DTEL}, …) or of {@code TABL/DT} and {@code TABL/DS};
+	 * {@code null} when only a search can tell (bare {@code TABL}, function modules).
+	 */
 	public static String uriFor(String name, String type) {
 		if (type == null) {
 			return null;
 		}
-		String main = type.toUpperCase(Locale.ROOT);
+		String full = type.toUpperCase(Locale.ROOT);
+		switch (full) {
+		case "TABL/DT":
+			return "/sap/bc/adt/ddic/tables/" + encodeName(name);
+		case "TABL/DS":
+			return "/sap/bc/adt/ddic/structures/" + encodeName(name);
+		case "FUGR/FF", "FUNC":
+			return null; // function modules live below their group; found by search
+		default:
+			break;
+		}
+		String main = full;
 		int slash = main.indexOf('/');
 		if (slash > 0) {
 			main = main.substring(0, slash);
@@ -35,6 +50,10 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 		case "DCLS" -> "/sap/bc/adt/acm/dcl/sources/";
 		case "BDEF" -> "/sap/bc/adt/bo/behaviordefinitions/";
 		case "SRVD" -> "/sap/bc/adt/ddic/srvd/sources/";
+		case "DTEL" -> "/sap/bc/adt/ddic/dataelements/";
+		case "DOMA" -> "/sap/bc/adt/ddic/domains/";
+		case "TTYP" -> "/sap/bc/adt/ddic/tabletypes/";
+		case "MSAG" -> "/sap/bc/adt/messageclass/";
 		default -> null;
 		};
 		return base == null ? null : base + encodeName(name);

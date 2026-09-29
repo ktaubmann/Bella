@@ -10,6 +10,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolProvider;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -69,7 +70,7 @@ public final class AdtToolProvider implements ToolProvider {
 
 	private static final String SYSTEM_DESC = "ABAP project / system id to use. Omit to use the system of the active editor.";
 	private static final String NAME_DESC = "Object name, e.g. ZCL_SALES_ORDER.";
-	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR, DDLS, BDEF, SRVD. Omit if unknown.";
+	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD. Omit if unknown.";
 
 	private static String[] objectProps(String... extra) {
 		List<String> p = new ArrayList<>(List.of("name", "string", NAME_DESC, "type", "string", TYPE_DESC, "system",
@@ -90,10 +91,29 @@ public final class AdtToolProvider implements ToolProvider {
 						"string", SYSTEM_DESC),
 				Capability.SEARCH, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_read_source",
-				"Read the saved source code of a repository object. For classes, 'include' selects main (default), definitions, implementations, macros or testclasses.",
+				"Read the saved source or definition of a repository object: classes, interfaces, programs, CDS views, function modules, "
+						+ "DDIC tables and structures (fields and types), data elements, domains (incl. fixed values), table types and message classes. "
+						+ "For classes, 'include' selects main (default), definitions, implementations, macros or testclasses.",
 				schema(new String[] { "name" }, objectProps("include", "string",
 						"Class include: main, definitions, implementations, macros, testclasses.")),
 				Capability.READ_SOURCE, ToolSpec.Kind.READ));
+		JsonObject contextSchema = schema(new String[0], "name", "string",
+				"Object whose used objects should be looked up, e.g. ZCL_SALES_ORDER.", "type", "string", TYPE_DESC,
+				"source", "string", "ABAP code whose used objects should be looked up (e.g. code you are about to change).",
+				"system", "string", SYSTEM_DESC);
+		JsonObject names = new JsonObject();
+		names.addProperty("type", "array");
+		names.addProperty("description", "Object names to look up directly, e.g. [\"MARA\", \"BAPI_USER_GET_DETAIL\"].");
+		JsonObject nameItem = new JsonObject();
+		nameItem.addProperty("type", "string");
+		names.add("items", nameItem);
+		contextSchema.getAsJsonObject("properties").add("names", names);
+		t.add(ToolSpec.of("adt_context",
+				"Definitions of the objects a piece of code uses, in one call: public section of classes, interfaces, "
+						+ "table and structure fields, CDS views, function module signatures, data elements and table types. "
+						+ "Give 'name' (an object), 'source' (code) and/or 'names'. Call before writing code that uses tables, "
+						+ "structures, classes or function modules, so you use real field names and signatures.",
+				contextSchema, null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_where_used", "Where-used list of a repository object.",
 				schema(new String[] { "name" }, objectProps()), Capability.WHERE_USED, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_syntax_check",
@@ -140,6 +160,7 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_list_systems" -> listSystems();
 			case "adt_search_objects" -> searchObjects(in, cancel);
 			case "adt_read_source" -> readSource(in, cancel);
+			case "adt_context" -> context(in, cancel);
 			case "adt_where_used" -> whereUsed(in, cancel);
 			case "adt_syntax_check" -> syntaxCheck(in, cancel);
 			case "adt_run_unit_tests" -> unitTests(in, cancel);
@@ -232,8 +253,56 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult readSource(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		AdtObjectRef ref = resolve(c, in, cancel);
-		String src = c.readSource(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "include"), cancel);
+		String include = Json.str(in, "include");
+		String src = include == null || include.isBlank() || include.equalsIgnoreCase("main")
+				? c.readDefinition(ref, cancel)
+				: c.readSource(AdtObjectRef.objectUri(ref.uri()), include, cancel);
 		return ToolResult.ok(src.isEmpty() ? "(empty source)" : src);
+	}
+
+	private ToolResult context(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		List<AbapReferences.Reference> candidates = new ArrayList<>();
+		JsonArray names = Json.arr(in, "names");
+		if (names != null) {
+			for (JsonElement e : names) {
+				if (e.isJsonPrimitive() && !e.getAsString().isBlank()) {
+					candidates.add(new AbapReferences.Reference(e.getAsString().trim().toUpperCase(Locale.ROOT),
+							AbapReferences.Hint.ANY));
+				}
+			}
+		}
+		String name = Json.str(in, "name");
+		String self = null;
+		if (name != null && !name.isBlank()) {
+			AdtObjectRef ref = resolve(c, in, cancel);
+			self = ref.name();
+			candidates = AbapReferences.merge(candidates, AbapReferences.extract(c.readDefinition(ref, cancel)));
+		}
+		String source = Json.str(in, "source");
+		if (source != null && !source.isBlank()) {
+			candidates = AbapReferences.merge(candidates, AbapReferences.extract(source));
+		}
+		String own = self;
+		candidates = candidates.stream().filter(r -> !r.name().equalsIgnoreCase(own)).toList();
+		if (candidates.isEmpty()) {
+			return ToolResult.ok("No referenced repository objects found.");
+		}
+		AdtContext.Result r;
+		try {
+			r = AdtContext.build(c, candidates, AdtContext.Limits.DEFAULT, cancel);
+		} catch (CancelToken.CancelledException e) {
+			return ToolResult.error("Cancelled.");
+		}
+		if (r.isEmpty()) {
+			return ToolResult.ok("None of these objects exist in the system: "
+					+ String.join(", ", candidates.stream().map(AbapReferences.Reference::name).toList()));
+		}
+		String text = r.text();
+		if (!r.skipped().isEmpty()) {
+			text += "Not loaded (limit reached, use adt_read_source): " + String.join(", ", r.skipped()) + "\n";
+		}
+		return ToolResult.ok(text);
 	}
 
 	private ToolResult whereUsed(JsonObject in, CancelToken cancel) throws IOException {

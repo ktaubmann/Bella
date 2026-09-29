@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
@@ -63,6 +64,75 @@ public final class AdtXml {
 
 	public static String text(Element e) {
 		return e.getTextContent() == null ? "" : e.getTextContent().trim();
+	}
+
+	/** Attributes that carry no meaning for the model. */
+	private static final Set<String> NOISE_ATTRIBUTES = Set.of("uri", "href", "rel", "etag", "changedAt", "changedBy",
+			"createdAt", "createdBy", "version", "masterLanguage", "masterSystem", "responsible", "language",
+			"contentType", "abapLanguageVersion", "descriptionTextLimit", "lang", "parentUri");
+	private static final Set<String> NOISE_ELEMENTS = Set.of("link", "packageRef", "adtTemplate", "syntaxConfiguration");
+
+	/**
+	 * Compact text of an ADT object document (data element, domain, table type,
+	 * message class, …): one line per element with its meaningful attributes
+	 * and leaf text, indented by depth, without namespaces, links and
+	 * change metadata. Text that is not XML is returned as it is.
+	 */
+	public static String summarize(String xml, int maxChars) {
+		Document doc;
+		try {
+			doc = parse(xml);
+		} catch (IOException e) {
+			return truncate(xml == null ? "" : xml.trim(), maxChars);
+		}
+		StringBuilder sb = new StringBuilder();
+		summarize(doc.getDocumentElement(), 0, sb, maxChars);
+		return truncate(sb.toString().stripTrailing(), maxChars);
+	}
+
+	private static void summarize(Element e, int depth, StringBuilder sb, int maxChars) {
+		if (sb.length() > maxChars) {
+			return;
+		}
+		String name = e.getLocalName() != null ? e.getLocalName() : e.getNodeName();
+		if (NOISE_ELEMENTS.contains(name)) {
+			return;
+		}
+		StringBuilder line = new StringBuilder();
+		var attrs = e.getAttributes();
+		for (int i = 0; i < attrs.getLength(); i++) {
+			Node a = attrs.item(i);
+			String an = a.getLocalName() != null ? a.getLocalName() : a.getNodeName();
+			String qn = a.getNodeName();
+			if (qn.equals("xmlns") || qn.startsWith("xmlns:") || NOISE_ATTRIBUTES.contains(an)
+					|| a.getNodeValue().isBlank()) {
+				continue;
+			}
+			line.append(line.isEmpty() ? " " : ", ").append(an).append('=').append(a.getNodeValue().trim());
+		}
+		List<Element> children = new ArrayList<>();
+		NodeList nodes = e.getChildNodes();
+		for (int i = 0; i < nodes.getLength(); i++) {
+			if (nodes.item(i) instanceof Element c) {
+				children.add(c);
+			}
+		}
+		String text = children.isEmpty() ? text(e) : "";
+		if (line.isEmpty() && text.isEmpty() && children.isEmpty()) {
+			return;
+		}
+		sb.append("  ".repeat(depth)).append(name);
+		if (!text.isEmpty()) {
+			sb.append(": ").append(text.replaceAll("\\s+", " "));
+		}
+		sb.append(line).append('\n');
+		for (Element c : children) {
+			summarize(c, depth + 1, sb, maxChars);
+		}
+	}
+
+	static String truncate(String s, int max) {
+		return s.length() <= max ? s : s.substring(0, max) + "\n…";
 	}
 
 	public static String escape(String s) {

@@ -43,6 +43,9 @@ public final class AbapPrompts {
 				- Tools starting with adt_ act on the SAP system through the developer's own ADT logon.
 				- Tools starting with mcp_ come from connected MCP servers such as ARC-1.
 				- Read the current source before you change an object, and check syntax after a change.
+				- Look up real definitions (adt_context, adt_read_source) instead of guessing table fields, data types or
+				  method and function module signatures.
+				- Run abap_lint on code you write and fix the findings that apply.
 
 				Rules for changing code:
 				- If the object is open in the developer's editor, a write goes into the editor buffer only. It is not
@@ -191,6 +194,27 @@ public final class AbapPrompts {
 				classDefinition == null ? "(not in this source)" : truncate(classDefinition, CONTEXT_CHARS),
 				ctx.source().substring(routine.start(), routine.end()), kind, kind);
 		return new Prompt(chatSystem(), user);
+	}
+
+	/**
+	 * Adds the definitions of the SAP objects the code uses (see
+	 * {@code AdtContext}) to the user message of an editor action.
+	 */
+	public static Prompt withDefinitions(Prompt prompt, String definitions) {
+		if (definitions == null || definitions.isBlank()) {
+			return prompt;
+		}
+		String user = prompt.user() + """
+
+				Definitions of the SAP objects used here, read from the developer's system. Use exactly these \
+				field names, types and signatures; do not invent others.
+				<sap_definitions>
+				%s
+				</sap_definitions>
+
+				Follow the reply format given above.
+				""".formatted(definitions.strip());
+		return new Prompt(prompt.system(), user);
 	}
 
 	/** Fill-in-the-middle prompt for inline completion. */

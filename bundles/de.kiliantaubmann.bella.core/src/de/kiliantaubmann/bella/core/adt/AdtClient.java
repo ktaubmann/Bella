@@ -65,6 +65,7 @@ public final class AdtClient {
 	 * otherwise via an exact-name search.
 	 */
 	public AdtObjectRef resolve(String name, String type, CancelToken cancel) throws IOException {
+		type = searchType(type);
 		String direct = AdtObjectRef.uriFor(name, type);
 		if (direct != null) {
 			return new AdtObjectRef(direct, name.toUpperCase(Locale.ROOT), type, "", "");
@@ -77,10 +78,79 @@ public final class AdtClient {
 		throw new AdtException(404, "Object not found: " + name + (type == null ? "" : " (" + type + ")"));
 	}
 
+	/** Maps names models commonly use to ADT search types, e.g. {@code FUNC} to {@code FUGR/FF}. */
+	static String searchType(String type) {
+		if (type == null || type.isBlank()) {
+			return null;
+		}
+		String t = type.trim().toUpperCase(Locale.ROOT);
+		return switch (t) {
+		case "FUNC", "FUNCTION", "FM", "FUNCTION_MODULE" -> "FUGR/FF";
+		case "TABLE" -> "TABL/DT";
+		case "STRUCTURE", "STRU" -> "TABL/DS";
+		case "DATA_ELEMENT" -> "DTEL";
+		case "DOMAIN" -> "DOMA";
+		case "TABLE_TYPE" -> "TTYP";
+		case "CLASS" -> "CLAS";
+		case "INTERFACE" -> "INTF";
+		case "PROGRAM", "REPORT" -> "PROG";
+		case "CDS" -> "DDLS";
+		default -> t;
+		};
+	}
+
 	// ---- source ------------------------------------------------------------
 
 	public String readSource(String objectUri, String include, CancelToken cancel) throws IOException {
 		return send(AdtRequest.get(AdtObjectRef.sourceUri(objectUri, include), "text/plain"), cancel).body();
+	}
+
+	/** Main types ADT describes only as XML, without a source text. */
+	private static final List<String> XML_ONLY = List.of("DTEL", "DOMA", "TTYP", "MSAG", "VIEW", "SHLP", "ENQU");
+
+	/** Characters of an XML description kept by {@link #readDefinition}. */
+	static final int XML_SUMMARY_CHARS = 8_000;
+
+	static boolean xmlOnly(String type) {
+		if (type == null) {
+			return false;
+		}
+		String t = type.toUpperCase(Locale.ROOT);
+		int slash = t.indexOf('/');
+		return XML_ONLY.contains(slash > 0 ? t.substring(0, slash) : t);
+	}
+
+	/**
+	 * Source or definition of any repository object: the source text where ADT
+	 * has one (classes, programs, CDS, function modules and, on newer releases,
+	 * tables and structures), otherwise a compact summary of the object's XML
+	 * description (data elements, domains, table types, message classes, …).
+	 */
+	public String readDefinition(AdtObjectRef ref, CancelToken cancel) throws IOException {
+		String uri = AdtObjectRef.objectUri(ref.uri());
+		if (!xmlOnly(ref.type())) {
+			try {
+				return readSource(uri, null, cancel);
+			} catch (AdtException e) {
+				if (!isMissingEndpoint(e)) {
+					throw e;
+				}
+			}
+		}
+		try {
+			AdtResponse r = send(AdtRequest.get(uri, "application/*"), cancel);
+			return AdtXml.summarize(r.body(), XML_SUMMARY_CHARS);
+		} catch (AdtException e) {
+			if (!isMissingEndpoint(e)) {
+				throw e;
+			}
+			throw new AdtException(e.status(), "The definition of " + ref.name() + " (" + ref.type()
+					+ ") cannot be read through ADT on this SAP release. ARC-1 may be able to read it.");
+		}
+	}
+
+	private static boolean isMissingEndpoint(AdtException e) {
+		return e.status() == 404 || e.status() == 406 || e.status() == 415 || e.status() == 405;
 	}
 
 	/** Lock result: handle plus the transport the object is already assigned to (if any). */

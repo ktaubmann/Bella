@@ -37,4 +37,16 @@ class PromptsTest {
 		assertEquals("IF x = 1.", CompletionCleaner.clean("IF x = 1.\nENDIF.", "", "\nENDIF."));
 		assertEquals("", CompletionCleaner.clean("   \n", "", ""));
 	}
+
+	@Test
+	void definitionsAreAddedToTheUserMessage() {
+		Prompt p = new Prompt("sys", "Write code.\nReply with exactly one ```abap code block.");
+		assertEquals(p, AbapPrompts.withDefinitions(p, " "));
+		Prompt d = AbapPrompts.withDefinitions(p, "### MARA (TABL/DT)\n```abap\ndefine table mara {}\n```");
+		assertEquals("sys", d.system());
+		assertTrue(d.user().startsWith(p.user()));
+		assertTrue(d.user().contains("<sap_definitions>\n### MARA (TABL/DT)"), d.user());
+		assertTrue(d.user().strip().endsWith("Follow the reply format given above."), d.user());
+		assertTrue(new AbapPrompts(null, null).chatSystem().contains("abap_lint"));
+	}
 }

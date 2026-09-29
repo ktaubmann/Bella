@@ -97,4 +97,37 @@ class AdtClientTest {
 				"<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\"><message lang=\"EN\">No authorization</message></exc:exception>"));
 		assertEquals("HTTP 403: No authorization", msg);
 	}
+
+	@Test
+	void mapsDdicTypesToUris() {
+		assertEquals("/sap/bc/adt/ddic/tables/mara", AdtObjectRef.uriFor("MARA", "TABL/DT"));
+		assertEquals("/sap/bc/adt/ddic/structures/bapiret2", AdtObjectRef.uriFor("BAPIRET2", "TABL/DS"));
+		assertEquals("/sap/bc/adt/ddic/dataelements/matnr", AdtObjectRef.uriFor("MATNR", "DTEL"));
+		assertEquals("/sap/bc/adt/messageclass/zmsg", AdtObjectRef.uriFor("ZMSG", "MSAG/N"));
+		assertEquals(null, AdtObjectRef.uriFor("Z_FM", "FUGR/FF"));
+		assertEquals("FUGR/FF", AdtClient.searchType("func"));
+		assertEquals("TABL/DS", AdtClient.searchType("structure"));
+	}
+
+	@Test
+	void readDefinitionFallsBackToXmlSummary() throws Exception {
+		FakeAdt adt = new FakeAdt().route("GET /sap/bc/adt/ddic/tables/t000", r -> FakeAdt.ok(
+				"<tabl:table xmlns:tabl=\"http://www.sap.com/adt/ddic/tables\" tabl:name=\"T000\" tabl:changedAt=\"2020\"><tabl:field tabl:name=\"MANDT\" tabl:type=\"MANDT\"/></tabl:table>"));
+		// source/main answers 404 on older releases (no route): the XML description is summarized
+		adt.routes.put("GET /sap/bc/adt/ddic/tables/t000/source/main", r -> new AdtResponse(404, "text/plain", "no"));
+		adt.routes.put("GET /sap/bc/adt/ddic/tables/t000", adt.routes.remove("GET /sap/bc/adt/ddic/tables/t000"));
+		String d = new AdtClient(adt.stateless("D")).readDefinition(
+				new AdtObjectRef("/sap/bc/adt/ddic/tables/t000", "T000", "TABL/DT", "", ""), CancelToken.NONE);
+		assertEquals("table name=T000\n  field name=MANDT, type=MANDT", d);
+	}
+
+	@Test
+	void readDefinitionReportsUnsupportedRelease() {
+		FakeAdt adt = new FakeAdt();
+		AdtException e = assertThrows(AdtException.class, () -> new AdtClient(adt.stateless("D")).readDefinition(
+				new AdtObjectRef("/sap/bc/adt/ddic/tabletypes/ztt", "ZTT", "TTYP/DA", "", ""), CancelToken.NONE));
+		assertTrue(e.getMessage().contains("cannot be read through ADT"), e.getMessage());
+		// XML-only types do not try source/main
+		assertEquals(List.of("GET /sap/bc/adt/ddic/tabletypes/ztt"), adt.log);
+	}
 }

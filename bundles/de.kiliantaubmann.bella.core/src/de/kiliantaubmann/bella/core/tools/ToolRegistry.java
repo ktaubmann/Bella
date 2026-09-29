@@ -18,6 +18,8 @@ import java.util.function.Consumer;
 public final class ToolRegistry {
 
 	public static final String ADT_PROVIDER_ID = "adt";
+	/** Bella's style check; its tool keeps its own name like the ADT tools. */
+	public static final String LINT_PROVIDER_ID = "lint";
 
 	private final List<ToolProvider> providers = new CopyOnWriteArrayList<>();
 	private volatile String preferredProviderId = ADT_PROVIDER_ID;
@@ -96,13 +98,13 @@ public final class ToolRegistry {
 	}
 
 	/**
-	 * Builds the name the model sees. Bella's own tools already carry the
-	 * {@code adt_} prefix; MCP tools get {@code mcp_<server>_}. The result is
+	 * Builds the name the model sees. Bella's own tools keep their names
+	 * ({@code adt_…}, {@code abap_lint}); MCP tools get {@code mcp_<server>_}. The result is
 	 * cut to the API's 64 character limit.
 	 */
 	static String exposedName(ToolProvider provider, String remoteName) {
 		String name;
-		if (provider.id().equals(ADT_PROVIDER_ID)) {
+		if (provider.id().equals(ADT_PROVIDER_ID) || provider.id().equals(LINT_PROVIDER_ID)) {
 			name = remoteName;
 		} else {
 			String server = provider.id().startsWith("mcp:") ? provider.id().substring(4) : provider.id();

@@ -85,4 +85,44 @@ class AdtToolProviderTest {
 		assertEquals(0, adt.openSessions);
 		assertTrue(r.content().contains("Not activated"));
 	}
+
+	@Test
+	void readsDdicDefinitions() {
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/ddic/tables/mara/source/main",
+						r -> new AdtResponse(200, "text/plain", "define table mara { key matnr : matnr; }"))
+				.route("GET /sap/bc/adt/ddic/dataelements/matnr", r -> FakeAdt.ok(
+						"<dtel:dataElement xmlns:dtel=\"http://www.sap.com/adt/dictionary/dataelements\"><dtel:dataType>CHAR</dtel:dataType></dtel:dataElement>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		assertEquals("define table mara { key matnr : matnr; }", p.call("adt_read_source",
+				Json.parseObject("{\"name\":\"MARA\",\"type\":\"TABL/DT\"}"), CancelToken.NONE).content());
+		assertEquals("dataElement\n  dataType: CHAR", p.call("adt_read_source",
+				Json.parseObject("{\"name\":\"MATNR\",\"type\":\"DTEL\"}"), CancelToken.NONE).content());
+	}
+
+	@Test
+	void contextFromObjectAndSource() {
+		FakeAdt adt = AdtContextTest.system();
+		adt.systems.add(new AdtSystem("dev", "S4H_100", "S4H", "100", "DEV", true));
+		adt.route("GET /sap/bc/adt/programs/programs/zrep/source/main", r -> new AdtResponse(200, "text/plain",
+				"REPORT zrep.\nSELECT SINGLE * FROM mara INTO @DATA(ls).\nNEW zcl_log( )->add( `x` )."));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolSpec spec = p.listTools().stream().filter(t -> t.name().equals("adt_context")).findFirst().orElseThrow();
+		assertEquals(ToolSpec.Kind.READ, spec.kind());
+		var byName = Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\"}");
+		assertEquals(null, SchemaCheck.validate(spec.inputSchema(), byName));
+		ToolResult r = p.call("adt_context", byName, CancelToken.NONE);
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().contains("### MARA (TABL/DT"), r.content());
+		assertTrue(r.content().contains("### ZCL_LOG (CLAS/OC"), r.content());
+		assertFalse(r.content().contains("### ZREP"), r.content());
+
+		ToolResult bySource = p.call("adt_context",
+				Json.parseObject("{\"source\":\"DATA lv TYPE matnr.\",\"names\":[\"z_get\"]}"), CancelToken.NONE);
+		assertTrue(bySource.content().startsWith("### Z_GET (FUGR/FF"), bySource.content());
+		assertTrue(bySource.content().contains("### MATNR (DTEL/DE"), bySource.content());
+
+		ToolResult nothing = p.call("adt_context", Json.parseObject("{\"source\":\"WRITE 'x'.\"}"), CancelToken.NONE);
+		assertEquals("No referenced repository objects found.", nothing.content());
+	}
 }
