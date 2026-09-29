@@ -87,11 +87,11 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 		form.text(claude, Messages.get("prefs.baseUrl"), Prefs.ANTHROPIC_BASE_URL, null);
 		link(claude, Messages.get("prefs.claude.link"));
 
-		claudeCode = cliGroup(c, "prefs.cc", "prefs.cc.intro", "prefs.cc.executable", Prefs.CC_EXECUTABLE,
+		claudeCode = cliGroup(c, "claude", "prefs.cc", "prefs.cc.intro", "prefs.cc.executable", Prefs.CC_EXECUTABLE,
 				"prefs.cc.token", SecureStore.CLAUDE_CODE_TOKEN, "prefs.cc.token.tip", Prefs.CC_CHAT_MODEL,
 				Prefs.CC_COMPLETION_MODEL, "prefs.cc.chatModel.tip");
 		claudeCode.check().addListener(SWT.Selection, e -> checkClaudeCode());
-		copilot = cliGroup(c, "prefs.cp", "prefs.cp.intro", "prefs.cp.executable", Prefs.CP_EXECUTABLE,
+		copilot = cliGroup(c, "copilot", "prefs.cp", "prefs.cp.intro", "prefs.cp.executable", Prefs.CP_EXECUTABLE,
 				"prefs.cp.token", SecureStore.COPILOT_TOKEN, "prefs.cp.token.tip", Prefs.CP_CHAT_MODEL,
 				Prefs.CP_COMPLETION_MODEL, "prefs.cp.model.tip");
 		copilot.check().addListener(SWT.Selection, e -> checkCopilot());
@@ -134,12 +134,13 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 		return c;
 	}
 
-	private CliGroup cliGroup(Composite parent, String titleKey, String introKey, String exeLabelKey, String exePref,
+	/** @param command name of the executable, used in the hint how to find it */
+	private CliGroup cliGroup(Composite parent, String command, String titleKey, String introKey, String exeLabelKey, String exePref,
 			String tokenLabelKey, String tokenSecureKey, String tokenTipKey, String chatPref, String completionPref,
 			String modelTipKey) {
 		Group g = Form.group(parent, Messages.get(titleKey));
 		link(g, Messages.get(introKey));
-		Text exe = form.file(g, Messages.get(exeLabelKey), exePref, Messages.get("prefs.cc.executable.tip"),
+		Text exe = form.file(g, Messages.get(exeLabelKey), exePref, Messages.fmt("prefs.cc.executable.tip", command),
 				Messages.get("prefs.cc.browse"));
 		new Label(g, SWT.NONE).setText(Messages.get("prefs.cc.status"));
 		Composite statusRow = new Composite(g, SWT.NONE);

@@ -101,7 +101,7 @@ Bella does not ship or download ADT. The update site contains only Bella's own b
 
 *Window → Preferences → Bella*
 
-<p align="center"><img src="docs/screenshots/preferences-provider.png" width="760" alt="Bella preferences with the provider drop-down and the Claude subscription settings"></p>
+<p align="center"><img src="docs/screenshots/preferences-provider.png" width="760" alt="Bella preferences with the provider drop-down (Claude API key, Claude subscription, GitHub Copilot, OpenAI-compatible) and the Claude subscription settings"></p>
 
 - **Provider** (drop-down at the top): *Claude (API key)*, *Claude subscription (Claude Code CLI)*, *GitHub Copilot (Copilot CLI)* or *OpenAI-compatible*. The page only shows the fields of the selected provider, plus a note on code completion.
 - **Claude (API key)**:
@@ -127,6 +127,7 @@ With a Claude subscription (Pro, Max, Team or Enterprise) you do not need an API
    If Eclipse does not see this logon (e.g. a different user), `claude setup-token` creates a long-lived subscription token. Enter it in Bella as *Subscription token*; it is kept in secure storage.
 2. Choose *Preferences → Bella → Provider: Claude subscription (Claude Code CLI)* and click **Check**. The status line shows e.g. "logged in (max)".
    - You only need to set the path to `claude` if Bella does not find it. Bella searches `PATH`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and on Windows `%USERPROFILE%\.local\bin` and `%APPDATA%\npm`.
+     To find the path, run `(Get-Command claude).Source` in PowerShell or `which claude` on macOS/Linux, and paste the result (or use **Browse…**). If the command is not found, the CLI is not installed yet, or the terminal was opened before the installation: open a new one.
    - Models: alias or full ID, default `opus` for the chat and `haiku` for completion. Which models are available depends on your plan.
 
 What happens:
@@ -155,6 +156,7 @@ With a GitHub Copilot subscription, Bella uses the locally installed [GitHub Cop
    Instead of `copilot login` you can create a fine-grained personal access token with the **Copilot Requests** permission and enter it in Bella as *Token*. Classic `ghp_` tokens are not supported.
 2. Choose *Preferences → Bella → Provider: GitHub Copilot (Copilot CLI)* and click **Check**. The status line shows "logged in", the CLI version and the models your plan offers.
    - You only need to set the path to `copilot` if Bella does not find it. Bella searches `PATH` and on Windows also `%LOCALAPPDATA%\Microsoft\WinGet\Links` and `%APPDATA%\npm`.
+     To find the path, run `(Get-Command copilot).Source` in PowerShell or `which copilot` on macOS/Linux, and paste the result (or use **Browse…**). Typical results: `C:\Users\<you>\AppData\Local\Microsoft\WinGet\Links\copilot.exe` (winget) or `C:\Users\<you>\AppData\Roaming\npm\copilot.cmd` (npm). If the command is not found, open a new terminal after the installation.
    - Models: leave empty for the Copilot default, or enter a model ID from the list shown by **Check**.
 
 What happens:
