@@ -79,6 +79,7 @@ MESSAGES = {
  "prefs.uiLanguage": "Idioma de la interfaz:", "prefs.answerLanguage": "Idioma de las respuestas:",
  "prefs.commentLanguage": "Idioma de los comentarios ABAP:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Mostrar una vista previa de diferencias antes de escribir en el editor",
+ "prefs.sapContext": "Cargar definiciones SAP (tablas, clases, módulos de función) para generar código", "generate.loadingDefinitions": "Cargando definiciones SAP…", "diff.definitions": "Definiciones SAP usadas: {0}", "diff.lint": "Revisión de estilo del código propuesto ({0} avisos):", "diff.lint.more": "… y {0} más",
  "prefs.autoCompletion": "Sugerir autocompletados automáticamente al escribir", "prefs.autoCompletionDelay": "Retardo (ms):",
  "mcp.dialog.shell": "Servidor MCP", "mcp.dialog.title": "Servidor MCP",
  "mcp.dialog.message": "Conectar ARC-1 u otro servidor MCP como fuente adicional de herramientas.",

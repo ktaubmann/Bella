@@ -19,6 +19,6 @@ public class GenerateHandler extends EditorHandler {
 			return;
 		}
 		generateInto(part, editor, BellaPlugin.getDefault().prompts().generateAtCursor(ctx, instruction),
-				CodeActions.Target.CURSOR);
+				CodeActions.Target.CURSOR, codeAround(ctx), instruction);
 	}
 }

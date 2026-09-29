@@ -25,6 +25,6 @@ public class RewriteHandler extends EditorHandler {
 			return;
 		}
 		generateInto(part, editor, BellaPlugin.getDefault().prompts().rewriteSelection(ctx, instruction),
-				CodeActions.Target.SELECTION);
+				CodeActions.Target.SELECTION, ctx.selection(), instruction);
 	}
 }

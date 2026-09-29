@@ -36,6 +36,8 @@ public final class Prefs {
 	public static final String COMMENT_LANGUAGE = "comment.language";
 
 	public static final String DIFF_PREVIEW = "editor.diffPreview";
+	/** Editor actions load the definitions of the SAP objects the code uses. */
+	public static final String EDITOR_SAP_CONTEXT = "editor.sapContext";
 	public static final String AUTO_COMPLETION = "completion.auto";
 	public static final String AUTO_COMPLETION_DELAY = "completion.delayMs";
 

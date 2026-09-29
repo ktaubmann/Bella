@@ -79,6 +79,7 @@ MESSAGES = {
  "prefs.uiLanguage": "Arayüz dili:", "prefs.answerLanguage": "Yanıt dili:",
  "prefs.commentLanguage": "ABAP yorumlarının dili:", "prefs.editor": "Düzenleyici",
  "prefs.diffPreview": "Düzenleyiciye yazmadan önce fark önizlemesi göster",
+ "prefs.sapContext": "Kod üretimi için SAP tanımlarını (tablolar, sınıflar, fonksiyon modülleri) yükle", "generate.loadingDefinitions": "SAP tanımları yükleniyor…", "diff.definitions": "Kullanılan SAP tanımları: {0}", "diff.lint": "Önerilen kodun stil denetimi ({0} bulgu):", "diff.lint.more": "… ve {0} tane daha",
  "prefs.autoCompletion": "Yazarken otomatik tamamlama öner", "prefs.autoCompletionDelay": "Gecikme (ms):",
  "mcp.dialog.shell": "MCP sunucusu", "mcp.dialog.title": "MCP sunucusu",
  "mcp.dialog.message": "ARC-1’i veya başka bir MCP sunucusunu ek araç kaynağı olarak bağlayın.",

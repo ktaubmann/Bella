@@ -50,6 +50,7 @@ import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
 import de.kiliantaubmann.bella.core.copilot.CopilotProvider;
 import de.kiliantaubmann.bella.core.copilot.CopilotSession;
+import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
@@ -159,6 +160,22 @@ class WorkbenchSmokeTest {
 		pump();
 		assertTrue(doc.get().contains("  METHOD total.\n    rv = 42.\n  ENDMETHOD."), doc.get());
 		assertTrue(editor.isDirty(), "the change stays unsaved in the editor");
+	}
+
+	@Test
+	void styleCheckIsRegisteredAndFeedsTheDiffPreview() {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		plugin.tools().refresh(e -> {
+		});
+		ToolSpec lint = plugin.tools().find("abap_lint").orElseThrow();
+		assertEquals(ToolSpec.Kind.READ, lint.kind());
+		assertTrue(plugin.prefs().getDefaultBoolean(Prefs.EDITOR_SAP_CONTEXT));
+		String notes = CodeActions.previewNotes(List.of("MARA", "ZCL_LOG"),
+				AbapLint.check("SELECT * FROM mara INTO TABLE @DATA(lt).\nBREAK-POINT."));
+		assertTrue(notes.contains(Messages.fmt("diff.definitions", "MARA, ZCL_LOG")), notes);
+		assertTrue(notes.contains(Messages.fmt("diff.lint", 2)), notes);
+		assertTrue(notes.contains("Line 1 [warning] select_star"), notes);
+		assertEquals("", CodeActions.previewNotes(List.of(), List.of()));
 	}
 
 	@Test

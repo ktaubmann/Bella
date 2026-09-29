@@ -1,5 +1,6 @@
 package de.kiliantaubmann.bella.ui.editor;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -13,6 +14,7 @@ import org.eclipse.ui.texteditor.ITextEditor;
 
 import de.kiliantaubmann.bella.core.abap.AbapEdit;
 import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
+import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
 
@@ -44,6 +46,11 @@ public final class CodeActions {
 	}
 
 	public static void apply(IEditorPart part, ITextEditor editor, Target target, String code) {
+		apply(part, editor, target, code, null);
+	}
+
+	/** @param notes shown above the diff (definitions used, style findings); may be {@code null} */
+	public static void apply(IEditorPart part, ITextEditor editor, Target target, String code, String notes) {
 		Shell shell = part.getSite().getShell();
 		IDocument doc = EditorBridge.document(editor);
 		ITextSelection sel = EditorBridge.selection(editor);
@@ -91,7 +98,8 @@ public final class CodeActions {
 		default -> throw new IllegalStateException();
 		}
 		String after = before.substring(0, offset) + text + before.substring(offset + length);
-		if (!DiffPreview.confirm(shell, Messages.fmt("diff.titleObject", EditorBridge.objectName(part)), before, after)) {
+		if (!DiffPreview.confirm(shell, Messages.fmt("diff.titleObject", EditorBridge.objectName(part)), before, after,
+				notes)) {
 			return;
 		}
 		try {
@@ -100,6 +108,27 @@ public final class CodeActions {
 			BellaPlugin.log("Cannot write into editor", e);
 			MessageDialog.openError(shell, Messages.get("app.name"), e.getMessage());
 		}
+	}
+
+	/** Style findings shown in the diff preview at most. */
+	private static final int MAX_NOTED_FINDINGS = 6;
+
+	/** Text for the diff preview: which definitions were used and what the style check found. */
+	public static String previewNotes(List<String> usedDefinitions, List<AbapLint.Finding> findings) {
+		StringBuilder sb = new StringBuilder();
+		if (!usedDefinitions.isEmpty()) {
+			sb.append(Messages.fmt("diff.definitions", String.join(", ", usedDefinitions))).append('\n');
+		}
+		if (!findings.isEmpty()) {
+			sb.append(Messages.fmt("diff.lint", findings.size())).append('\n');
+			for (AbapLint.Finding f : findings.subList(0, Math.min(MAX_NOTED_FINDINGS, findings.size()))) {
+				sb.append("  ").append(f.format()).append('\n');
+			}
+			if (findings.size() > MAX_NOTED_FINDINGS) {
+				sb.append("  ").append(Messages.fmt("diff.lint.more", findings.size() - MAX_NOTED_FINDINGS)).append('\n');
+			}
+		}
+		return sb.toString();
 	}
 
 	/** Removes METHOD/ENDMETHOD lines if the model returned the full method anyway. */

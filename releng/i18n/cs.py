@@ -79,6 +79,7 @@ MESSAGES = {
  "prefs.uiLanguage": "Jazyk rozhraní:", "prefs.answerLanguage": "Jazyk odpovědí:",
  "prefs.commentLanguage": "Jazyk komentářů ABAP:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Před zápisem do editoru zobrazit náhled rozdílů",
+ "prefs.sapContext": "Načítat definice SAP (tabulky, třídy, funkční moduly) pro generování kódu", "generate.loadingDefinitions": "Načítání definic SAP…", "diff.definitions": "Použité definice SAP: {0}", "diff.lint": "Kontrola stylu navrženého kódu (upozornění: {0}):", "diff.lint.more": "… a dalších {0}",
  "prefs.autoCompletion": "Při psaní automaticky navrhovat doplnění", "prefs.autoCompletionDelay": "Zpoždění (ms):",
  "mcp.dialog.shell": "Server MCP", "mcp.dialog.title": "Server MCP",
  "mcp.dialog.message": "Připojit ARC-1 nebo jiný server MCP jako další zdroj nástrojů.",

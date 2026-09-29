@@ -79,6 +79,7 @@ MESSAGES = {
  "prefs.uiLanguage": "UI の言語：", "prefs.answerLanguage": "回答の言語：",
  "prefs.commentLanguage": "ABAP コメントの言語：", "prefs.editor": "エディター",
  "prefs.diffPreview": "エディターに書き込む前に差分プレビューを表示",
+ "prefs.sapContext": "コード生成時に SAP 定義（テーブル、クラス、汎用モジュール）を読み込む", "generate.loadingDefinitions": "SAP 定義を読み込んでいます…", "diff.definitions": "使用した SAP 定義: {0}", "diff.lint": "提案コードのスタイルチェック（{0} 件）:", "diff.lint.more": "… ほか {0} 件",
  "prefs.autoCompletion": "入力中に補完を自動で提案", "prefs.autoCompletionDelay": "遅延（ミリ秒）：",
  "mcp.dialog.shell": "MCP サーバー", "mcp.dialog.title": "MCP サーバー",
  "mcp.dialog.message": "ARC-1 などの MCP サーバーを追加のツール提供元として接続します。",

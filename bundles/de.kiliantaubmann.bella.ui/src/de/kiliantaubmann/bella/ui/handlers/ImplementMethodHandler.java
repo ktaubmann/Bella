@@ -36,7 +36,9 @@ public class ImplementMethodHandler extends EditorHandler {
 				: AbapStructureScanner.methodDeclaration(src, className, routine.get().name()).orElse(null);
 		String definition = className == null ? null
 				: AbapStructureScanner.classDefinition(src, className).orElse(null);
+		String code = (declaration == null ? "" : declaration + "\n")
+				+ src.substring(routine.get().start(), routine.get().end());
 		generateInto(part, editor, BellaPlugin.getDefault().prompts().implementRoutine(ctx, routine.get(), declaration,
-				definition, instruction), CodeActions.Target.METHOD);
+				definition, instruction), CodeActions.Target.METHOD, code, instruction);
 	}
 }

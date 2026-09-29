@@ -79,6 +79,7 @@ MESSAGES = {
  "prefs.uiLanguage": "Язык интерфейса:", "prefs.answerLanguage": "Язык ответов:",
  "prefs.commentLanguage": "Язык комментариев ABAP:", "prefs.editor": "Редактор",
  "prefs.diffPreview": "Показывать сравнение перед записью в редактор",
+ "prefs.sapContext": "Загружать определения SAP (таблицы, классы, функциональные модули) для генерации кода", "generate.loadingDefinitions": "Загрузка определений SAP…", "diff.definitions": "Использованные определения SAP: {0}", "diff.lint": "Проверка стиля предложенного кода (замечаний: {0}):", "diff.lint.more": "… и ещё {0}",
  "prefs.autoCompletion": "Автоматически предлагать дополнения при вводе", "prefs.autoCompletionDelay": "Задержка (мс):",
  "mcp.dialog.shell": "Сервер MCP", "mcp.dialog.title": "Сервер MCP",
  "mcp.dialog.message": "Подключите ARC-1 или другой сервер MCP как дополнительный источник инструментов.",

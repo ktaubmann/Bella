@@ -14,10 +14,18 @@ import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.eclipse.ui.texteditor.ITextEditor;
 
+import de.kiliantaubmann.bella.core.abap.AbapReferences;
+import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
+import de.kiliantaubmann.bella.core.adt.AdtBackend;
+import de.kiliantaubmann.bella.core.adt.AdtClient;
+import de.kiliantaubmann.bella.core.adt.AdtContext;
+import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
+import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.llm.ChatRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.StopReason;
 import de.kiliantaubmann.bella.core.llm.StreamListener;
+import de.kiliantaubmann.bella.core.prompt.AbapPrompts;
 import de.kiliantaubmann.bella.core.prompt.EditorContext;
 import de.kiliantaubmann.bella.core.prompt.Prompt;
 import de.kiliantaubmann.bella.core.util.CancelToken;
@@ -27,6 +35,7 @@ import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
 import de.kiliantaubmann.bella.ui.editor.CodeActions;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
+import de.kiliantaubmann.bella.ui.prefs.Prefs;
 
 /** Base for commands that work on the active text editor. */
 abstract class EditorHandler extends AbstractHandler {
@@ -48,13 +57,20 @@ abstract class EditorHandler extends AbstractHandler {
 
 	/**
 	 * Runs a single request without tools in the background and puts the code
-	 * of the answer into the editor (after the diff preview).
+	 * of the answer into the editor (after the diff preview). Before the
+	 * request, the definitions of the SAP objects that {@code contextCode} and
+	 * the instruction mention are loaded through ADT and added to the prompt;
+	 * the generated code goes through Bella's style check.
+	 *
+	 * @param contextCode code whose referenced objects matter, may be empty
+	 * @param instruction the developer's instruction, may be {@code null}
 	 */
 	protected static void generateInto(IEditorPart part, ITextEditor editor, Prompt prompt,
-			CodeActions.Target target) {
+			CodeActions.Target target, String contextCode, String instruction) {
 		BellaPlugin plugin = BellaPlugin.getDefault();
-		ChatRequest request = new ChatRequest(plugin.chatModel(), prompt.system(), List.of(Json.userText(prompt.user())),
-				List.of(), plugin.chatSettings().maxTokens(), ChatRequest.Purpose.CHAT, plugin.chatSettings().effort());
+		SapContext sap = SapContext.of(part, contextCode, instruction);
+		String model = plugin.chatModel();
+		var settings = plugin.chatSettings();
 		CancelToken cancel = new CancelToken();
 		Job job = new Job(Messages.get("generate.jobName")) {
 			@Override
@@ -74,6 +90,19 @@ abstract class EditorHandler extends AbstractHandler {
 				watcher.setDaemon(true);
 				watcher.start();
 				try {
+					Prompt p = prompt;
+					List<String> used = List.of();
+					if (sap != null) {
+						monitor.subTask(Messages.get("generate.loadingDefinitions"));
+						AdtContext.Result defs = sap.load(cancel);
+						if (defs != null && !defs.isEmpty()) {
+							p = AbapPrompts.withDefinitions(p, defs.text());
+							used = defs.used();
+						}
+						monitor.subTask(Messages.get("generate.jobName"));
+					}
+					ChatRequest request = new ChatRequest(model, p.system(), List.of(Json.userText(p.user())),
+							List.of(), settings.maxTokens(), ChatRequest.Purpose.CHAT, settings.effort());
 					ChatResult r = plugin.provider().chat(request, StreamListener.NONE, cancel);
 					if (r.stopReason() == StopReason.REFUSAL) {
 						error(part, Messages.fmt("chat.notice.refusal", r.stopDetail() == null ? "" : r.stopDetail()));
@@ -84,7 +113,8 @@ abstract class EditorHandler extends AbstractHandler {
 						error(part, Messages.get("generate.empty"));
 						return Status.OK_STATUS;
 					}
-					Display.getDefault().asyncExec(() -> CodeActions.apply(part, editor, target, code));
+					String notes = CodeActions.previewNotes(used, AbapLint.check(code));
+					Display.getDefault().asyncExec(() -> CodeActions.apply(part, editor, target, code, notes));
 				} catch (CancelToken.CancelledException e) {
 					return Status.CANCEL_STATUS;
 				} catch (Exception e) {
@@ -99,9 +129,64 @@ abstract class EditorHandler extends AbstractHandler {
 		job.schedule();
 	}
 
+	/** Where to load SAP definitions from; captured on the UI thread, used in the job. */
+	record SapContext(AdtBackend adt, String destinationId, String objectName, String code, String instruction) {
+
+		/** {@code null} when switched off, ADT is missing, or the editor holds no ADT object of a logged-on system. */
+		static SapContext of(IEditorPart part, String code, String instruction) {
+			BellaPlugin plugin = BellaPlugin.getDefault();
+			AdtBackend adt = plugin.adt();
+			if (adt == null || !plugin.prefs().getBoolean(Prefs.EDITOR_SAP_CONTEXT)) {
+				return null;
+			}
+			Optional<AdtEditorObject> obj = EditorBridge.adtObject(part);
+			if (obj.isEmpty()) {
+				return null;
+			}
+			String dest = obj.get().destinationId();
+			try {
+				boolean loggedOn = adt.systems().stream()
+						.anyMatch(s -> s.destinationId().equals(dest) && s.loggedOn());
+				return loggedOn ? new SapContext(adt, dest, obj.get().name(), code == null ? "" : code, instruction)
+						: null;
+			} catch (RuntimeException | LinkageError e) {
+				return null;
+			}
+		}
+
+		/** Loads the definitions; {@code null} when that fails, the action then runs without them. */
+		AdtContext.Result load(CancelToken cancel) throws CancelToken.CancelledException {
+			try {
+				// the object being edited is in the editor already
+				List<AbapReferences.Reference> candidates = AdtContext.candidates(code, instruction).stream()
+						.filter(r -> !r.name().equalsIgnoreCase(objectName)).toList();
+				if (candidates.isEmpty()) {
+					return null;
+				}
+				return AdtContext.build(new AdtClient(adt.stateless(destinationId)), candidates,
+						AdtContext.Limits.DEFAULT, cancel);
+			} catch (RuntimeException | LinkageError e) {
+				BellaPlugin.log("Cannot load SAP definitions", e);
+				return null;
+			}
+		}
+	}
+
 	private static void error(IEditorPart part, String message) {
 		Display.getDefault().asyncExec(
 				() -> MessageDialog.openError(part.getSite().getShell(), Messages.get("app.name"), message));
+	}
+
+	/** Characters around the cursor whose referenced objects count when no routine surrounds it. */
+	private static final int AROUND_CURSOR = 2_000;
+
+	/** The routine around the cursor, or the code near it. */
+	protected static String codeAround(EditorContext ctx) {
+		String src = ctx.source();
+		int offset = ctx.selectionOffset();
+		return AbapStructureScanner.routineAt(src, offset).map(b -> src.substring(b.start(), b.end()))
+				.orElseGet(() -> src.substring(Math.max(0, offset - AROUND_CURSOR),
+						Math.min(src.length(), offset + AROUND_CURSOR)));
 	}
 
 	protected static List<String> presets(String prefix, int count) {

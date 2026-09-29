@@ -33,6 +33,7 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
 		s.setDefault(Prefs.ANSWER_LANGUAGE, "ui");
 		s.setDefault(Prefs.COMMENT_LANGUAGE, "en");
 		s.setDefault(Prefs.DIFF_PREVIEW, true);
+		s.setDefault(Prefs.EDITOR_SAP_CONTEXT, true);
 		s.setDefault(Prefs.AUTO_COMPLETION, false);
 		s.setDefault(Prefs.AUTO_COMPLETION_DELAY, 500);
 		s.setDefault(Prefs.PREFERRED_TOOLS, "adt");

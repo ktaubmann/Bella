@@ -79,6 +79,7 @@ MESSAGES = {
  "prefs.uiLanguage": "界面语言：", "prefs.answerLanguage": "回答语言：",
  "prefs.commentLanguage": "ABAP 注释语言：", "prefs.editor": "编辑器",
  "prefs.diffPreview": "写入编辑器前显示差异预览",
+ "prefs.sapContext": "生成代码时加载 SAP 定义（表、类、函数模块）", "generate.loadingDefinitions": "正在加载 SAP 定义…", "diff.definitions": "使用的 SAP 定义：{0}", "diff.lint": "建议代码的风格检查（{0} 条提示）：", "diff.lint.more": "… 另有 {0} 条",
  "prefs.autoCompletion": "输入时自动建议补全", "prefs.autoCompletionDelay": "延迟（毫秒）：",
  "mcp.dialog.shell": "MCP 服务器", "mcp.dialog.title": "MCP 服务器",
  "mcp.dialog.message": "将 ARC-1 或其他 MCP 服务器连接为额外的工具来源。",

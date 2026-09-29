@@ -79,6 +79,7 @@ MESSAGES = {
  "prefs.uiLanguage": "Taal van de interface:", "prefs.answerLanguage": "Taal van antwoorden:",
  "prefs.commentLanguage": "Taal van ABAP-commentaar:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Een diff-voorbeeld tonen voordat er in de editor wordt geschreven",
+ "prefs.sapContext": "SAP-definities (tabellen, klassen, functiemodules) laden voor codegeneratie", "generate.loadingDefinitions": "SAP-definities laden…", "diff.definitions": "Gebruikte SAP-definities: {0}", "diff.lint": "Stijlcontrole van de voorgestelde code ({0} meldingen):", "diff.lint.more": "… en nog {0}",
  "prefs.autoCompletion": "Tijdens het typen automatisch aanvullingen voorstellen", "prefs.autoCompletionDelay": "Vertraging (ms):",
  "mcp.dialog.shell": "MCP-server", "mcp.dialog.title": "MCP-server",
  "mcp.dialog.message": "ARC-1 of een andere MCP-server koppelen als extra bron van tools.",

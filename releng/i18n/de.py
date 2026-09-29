@@ -143,6 +143,7 @@ MESSAGES = {
  "prefs.commentLanguage": "Sprache der ABAP-Kommentare:",
  "prefs.editor": "Editor",
  "prefs.diffPreview": "Vor dem Schreiben in den Editor eine Diff-Vorschau zeigen",
+ "prefs.sapContext": "SAP-Definitionen (Tabellen, Klassen, Funktionsbausteine) für die Code-Erzeugung laden", "generate.loadingDefinitions": "Lade SAP-Definitionen…", "diff.definitions": "Verwendete SAP-Definitionen: {0}", "diff.lint": "Stilprüfung des vorgeschlagenen Codes ({0} Hinweise):", "diff.lint.more": "… und {0} weitere",
  "prefs.autoCompletion": "Beim Tippen automatisch Vervollständigungen vorschlagen",
  "prefs.autoCompletionDelay": "Verzögerung (ms):",
  "mcp.dialog.shell": "MCP-Server",

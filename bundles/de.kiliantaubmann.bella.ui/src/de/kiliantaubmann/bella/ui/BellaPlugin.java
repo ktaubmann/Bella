@@ -19,6 +19,7 @@ import org.osgi.util.tracker.ServiceTracker;
 
 import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
+import de.kiliantaubmann.bella.core.lint.LintToolProvider;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCli;
@@ -82,6 +83,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 			}
 		};
 		adtTracker.open();
+		tools.addProvider(new LintToolProvider());
 		getPreferenceStore().addPropertyChangeListener(e -> {
 			if (Prefs.MCP_SERVERS.equals(e.getProperty())) {
 				reconnectMcpServers();

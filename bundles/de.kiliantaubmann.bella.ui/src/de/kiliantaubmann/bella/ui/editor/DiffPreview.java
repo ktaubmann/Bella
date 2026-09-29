@@ -29,12 +29,14 @@ public final class DiffPreview extends TitleAreaDialog {
 	private final String title;
 	private final String before;
 	private final String after;
+	private final String notes;
 
-	private DiffPreview(Shell shell, String title, String before, String after) {
+	private DiffPreview(Shell shell, String title, String before, String after, String notes) {
 		super(shell);
 		this.title = title;
 		this.before = before;
 		this.after = after;
+		this.notes = notes;
 		setShellStyle(getShellStyle() | SWT.RESIZE | SWT.MAX);
 	}
 
@@ -44,10 +46,15 @@ public final class DiffPreview extends TitleAreaDialog {
 	 * @return {@code true} if the change should be applied
 	 */
 	public static boolean confirm(Shell shell, String title, String before, String after) {
+		return confirm(shell, title, before, after, null);
+	}
+
+	/** @param notes extra information above the comparison, e.g. definitions used and style findings */
+	public static boolean confirm(Shell shell, String title, String before, String after, String notes) {
 		if (!BellaPlugin.getDefault().prefs().getBoolean(Prefs.DIFF_PREVIEW)) {
 			return true;
 		}
-		return new DiffPreview(shell, title, before, after).open() == OK;
+		return new DiffPreview(shell, title, before, after, notes).open() == OK;
 	}
 
 	@Override
@@ -70,6 +77,15 @@ public final class DiffPreview extends TitleAreaDialog {
 		Image logo = BellaPlugin.image(BellaPlugin.IMG_BELLA);
 		if (logo != null) {
 			setTitleImage(logo);
+		}
+		if (notes != null && !notes.isBlank()) {
+			org.eclipse.swt.widgets.Text info = new org.eclipse.swt.widgets.Text(area,
+					SWT.MULTI | SWT.READ_ONLY | SWT.WRAP | SWT.V_SCROLL);
+			info.setText(notes.strip());
+			GridData gd = new GridData(SWT.FILL, SWT.BEGINNING, true, false);
+			gd.horizontalIndent = 5;
+			gd.heightHint = Math.min(8, (int) notes.strip().lines().count() + 1) * info.getLineHeight();
+			info.setLayoutData(gd);
 		}
 		CompareConfiguration cc = new CompareConfiguration();
 		cc.setLeftLabel(Messages.get("diff.proposed"));

@@ -79,6 +79,7 @@ MESSAGES = {
  "prefs.uiLanguage": "UI 언어:", "prefs.answerLanguage": "답변 언어:",
  "prefs.commentLanguage": "ABAP 주석 언어:", "prefs.editor": "편집기",
  "prefs.diffPreview": "편집기에 작성하기 전에 차이 미리 보기 표시",
+ "prefs.sapContext": "코드 생성 시 SAP 정의(테이블, 클래스, 함수 모듈) 불러오기", "generate.loadingDefinitions": "SAP 정의를 불러오는 중…", "diff.definitions": "사용한 SAP 정의: {0}", "diff.lint": "제안된 코드의 스타일 검사({0}건):", "diff.lint.more": "… 외 {0}건",
  "prefs.autoCompletion": "입력하는 동안 자동으로 완성 제안", "prefs.autoCompletionDelay": "지연(ms):",
  "mcp.dialog.shell": "MCP 서버", "mcp.dialog.title": "MCP 서버",
  "mcp.dialog.message": "ARC-1 또는 다른 MCP 서버를 추가 도구 소스로 연결합니다.",
