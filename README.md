@@ -190,4 +190,6 @@ The Claude integration deliberately uses `java.net.http` instead of the Anthropi
 - Command names in *Keys* and *Quick Access* still follow the operating system language; Eclipse resolves them before Bella starts.
 - All translations except German and English were machine-generated. Corrections are welcome.
 
-© 2026 Kilian Taubmann. All rights reserved.
+## License
+
+[MIT](LICENSE) © 2026 Kilian Taubmann
