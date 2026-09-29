@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "改写所选内容…", "menu.implementMethod": "实现方法", "menu.complete": "AI 补全",
  "menu.refactor": "建议重构（聊天）", "menu.unitTest": "建议单元测试（聊天）", "menu.openChat": "打开 Bella 聊天",
  "prefs.name": "Bella", "prefs.tools": "SAP 工具和 ARC-1",
+ "prefs.log": "日志",
  "context.editor.name": "使用 Bella 编辑",
  "context.editor.description": "已接入 Bella 的文本编辑器（行内补全）",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "ABAP 注释语言：", "prefs.editor": "编辑器",
  "prefs.diffPreview": "写入编辑器前显示差异预览",
  "prefs.sapContext": "生成代码时加载 SAP 定义（表、类、函数模块）", "generate.loadingDefinitions": "正在加载 SAP 定义…", "diff.definitions": "使用的 SAP 定义：{0}", "diff.lint": "建议代码的风格检查（{0} 条提示）：", "diff.lint.more": "… 另有 {0} 条",
+ "log.description": "日志文件有助于查找错误原因。默认关闭。", "log.group": "日志文件", "log.enabled": "写入用于故障排查的日志文件", "log.detail": "包含详细信息（提示词、回答、源代码、工具结果）", "log.detail.hint": "普通：Bella 执行的操作（请求、工具和 SAP 调用、CLI 进程）及其状态、耗时和错误。启用详细信息后，文件还会包含你的源代码和模型的回答。", "log.file": "文件：", "log.open": "打开日志", "log.folder": "打开文件夹", "log.clear": "清空", "log.privacy": "API 密钥、令牌和密码会从每条记录中删除。请将文件附在错误报告中。", "log.empty": "还没有日志。请开启日志并重复出错的操作。", "log.cleared": "日志已清空。", "chat.openLog": "打开日志",
  "prefs.autoCompletion": "输入时自动建议补全", "prefs.autoCompletionDelay": "延迟（毫秒）：",
  "mcp.dialog.shell": "MCP 服务器", "mcp.dialog.title": "MCP 服务器",
  "mcp.dialog.message": "将 ARC-1 或其他 MCP 服务器连接为额外的工具来源。",

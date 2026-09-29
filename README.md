@@ -192,12 +192,28 @@ Under *Preferences → Bella → SAP-Tools & ARC-1 → Add…*:
 
 **Test** lists the tools a server offers. When two tools offer the same capability (e.g. reading source code), Bella's ADT tools win by default. You can prefer ARC-1 instead, e.g. when governance should run centrally through ARC-1.
 
+## Troubleshooting: log file
+
+When something does not work, switch on the log under *Preferences → Bella → Log file* (it is off by default) and repeat what went wrong.
+
+- **Normal** records what Bella does, with status, duration and errors:
+  - model requests: provider, model, tokens, stop reason,
+  - tool calls with the policy decision,
+  - every ADT request with path and HTTP status, plus the SAP error text,
+  - Claude Code and Copilot CLI processes with command line, exit code and stderr,
+  - MCP connections.
+- **Details** (a second checkbox) adds the content: prompts, answers, tool input and output, source code and every protocol line of the CLIs. Only switch it on while you reproduce a problem.
+- API keys, tokens, bearer headers and passwords are removed from every entry. Environment variables are logged by name only.
+- The file is `bella.log` in `<workspace>/.metadata/.plugins/de.kiliantaubmann.bella.ui/`. The preference page opens it, opens its folder or clears it; the chat view menu (▾) has *Open log*. At 5 MB it moves to `bella.log.1`.
+- Please attach the file to a bug report. Errors also still go to Eclipse's *Error Log* view.
+
 ## Security and privacy
 
 - The selected model provider receives your question, source excerpts from the editor and tool results. With Ollama everything stays local.
 - API keys and tokens are kept in Eclipse secure storage, not in plain-text preferences.
 - Bella never opens an SAP logon itself. Tools only use projects that are already logged on.
 - Writing tools ask first, releasing transports is blocked, and open objects are only changed in the editor.
+- The log file is off by default and never contains keys or tokens; with details on it contains source code.
 
 ## Development
 
@@ -216,8 +232,8 @@ python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 | `bundles/de.kiliantaubmann.bella.core` | no UI and no ADT: Anthropic and OpenAI-compatible providers (streaming, tool use, prompt caching), Claude Code integration (CLI, `stream-json`, local MCP server), GitHub Copilot integration (Copilot CLI, Agent Client Protocol), tool registry and policy, MCP client (HTTP and stdio), chat tool loop, ABAP scanner, reference finder and style check, prompts, ADT REST client, `adt_*` tools and the context builder |
 | `bundles/de.kiliantaubmann.bella.ui` | chat view, context menu, diff preview, router, ghost text, preferences, icons, translations |
 | `bundles/de.kiliantaubmann.bella.adt` | the only dependency on the ADT SDK: projects, logon and REST transport as an OSGi service |
-| `tests/…core.tests` | unit tests for providers, MCP client and server, Claude Code and Copilot sessions (with simulated CLIs), tool loop, ABAP scanner, reference finder, style check, ADT client and context (with a simulated ADT backend), translations |
-| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription and Copilot hints), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, style check in the diff preview, router, language switch |
+| `tests/…core.tests` | unit tests for providers, MCP client and server, Claude Code and Copilot sessions (with simulated CLIs), tool loop, ABAP scanner, reference finder, style check, ADT client and context (with a simulated ADT backend), logging and redaction, translations |
+| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription and Copilot hints), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, style check in the diff preview, log file on/off, router, language switch |
 
 The Claude integration deliberately uses `java.net.http` instead of the Anthropic Java SDK. This keeps the OSGi bundle free of OkHttp, Kotlin and Jackson.
 

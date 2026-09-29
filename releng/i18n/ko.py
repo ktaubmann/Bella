@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "선택 영역 다시 작성…", "menu.implementMethod": "메서드 구현", "menu.complete": "AI 자동 완성",
  "menu.refactor": "리팩터링 제안(채팅)", "menu.unitTest": "단위 테스트 제안(채팅)", "menu.openChat": "Bella 채팅 열기",
  "prefs.name": "Bella", "prefs.tools": "SAP 도구 및 ARC-1",
+ "prefs.log": "로그",
  "context.editor.name": "Bella로 편집",
  "context.editor.description": "Bella가 연결된 텍스트 편집기(인라인 완성)",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "ABAP 주석 언어:", "prefs.editor": "편집기",
  "prefs.diffPreview": "편집기에 작성하기 전에 차이 미리 보기 표시",
  "prefs.sapContext": "코드 생성 시 SAP 정의(테이블, 클래스, 함수 모듈) 불러오기", "generate.loadingDefinitions": "SAP 정의를 불러오는 중…", "diff.definitions": "사용한 SAP 정의: {0}", "diff.lint": "제안된 코드의 스타일 검사({0}건):", "diff.lint.more": "… 외 {0}건",
+ "log.description": "로그 파일은 오류의 원인을 찾는 데 도움이 됩니다. 기본값은 꺼짐입니다.", "log.group": "로그 파일", "log.enabled": "문제 해결용 로그 파일 쓰기", "log.detail": "세부 정보 포함(프롬프트, 답변, 소스 코드, 도구 결과)", "log.detail.hint": "일반: Bella가 하는 일(요청, 도구 및 SAP 호출, CLI 프로세스)을 상태, 소요 시간, 오류와 함께 기록합니다. 세부 정보를 포함하면 파일에 소스 코드와 모델의 답변도 들어갑니다.", "log.file": "파일:", "log.open": "로그 열기", "log.folder": "폴더 열기", "log.clear": "비우기", "log.privacy": "API 키, 토큰, 비밀번호는 모든 항목에서 제거됩니다. 버그 보고서에 파일을 첨부하세요.", "log.empty": "아직 로그가 없습니다. 로그를 켜고 문제가 된 작업을 다시 하세요.", "log.cleared": "로그를 비웠습니다.", "chat.openLog": "로그 열기",
  "prefs.autoCompletion": "입력하는 동안 자동으로 완성 제안", "prefs.autoCompletionDelay": "지연(ms):",
  "mcp.dialog.shell": "MCP 서버", "mcp.dialog.title": "MCP 서버",
  "mcp.dialog.message": "ARC-1 또는 다른 MCP 서버를 추가 도구 소스로 연결합니다.",

@@ -55,6 +55,7 @@ import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
+import de.kiliantaubmann.bella.core.util.Log;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
 import de.kiliantaubmann.bella.ui.Shortcuts;
@@ -63,6 +64,7 @@ import de.kiliantaubmann.bella.ui.internal.BellaMenuItems;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.editor.OpenEditorRouter;
 import de.kiliantaubmann.bella.ui.prefs.BellaPreferencePage;
+import de.kiliantaubmann.bella.ui.prefs.LogPreferencePage;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
 import de.kiliantaubmann.bella.ui.prefs.ToolsPreferencePage;
 import de.kiliantaubmann.bella.ui.views.ChatView;
@@ -139,7 +141,8 @@ class WorkbenchSmokeTest {
 	void preferencePagesRender() {
 		Shell shell = new Shell(Display.getCurrent());
 		try {
-			for (PreferencePage p : List.<PreferencePage>of(new BellaPreferencePage(), new ToolsPreferencePage())) {
+			for (PreferencePage p : List.<PreferencePage>of(new BellaPreferencePage(), new ToolsPreferencePage(),
+					new LogPreferencePage())) {
 				((org.eclipse.ui.IWorkbenchPreferencePage) p).init(PlatformUI.getWorkbench());
 				p.createControl(shell);
 				assertTrue(p.performOk());
@@ -176,6 +179,45 @@ class WorkbenchSmokeTest {
 		assertTrue(notes.contains(Messages.fmt("diff.lint", 2)), notes);
 		assertTrue(notes.contains("Line 1 [warning] select_star"), notes);
 		assertEquals("", CodeActions.previewNotes(List.of(), List.of()));
+	}
+
+	@Test
+	void logFileCanBeSwitchedOnAndOff() throws Exception {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		IPreferenceStore prefs = plugin.prefs();
+		assertFalse(prefs.getDefaultBoolean(Prefs.LOG_ENABLED), "logging is off by default");
+		assertFalse(prefs.getDefaultBoolean(Prefs.LOG_DETAIL));
+		java.nio.file.Path file = plugin.logFile().path();
+		try {
+			plugin.clearLog();
+			prefs.setValue(Prefs.LOG_ENABLED, true);
+			Log.info("test", "hello with x-api-key: sk-ant-secret123456");
+			Log.debug("test", () -> "detail entry");
+			String text = java.nio.file.Files.readString(file);
+			assertTrue(text.contains("===== Bella " + BellaPlugin.VERSION + " log started"), text);
+			assertTrue(text.contains("Provider: "), text);
+			assertTrue(text.contains("INFO  [test] hello with x-api-key: ***"), text);
+			assertFalse(text.contains("secret123456"), text);
+			assertFalse(text.contains("detail entry"), text);
+
+			prefs.setValue(Prefs.LOG_DETAIL, true);
+			Log.debug("test", () -> "detail entry");
+			assertTrue(java.nio.file.Files.readString(file).contains("DEBUG [test] detail entry"));
+
+			plugin.clearLog();
+			text = java.nio.file.Files.readString(file);
+			assertFalse(text.contains("hello"), text);
+			assertTrue(text.contains("log started"), text);
+
+			prefs.setValue(Prefs.LOG_ENABLED, false);
+			Log.info("test", "after switching off");
+			assertFalse(java.nio.file.Files.readString(file).contains("after switching off"));
+			assertFalse(Log.enabled(Log.Level.ERROR));
+		} finally {
+			prefs.setToDefault(Prefs.LOG_DETAIL);
+			prefs.setToDefault(Prefs.LOG_ENABLED);
+			plugin.clearLog();
+		}
 	}
 
 	@Test
@@ -278,27 +320,27 @@ class WorkbenchSmokeTest {
 			prefs.setValue(Prefs.PROVIDER, ClaudeCodeProvider.ID);
 			prefs.setValue(Prefs.AUTO_COMPLETION, true);
 			try (Conversation c = plugin.newConversation((tool, input) -> false, null)) {
-				assertTrue(c instanceof ClaudeCodeSession);
+				assertTrue(c.unwrap() instanceof ClaudeCodeSession);
 			}
-			assertTrue(plugin.provider() instanceof ClaudeCodeProvider);
+			assertTrue(plugin.provider().unwrap() instanceof ClaudeCodeProvider);
 			assertEquals("opus", plugin.chatModel());
 			assertEquals("haiku", plugin.completionModel());
 			assertFalse(plugin.autoCompletion());
 
 			prefs.setValue(Prefs.PROVIDER, CopilotProvider.ID);
 			try (Conversation c = plugin.newConversation((tool, input) -> false, null)) {
-				assertTrue(c instanceof CopilotSession);
-				assertTrue(plugin.conversationType().isInstance(c));
+				assertTrue(c.unwrap() instanceof CopilotSession);
+				assertTrue(plugin.conversationType().isInstance(c.unwrap()));
 			}
-			assertTrue(plugin.provider() instanceof CopilotProvider);
+			assertTrue(plugin.provider().unwrap() instanceof CopilotProvider);
 			assertFalse(plugin.autoCompletion());
 			assertEquals(Messages.fmt("chat.status.copilot", Messages.get("chat.status.copilotDefault")),
 					plugin.chatModelLabel());
 
 			prefs.setValue(Prefs.PROVIDER, AnthropicProvider.ID);
 			try (Conversation c = plugin.newConversation((tool, input) -> false, null)) {
-				assertTrue(c instanceof ChatSession);
-				assertTrue(plugin.conversationType().isInstance(c));
+				assertTrue(c.unwrap() instanceof ChatSession);
+				assertTrue(plugin.conversationType().isInstance(c.unwrap()));
 			}
 			assertTrue(plugin.autoCompletion());
 		} finally {

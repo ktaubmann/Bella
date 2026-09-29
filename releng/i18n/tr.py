@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "Seçimi yeniden işle…", "menu.implementMethod": "Metodu uygula", "menu.complete": "Yapay zekâ tamamlama",
  "menu.refactor": "Yeniden düzenleme öner (sohbet)", "menu.unitTest": "Birim testi öner (sohbet)", "menu.openChat": "Bella sohbetini aç",
  "prefs.name": "Bella", "prefs.tools": "SAP araçları ve ARC-1",
+ "prefs.log": "Günlük",
  "context.editor.name": "Bella ile düzenleme",
  "context.editor.description": "Bella’nın bağlı olduğu metin düzenleyiciler (satır içi tamamlama)",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "ABAP yorumlarının dili:", "prefs.editor": "Düzenleyici",
  "prefs.diffPreview": "Düzenleyiciye yazmadan önce fark önizlemesi göster",
  "prefs.sapContext": "Kod üretimi için SAP tanımlarını (tablolar, sınıflar, fonksiyon modülleri) yükle", "generate.loadingDefinitions": "SAP tanımları yükleniyor…", "diff.definitions": "Kullanılan SAP tanımları: {0}", "diff.lint": "Önerilen kodun stil denetimi ({0} bulgu):", "diff.lint.more": "… ve {0} tane daha",
+ "log.description": "Günlük dosyası hataların nedenini bulmaya yardımcı olur. Varsayılan olarak kapalıdır.", "log.group": "Günlük dosyası", "log.enabled": "Sorun giderme için günlük dosyası yaz", "log.detail": "Ayrıntıları ekle (istemler, yanıtlar, kaynak kod, araç sonuçları)", "log.detail.hint": "Normal: Bella’nın yaptıkları (istekler, araç ve SAP çağrıları, CLI süreçleri) durum, süre ve hatalarla. Ayrıntılarla dosya kaynak kodunuzu ve modelin yanıtlarını da içerir.", "log.file": "Dosya:", "log.open": "Günlüğü aç", "log.folder": "Klasörü aç", "log.clear": "Temizle", "log.privacy": "API anahtarları, belirteçler ve parolalar her kayıttan çıkarılır. Dosyayı bir hata raporuna ekleyin.", "log.empty": "Henüz günlük yok. Günlüğü açın ve sorun çıkan işlemi tekrarlayın.", "log.cleared": "Günlük temizlendi.", "chat.openLog": "Günlüğü aç",
  "prefs.autoCompletion": "Yazarken otomatik tamamlama öner", "prefs.autoCompletionDelay": "Gecikme (ms):",
  "mcp.dialog.shell": "MCP sunucusu", "mcp.dialog.title": "MCP sunucusu",
  "mcp.dialog.message": "ARC-1’i veya başka bir MCP sunucusunu ek araç kaynağı olarak bağlayın.",

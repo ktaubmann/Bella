@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "Rielabora la selezione…", "menu.implementMethod": "Implementa metodo", "menu.complete": "Completamento IA",
  "menu.refactor": "Proponi refactoring (chat)", "menu.unitTest": "Proponi unit test (chat)", "menu.openChat": "Apri la chat di Bella",
  "prefs.name": "Bella", "prefs.tools": "Strumenti SAP e ARC-1",
+ "prefs.log": "Log",
  "context.editor.name": "Modifica con Bella",
  "context.editor.description": "Editor di testo a cui Bella è collegata (completamento in linea)",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "Lingua dei commenti ABAP:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Mostra un’anteprima delle differenze prima di scrivere nell’editor",
  "prefs.sapContext": "Carica le definizioni SAP (tabelle, classi, moduli funzione) per la generazione di codice", "generate.loadingDefinitions": "Caricamento delle definizioni SAP…", "diff.definitions": "Definizioni SAP usate: {0}", "diff.lint": "Controllo di stile del codice proposto ({0} segnalazioni):", "diff.lint.more": "… e altre {0}",
+ "log.description": "Un file di log aiuta a trovare la causa degli errori. È disattivato per impostazione predefinita.", "log.group": "File di log", "log.enabled": "Scrivi un file di log per la diagnosi dei problemi", "log.detail": "Includi i dettagli (prompt, risposte, codice sorgente, risultati degli strumenti)", "log.detail.hint": "Normale: cosa fa Bella (richieste, chiamate a strumenti e SAP, processi CLI) con stato, durata ed errori. Con i dettagli il file contiene anche il tuo codice sorgente e le risposte del modello.", "log.file": "File:", "log.open": "Apri log", "log.folder": "Apri cartella", "log.clear": "Svuota", "log.privacy": "Chiavi API, token e password vengono rimossi da ogni voce. Allega il file a una segnalazione di bug.", "log.empty": "Non c’è ancora un log. Attiva il log e ripeti ciò che non ha funzionato.", "log.cleared": "Il log è stato svuotato.", "chat.openLog": "Apri log",
  "prefs.autoCompletion": "Suggerisci completamenti automaticamente durante la digitazione", "prefs.autoCompletionDelay": "Ritardo (ms):",
  "mcp.dialog.shell": "Server MCP", "mcp.dialog.title": "Server MCP",
  "mcp.dialog.message": "Collega ARC-1 o un altro server MCP come fonte aggiuntiva di strumenti.",

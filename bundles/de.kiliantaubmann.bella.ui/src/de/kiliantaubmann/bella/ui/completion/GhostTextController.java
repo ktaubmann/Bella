@@ -41,6 +41,7 @@ import de.kiliantaubmann.bella.core.prompt.CompletionCleaner;
 import de.kiliantaubmann.bella.core.prompt.Prompt;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Log;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
@@ -151,6 +152,8 @@ public final class GhostTextController implements PaintListener, VerifyKeyListen
 			try {
 				ChatResult r = plugin.provider().chat(request, StreamListener.NONE, cancel);
 				String cleaned = CompletionCleaner.clean(r.text(), prefix, suffix);
+				Log.info("completion", cleaned.isEmpty() ? "nothing to insert"
+						: "suggestion of " + cleaned.length() + " chars for " + objectName);
 				Display.getDefault().asyncExec(() -> {
 					if (!text.isDisposed() && seq == sequence && version == documentVersion
 							&& modelOffset(text.getCaretOffset()) == offset && !cleaned.isEmpty()) {
@@ -160,6 +163,7 @@ public final class GhostTextController implements PaintListener, VerifyKeyListen
 			} catch (CancelToken.CancelledException e) {
 				return Status.CANCEL_STATUS;
 			} catch (Exception e) {
+				Log.warn("completion", "failed: " + e);
 				return new Status(IStatus.WARNING, BellaPlugin.ID, "Completion failed: " + e.getMessage());
 			}
 			return Status.OK_STATUS;

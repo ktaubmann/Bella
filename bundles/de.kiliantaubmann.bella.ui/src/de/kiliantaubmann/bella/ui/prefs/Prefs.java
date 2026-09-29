@@ -41,6 +41,11 @@ public final class Prefs {
 	public static final String AUTO_COMPLETION = "completion.auto";
 	public static final String AUTO_COMPLETION_DELAY = "completion.delayMs";
 
+	/** Writes {@code bella.log} for troubleshooting; off by default. */
+	public static final String LOG_ENABLED = "log.enabled";
+	/** Also logs prompts, answers, source code and tool results. */
+	public static final String LOG_DETAIL = "log.detail";
+
 	/** {@code adt} or {@code mcp}: whose tool wins when both offer the same capability. */
 	public static final String PREFERRED_TOOLS = "tools.preferred";
 	public static final String POLICY_RULES = "tools.policyRules";

@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "Selectie herschrijven…", "menu.implementMethod": "Methode implementeren", "menu.complete": "AI-aanvulling",
  "menu.refactor": "Refactoring voorstellen (chat)", "menu.unitTest": "Unittest voorstellen (chat)", "menu.openChat": "Bella-chat openen",
  "prefs.name": "Bella", "prefs.tools": "SAP-tools & ARC-1",
+ "prefs.log": "Logbestand",
  "context.editor.name": "Bewerken met Bella",
  "context.editor.description": "Teksteditors waaraan Bella is gekoppeld (inline aanvulling)",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "Taal van ABAP-commentaar:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Een diff-voorbeeld tonen voordat er in de editor wordt geschreven",
  "prefs.sapContext": "SAP-definities (tabellen, klassen, functiemodules) laden voor codegeneratie", "generate.loadingDefinitions": "SAP-definities laden…", "diff.definitions": "Gebruikte SAP-definities: {0}", "diff.lint": "Stijlcontrole van de voorgestelde code ({0} meldingen):", "diff.lint.more": "… en nog {0}",
+ "log.description": "Een logbestand helpt de oorzaak van fouten te vinden. Het staat standaard uit.", "log.group": "Logbestand", "log.enabled": "Een logbestand schrijven voor probleemoplossing", "log.detail": "Details opnemen (prompts, antwoorden, broncode, toolresultaten)", "log.detail.hint": "Normaal: wat Bella doet (verzoeken, tool- en SAP-aanroepen, CLI-processen) met status, duur en fouten. Met details bevat het bestand ook je broncode en de antwoorden van het model.", "log.file": "Bestand:", "log.open": "Log openen", "log.folder": "Map openen", "log.clear": "Leegmaken", "log.privacy": "API-sleutels, tokens en wachtwoorden worden uit elke regel verwijderd. Voeg het bestand toe aan een foutmelding.", "log.empty": "Er is nog geen log. Zet het log aan en herhaal wat misging.", "log.cleared": "Het log is leeggemaakt.", "chat.openLog": "Log openen",
  "prefs.autoCompletion": "Tijdens het typen automatisch aanvullingen voorstellen", "prefs.autoCompletionDelay": "Vertraging (ms):",
  "mcp.dialog.shell": "MCP-server", "mcp.dialog.title": "MCP-server",
  "mcp.dialog.message": "ARC-1 of een andere MCP-server koppelen als extra bron van tools.",

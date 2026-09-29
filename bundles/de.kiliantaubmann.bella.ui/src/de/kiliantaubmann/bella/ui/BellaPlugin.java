@@ -22,6 +22,7 @@ import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
 import de.kiliantaubmann.bella.core.lint.LintToolProvider;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
+import de.kiliantaubmann.bella.core.agent.LoggingConversation;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCli;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
@@ -31,6 +32,7 @@ import de.kiliantaubmann.bella.core.copilot.CopilotSession;
 import de.kiliantaubmann.bella.core.util.ProcessLauncher;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.llm.LlmProvider;
+import de.kiliantaubmann.bella.core.llm.LoggingProvider;
 import de.kiliantaubmann.bella.core.llm.OpenAiCompatibleProvider;
 import de.kiliantaubmann.bella.core.mcp.McpClient;
 import de.kiliantaubmann.bella.core.mcp.McpToolProvider;
@@ -42,6 +44,8 @@ import de.kiliantaubmann.bella.core.tools.ToolPolicy;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
 import de.kiliantaubmann.bella.core.tools.WriteGuard;
 import de.kiliantaubmann.bella.core.util.HttpTransport;
+import de.kiliantaubmann.bella.core.util.Log;
+import de.kiliantaubmann.bella.ui.internal.LogFile;
 import de.kiliantaubmann.bella.ui.prefs.McpServerConfig;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
 import de.kiliantaubmann.bella.ui.prefs.SecureStore;
@@ -59,6 +63,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 	private final List<McpToolProvider> mcpProviders = new ArrayList<>();
 	private ServiceTracker<AdtBackend, AdtBackend> adtTracker;
 	private volatile String activeDestination;
+	private LogFile logFile;
 
 	public static BellaPlugin getDefault() {
 		return plugin;
@@ -72,6 +77,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 			@Override
 			public AdtBackend addingService(org.osgi.framework.ServiceReference<AdtBackend> reference) {
 				AdtBackend backend = super.addingService(reference);
+				Log.info("bella", "ADT integration available");
 				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination));
 				return backend;
 			}
@@ -79,13 +85,17 @@ public class BellaPlugin extends AbstractUIPlugin {
 			@Override
 			public void removedService(org.osgi.framework.ServiceReference<AdtBackend> reference, AdtBackend service) {
 				tools.removeProvider(ToolRegistry.ADT_PROVIDER_ID);
+				Log.info("bella", "ADT integration removed");
 				super.removedService(reference, service);
 			}
 		};
 		adtTracker.open();
 		tools.addProvider(new LintToolProvider());
+		configureLog();
 		getPreferenceStore().addPropertyChangeListener(e -> {
-			if (Prefs.MCP_SERVERS.equals(e.getProperty())) {
+			if (Prefs.LOG_ENABLED.equals(e.getProperty()) || Prefs.LOG_DETAIL.equals(e.getProperty())) {
+				configureLog();
+			} else if (Prefs.MCP_SERVERS.equals(e.getProperty())) {
 				reconnectMcpServers();
 			} else if (Prefs.UI_LANGUAGE.equals(e.getProperty())) {
 				Messages.reload();
@@ -97,9 +107,16 @@ public class BellaPlugin extends AbstractUIPlugin {
 
 	@Override
 	public void stop(BundleContext context) throws Exception {
+		Log.info("bella", "Bella stops");
 		closeMcpServers();
 		if (adtTracker != null) {
 			adtTracker.close();
+		}
+		Log.configure(null, Log.Level.INFO);
+		synchronized (this) {
+			if (logFile != null) {
+				logFile.close();
+			}
 		}
 		plugin = null;
 		super.stop(context);
@@ -146,6 +163,77 @@ public class BellaPlugin extends AbstractUIPlugin {
 
 	public static void log(String message, Throwable t) {
 		ILog.of(BellaPlugin.class).log(new Status(IStatus.ERROR, ID, message, t));
+		Log.error("ui", message, t);
+	}
+
+	/** Bella's log file, whether or not logging is on. */
+	public synchronized LogFile logFile() {
+		if (logFile == null) {
+			logFile = new LogFile(getStateLocation().append("bella.log").toFile().toPath());
+		}
+		return logFile;
+	}
+
+	/** Switches the log on or off as the preferences say; writes a header when it starts. */
+	public synchronized void configureLog() {
+		boolean on = prefs().getBoolean(Prefs.LOG_ENABLED);
+		boolean detail = prefs().getBoolean(Prefs.LOG_DETAIL);
+		boolean wasOn = Log.enabled(Log.Level.ERROR);
+		if (!on) {
+			if (wasOn) {
+				Log.info("bella", "logging switched off");
+			}
+			Log.configure(null, Log.Level.INFO);
+			if (logFile != null) {
+				logFile.close();
+			}
+			return;
+		}
+		Log.configure(logFile(), detail ? Log.Level.DEBUG : Log.Level.INFO);
+		if (!wasOn) {
+			Log.info("bella", header());
+		} else {
+			Log.info("bella", "detail level " + (detail ? "on" : "off"));
+		}
+	}
+
+	/** Empties the log file; while logging is on, it starts again with the header. */
+	public synchronized void clearLog() {
+		logFile().clear();
+		if (Log.enabled(Log.Level.ERROR)) {
+			Log.info("bella", header());
+		}
+	}
+
+	/** Versions and settings that help to understand a problem; no secrets. */
+	String header() {
+		StringBuilder sb = new StringBuilder("===== Bella ").append(VERSION).append(" log started");
+		org.osgi.framework.Bundle platform = org.eclipse.core.runtime.Platform.getBundle("org.eclipse.platform");
+		org.osgi.framework.Bundle adtCore = org.eclipse.core.runtime.Platform.getBundle("com.sap.adt.tools.core");
+		sb.append("\nEclipse: ").append(platform == null ? "?" : platform.getVersion())
+				.append(System.getProperty("eclipse.buildId") == null ? "" : " (build " + System.getProperty("eclipse.buildId") + ")")
+				.append("\nJava: ").append(System.getProperty("java.version")).append(' ')
+				.append(System.getProperty("java.vendor"))
+				.append("\nOS: ").append(System.getProperty("os.name")).append(' ').append(System.getProperty("os.version"))
+				.append(' ').append(System.getProperty("os.arch"))
+				.append("\nLanguage: ").append(Languages.uiTag()).append(", answers ")
+				.append(prefs().getString(Prefs.ANSWER_LANGUAGE))
+				.append("\nProvider: ").append(providerId()).append(", chat model ").append(chatModelLabel())
+				.append("\nADT: ").append(adt() == null ? "not available" : "available")
+				.append(adtCore == null ? "" : " (com.sap.adt.tools.core " + adtCore.getVersion() + ")")
+				.append("\nPreferred tools: ").append(prefs().getString(Prefs.PREFERRED_TOOLS))
+				.append(", SAP definitions for editor actions: ").append(prefs().getBoolean(Prefs.EDITOR_SAP_CONTEXT))
+				.append("\nMCP servers:");
+		List<McpServerConfig> servers = McpServerConfig.parse(prefs().getString(Prefs.MCP_SERVERS));
+		if (servers.isEmpty()) {
+			sb.append(" none");
+		}
+		for (McpServerConfig cfg : servers) {
+			sb.append("\n  - ").append(cfg.name()).append(" (").append(cfg.http() ? "HTTP" : "stdio")
+					.append(cfg.enabled() ? ", enabled" : ", disabled").append(')');
+		}
+		sb.append("\nDetail level: ").append(prefs().getBoolean(Prefs.LOG_DETAIL) ? "on" : "off");
+		return sb.toString();
 	}
 
 	// ---- configuration -----------------------------------------------------------
@@ -181,7 +269,12 @@ public class BellaPlugin extends AbstractUIPlugin {
 		return AnthropicProvider.ID.equals(providerId());
 	}
 
+	/** The configured model provider, writing its requests to Bella's log. */
 	public LlmProvider provider() {
+		return LoggingProvider.wrap(plainProvider());
+	}
+
+	private LlmProvider plainProvider() {
 		IPreferenceStore s = prefs();
 		if (usesClaudeCode()) {
 			return new ClaudeCodeProvider(claudeCli());
@@ -223,6 +316,10 @@ public class BellaPlugin extends AbstractUIPlugin {
 	 * confirmation and the open-editor router apply either way.
 	 */
 	public Conversation newConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard) {
+		return LoggingConversation.wrap(plainConversation(confirmer, writeGuard));
+	}
+
+	private Conversation plainConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard) {
 		if (usesClaudeCode()) {
 			return new ClaudeCodeSession(claudeCli(), this::chatSettings, prompts().chatSystem(),
 					new ToolExecutor(tools(), this::policy, confirmer, writeGuard), VERSION);

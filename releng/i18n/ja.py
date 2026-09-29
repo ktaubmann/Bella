@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "選択範囲を書き直す…", "menu.implementMethod": "メソッドを実装", "menu.complete": "AI 補完",
  "menu.refactor": "リファクタリングを提案（チャット）", "menu.unitTest": "単体テストを提案（チャット）", "menu.openChat": "Bella チャットを開く",
  "prefs.name": "Bella", "prefs.tools": "SAP ツールと ARC-1",
+ "prefs.log": "ログ",
  "context.editor.name": "Bella で編集",
  "context.editor.description": "Bella が接続されたテキストエディター（インライン補完）",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "ABAP コメントの言語：", "prefs.editor": "エディター",
  "prefs.diffPreview": "エディターに書き込む前に差分プレビューを表示",
  "prefs.sapContext": "コード生成時に SAP 定義（テーブル、クラス、汎用モジュール）を読み込む", "generate.loadingDefinitions": "SAP 定義を読み込んでいます…", "diff.definitions": "使用した SAP 定義: {0}", "diff.lint": "提案コードのスタイルチェック（{0} 件）:", "diff.lint.more": "… ほか {0} 件",
+ "log.description": "ログファイルはエラーの原因を調べるのに役立ちます。既定ではオフです。", "log.group": "ログファイル", "log.enabled": "トラブルシューティング用のログファイルを書き込む", "log.detail": "詳細を含める（プロンプト、回答、ソースコード、ツールの結果）", "log.detail.hint": "標準: Bella の動作（リクエスト、ツールと SAP の呼び出し、CLI プロセス）をステータス、所要時間、エラーとともに記録します。詳細を含めると、ソースコードとモデルの回答もファイルに含まれます。", "log.file": "ファイル:", "log.open": "ログを開く", "log.folder": "フォルダーを開く", "log.clear": "クリア", "log.privacy": "API キー、トークン、パスワードはすべてのエントリから削除されます。ファイルを不具合報告に添付してください。", "log.empty": "まだログがありません。ログをオンにして、うまくいかなかった操作を繰り返してください。", "log.cleared": "ログをクリアしました。", "chat.openLog": "ログを開く",
  "prefs.autoCompletion": "入力中に補完を自動で提案", "prefs.autoCompletionDelay": "遅延（ミリ秒）：",
  "mcp.dialog.shell": "MCP サーバー", "mcp.dialog.title": "MCP サーバー",
  "mcp.dialog.message": "ARC-1 などの MCP サーバーを追加のツール提供元として接続します。",

@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "Retrabalhar a seleção…", "menu.implementMethod": "Implementar método", "menu.complete": "Autocompletar com IA",
  "menu.refactor": "Sugerir refatoração (chat)", "menu.unitTest": "Sugerir teste unitário (chat)", "menu.openChat": "Abrir o chat da Bella",
  "prefs.name": "Bella", "prefs.tools": "Ferramentas SAP e ARC-1",
+ "prefs.log": "Log",
  "context.editor.name": "Edição com a Bella",
  "context.editor.description": "Editores de texto aos quais a Bella está conectada (conclusão em linha)",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "Idioma dos comentários ABAP:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Mostrar uma prévia das diferenças antes de escrever no editor",
  "prefs.sapContext": "Carregar definições SAP (tabelas, classes, módulos de função) para gerar código", "generate.loadingDefinitions": "Carregando definições SAP…", "diff.definitions": "Definições SAP usadas: {0}", "diff.lint": "Verificação de estilo do código proposto ({0} avisos):", "diff.lint.more": "… e mais {0}",
+ "log.description": "Um arquivo de log ajuda a encontrar a causa de erros. Ele vem desativado.", "log.group": "Arquivo de log", "log.enabled": "Gravar um arquivo de log para diagnóstico", "log.detail": "Incluir detalhes (prompts, respostas, código-fonte, resultados das ferramentas)", "log.detail.hint": "Normal: o que a Bella faz (requisições, chamadas de ferramentas e SAP, processos CLI) com status, duração e erros. Com detalhes, o arquivo também contém seu código-fonte e as respostas do modelo.", "log.file": "Arquivo:", "log.open": "Abrir log", "log.folder": "Abrir pasta", "log.clear": "Limpar", "log.privacy": "Chaves de API, tokens e senhas são removidos de cada entrada. Anexe o arquivo a um relatório de erro.", "log.empty": "Ainda não há log. Ative o log e repita o que deu errado.", "log.cleared": "O log foi limpo.", "chat.openLog": "Abrir log",
  "prefs.autoCompletion": "Sugerir autocompletar automaticamente ao digitar", "prefs.autoCompletionDelay": "Atraso (ms):",
  "mcp.dialog.shell": "Servidor MCP", "mcp.dialog.title": "Servidor MCP",
  "mcp.dialog.message": "Conectar o ARC-1 ou outro servidor MCP como fonte adicional de ferramentas.",

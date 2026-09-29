@@ -30,6 +30,7 @@ import de.kiliantaubmann.bella.core.prompt.EditorContext;
 import de.kiliantaubmann.bella.core.prompt.Prompt;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Log;
 import de.kiliantaubmann.bella.core.util.Markdown;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
@@ -69,6 +70,10 @@ abstract class EditorHandler extends AbstractHandler {
 			CodeActions.Target target, String contextCode, String instruction) {
 		BellaPlugin plugin = BellaPlugin.getDefault();
 		SapContext sap = SapContext.of(part, contextCode, instruction);
+		String objectName = EditorBridge.objectName(part);
+		Log.info("editor", target + " on " + objectName + ", SAP definitions "
+				+ (sap == null ? "off (no ADT object, not logged on or switched off)" : "on"));
+		Log.debug("editor", () -> "instruction: " + instruction);
 		String model = plugin.chatModel();
 		var settings = plugin.chatSettings();
 		CancelToken cancel = new CancelToken();
@@ -110,14 +115,19 @@ abstract class EditorHandler extends AbstractHandler {
 					}
 					String code = Markdown.firstCodeBlock(r.text());
 					if (code.isBlank()) {
+						Log.warn("editor", "answer without a code block: " + Log.clip(r.text(), 500));
 						error(part, Messages.get("generate.empty"));
 						return Status.OK_STATUS;
 					}
-					String notes = CodeActions.previewNotes(used, AbapLint.check(code));
+					List<AbapLint.Finding> findings = AbapLint.check(code);
+					Log.info("editor", "proposal for " + objectName + ": " + code.length() + " chars, "
+							+ findings.size() + " style findings, definitions " + used);
+					String notes = CodeActions.previewNotes(used, findings);
 					Display.getDefault().asyncExec(() -> CodeActions.apply(part, editor, target, code, notes));
 				} catch (CancelToken.CancelledException e) {
 					return Status.CANCEL_STATUS;
 				} catch (Exception e) {
+					Log.warn("editor", target + " on " + objectName + " failed: " + e);
 					error(part, e.getMessage());
 				} finally {
 					cancel.cancel();

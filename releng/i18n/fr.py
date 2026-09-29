@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "Retravailler la sélection…", "menu.implementMethod": "Implémenter la méthode", "menu.complete": "Complétion IA",
  "menu.refactor": "Proposer un refactoring (chat)", "menu.unitTest": "Proposer un test unitaire (chat)", "menu.openChat": "Ouvrir le chat Bella",
  "prefs.name": "Bella", "prefs.tools": "Outils SAP & ARC-1",
+ "prefs.log": "Journal",
  "context.editor.name": "Édition avec Bella",
  "context.editor.description": "Éditeurs de texte auxquels Bella est rattachée (complétion en ligne)",
 }
@@ -81,6 +82,7 @@ MESSAGES = {
  "prefs.commentLanguage": "Langue des commentaires ABAP :", "prefs.editor": "Éditeur",
  "prefs.diffPreview": "Afficher un aperçu des différences avant d’écrire dans l’éditeur",
  "prefs.sapContext": "Charger les définitions SAP (tables, classes, modules fonction) pour la génération de code", "generate.loadingDefinitions": "Chargement des définitions SAP…", "diff.definitions": "Définitions SAP utilisées : {0}", "diff.lint": "Contrôle de style du code proposé ({0} remarques) :", "diff.lint.more": "… et {0} de plus",
+ "log.description": "Un fichier journal aide à trouver la cause des erreurs. Il est désactivé par défaut.", "log.group": "Fichier journal", "log.enabled": "Écrire un fichier journal pour le dépannage", "log.detail": "Inclure les détails (prompts, réponses, code source, résultats des outils)", "log.detail.hint": "Normal : ce que fait Bella (requêtes, appels d’outils et SAP, processus CLI) avec statut, durée et erreurs. Avec les détails, le fichier contient aussi votre code source et les réponses du modèle.", "log.file": "Fichier :", "log.open": "Ouvrir le journal", "log.folder": "Ouvrir le dossier", "log.clear": "Vider", "log.privacy": "Les clés d’API, jetons et mots de passe sont retirés de chaque entrée. Joignez le fichier à un rapport de bug.", "log.empty": "Il n’y a pas encore de journal. Activez-le et refaites ce qui a échoué.", "log.cleared": "Le journal a été vidé.", "chat.openLog": "Ouvrir le journal",
  "prefs.autoCompletion": "Proposer des complétions automatiquement pendant la saisie", "prefs.autoCompletionDelay": "Délai (ms) :",
  "mcp.dialog.shell": "Serveur MCP", "mcp.dialog.title": "Serveur MCP",
  "mcp.dialog.message": "Connecter ARC-1 ou un autre serveur MCP comme source d’outils supplémentaire.",

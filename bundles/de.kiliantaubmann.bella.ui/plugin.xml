@@ -137,6 +137,9 @@
       <page id="de.kiliantaubmann.bella.ui.prefs.tools" name="%prefs.tools"
             category="de.kiliantaubmann.bella.ui.prefs.main"
             class="de.kiliantaubmann.bella.ui.prefs.ToolsPreferencePage"/>
+      <page id="de.kiliantaubmann.bella.ui.prefs.log" name="%prefs.log"
+            category="de.kiliantaubmann.bella.ui.prefs.main"
+            class="de.kiliantaubmann.bella.ui.prefs.LogPreferencePage"/>
    </extension>
 
 </plugin>

@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "Przerób zaznaczenie…", "menu.implementMethod": "Zaimplementuj metodę", "menu.complete": "Uzupełnianie AI",
  "menu.refactor": "Zaproponuj refaktoryzację (czat)", "menu.unitTest": "Zaproponuj test jednostkowy (czat)", "menu.openChat": "Otwórz czat Bella",
  "prefs.name": "Bella", "prefs.tools": "Narzędzia SAP i ARC-1",
+ "prefs.log": "Dziennik",
  "context.editor.name": "Edycja z Bellą",
  "context.editor.description": "Edytory tekstu, do których podłączona jest Bella (uzupełnianie w linii)",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "Język komentarzy ABAP:", "prefs.editor": "Edytor",
  "prefs.diffPreview": "Pokazuj podgląd różnic przed zapisem w edytorze",
  "prefs.sapContext": "Wczytuj definicje SAP (tabele, klasy, moduły funkcyjne) do generowania kodu", "generate.loadingDefinitions": "Wczytywanie definicji SAP…", "diff.definitions": "Użyte definicje SAP: {0}", "diff.lint": "Kontrola stylu proponowanego kodu (uwagi: {0}):", "diff.lint.more": "… i jeszcze {0}",
+ "log.description": "Plik dziennika pomaga znaleźć przyczynę błędów. Domyślnie jest wyłączony.", "log.group": "Plik dziennika", "log.enabled": "Zapisuj plik dziennika do diagnozowania problemów", "log.detail": "Uwzględniaj szczegóły (prompty, odpowiedzi, kod źródłowy, wyniki narzędzi)", "log.detail.hint": "Normalnie: co robi Bella (żądania, wywołania narzędzi i SAP, procesy CLI) ze statusem, czasem trwania i błędami. Ze szczegółami plik zawiera też Twój kod źródłowy i odpowiedzi modelu.", "log.file": "Plik:", "log.open": "Otwórz dziennik", "log.folder": "Otwórz folder", "log.clear": "Wyczyść", "log.privacy": "Klucze API, tokeny i hasła są usuwane z każdego wpisu. Dołącz plik do zgłoszenia błędu.", "log.empty": "Nie ma jeszcze dziennika. Włącz go i powtórz to, co poszło źle.", "log.cleared": "Dziennik został wyczyszczony.", "chat.openLog": "Otwórz dziennik",
  "prefs.autoCompletion": "Automatycznie proponuj uzupełnienia podczas pisania", "prefs.autoCompletionDelay": "Opóźnienie (ms):",
  "mcp.dialog.shell": "Serwer MCP", "mcp.dialog.title": "Serwer MCP",
  "mcp.dialog.message": "Podłącz ARC-1 lub inny serwer MCP jako dodatkowe źródło narzędzi.",

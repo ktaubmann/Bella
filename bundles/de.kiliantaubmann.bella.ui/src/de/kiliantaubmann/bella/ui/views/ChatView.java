@@ -216,6 +216,20 @@ public class ChatView extends ViewPart {
 		};
 		tb.add(newChat);
 		tb.add(settings);
+		Action openLog = new Action(Messages.get("chat.openLog")) {
+			@Override
+			public void run() {
+				java.nio.file.Path file = BellaPlugin.getDefault().logFile().path();
+				if (java.nio.file.Files.exists(file)) {
+					de.kiliantaubmann.bella.ui.prefs.LogViewer.openInEditor(file);
+				} else {
+					// no log yet: show where to switch it on
+					PreferencesUtil.createPreferenceDialogOn(getSite().getShell(), "de.kiliantaubmann.bella.ui.prefs.log",
+							null, null).open();
+				}
+			}
+		};
+		getViewSite().getActionBars().getMenuManager().add(openLog);
 		newSession();
 		updateStatus();
 	}
@@ -338,7 +352,7 @@ public class ChatView extends ViewPart {
 		if (running != null) {
 			return;
 		}
-		if (!BellaPlugin.getDefault().conversationType().isInstance(session)) {
+		if (!BellaPlugin.getDefault().conversationType().isInstance(session.unwrap())) {
 			newSession(); // provider switched in the preferences: the old chat cannot continue
 			updateStatus();
 		}

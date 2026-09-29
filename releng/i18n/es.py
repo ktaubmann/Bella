@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "Reelaborar la selección…", "menu.implementMethod": "Implementar método", "menu.complete": "Autocompletado IA",
  "menu.refactor": "Proponer refactorización (chat)", "menu.unitTest": "Proponer prueba unitaria (chat)", "menu.openChat": "Abrir el chat de Bella",
  "prefs.name": "Bella", "prefs.tools": "Herramientas SAP y ARC-1",
+ "prefs.log": "Registro",
  "context.editor.name": "Edición con Bella",
  "context.editor.description": "Editores de texto a los que Bella está conectada (autocompletado en línea)",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "Idioma de los comentarios ABAP:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Mostrar una vista previa de diferencias antes de escribir en el editor",
  "prefs.sapContext": "Cargar definiciones SAP (tablas, clases, módulos de función) para generar código", "generate.loadingDefinitions": "Cargando definiciones SAP…", "diff.definitions": "Definiciones SAP usadas: {0}", "diff.lint": "Revisión de estilo del código propuesto ({0} avisos):", "diff.lint.more": "… y {0} más",
+ "log.description": "Un archivo de registro ayuda a encontrar la causa de los errores. Está desactivado por defecto.", "log.group": "Archivo de registro", "log.enabled": "Escribir un archivo de registro para diagnosticar problemas", "log.detail": "Incluir detalles (prompts, respuestas, código fuente, resultados de herramientas)", "log.detail.hint": "Normal: lo que hace Bella (solicitudes, llamadas a herramientas y a SAP, procesos CLI) con estado, duración y errores. Con detalles, el archivo también contiene tu código fuente y las respuestas del modelo.", "log.file": "Archivo:", "log.open": "Abrir registro", "log.folder": "Abrir carpeta", "log.clear": "Vaciar", "log.privacy": "Las claves de API, tokens y contraseñas se eliminan de cada entrada. Adjunta el archivo a un informe de error.", "log.empty": "Todavía no hay registro. Activa el registro y repite lo que falló.", "log.cleared": "El registro se ha vaciado.", "chat.openLog": "Abrir registro",
  "prefs.autoCompletion": "Sugerir autocompletados automáticamente al escribir", "prefs.autoCompletionDelay": "Retardo (ms):",
  "mcp.dialog.shell": "Servidor MCP", "mcp.dialog.title": "Servidor MCP",
  "mcp.dialog.message": "Conectar ARC-1 u otro servidor MCP como fuente adicional de herramientas.",

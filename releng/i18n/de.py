@@ -30,6 +30,7 @@ PLUGIN = {
  "menu.openChat": "Bella-Chat öffnen",
  "prefs.name": "Bella",
  "prefs.tools": "SAP-Tools & ARC-1",
+ "prefs.log": "Protokoll",
  "context.editor.name": "Bearbeiten mit Bella",
  "context.editor.description": "Texteditoren, in die Bella eingebunden ist (Inline-Vervollständigung)",
 }
@@ -144,6 +145,7 @@ MESSAGES = {
  "prefs.editor": "Editor",
  "prefs.diffPreview": "Vor dem Schreiben in den Editor eine Diff-Vorschau zeigen",
  "prefs.sapContext": "SAP-Definitionen (Tabellen, Klassen, Funktionsbausteine) für die Code-Erzeugung laden", "generate.loadingDefinitions": "Lade SAP-Definitionen…", "diff.definitions": "Verwendete SAP-Definitionen: {0}", "diff.lint": "Stilprüfung des vorgeschlagenen Codes ({0} Hinweise):", "diff.lint.more": "… und {0} weitere",
+ "log.description": "Eine Protokolldatei hilft, die Ursache von Fehlern zu finden. Standardmäßig ist sie aus.", "log.group": "Protokolldatei", "log.enabled": "Protokolldatei für die Fehlersuche schreiben", "log.detail": "Details protokollieren (Prompts, Antworten, Quelltext, Tool-Ergebnisse)", "log.detail.hint": "Normal: was Bella tut (Anfragen, Tool- und SAP-Aufrufe, CLI-Prozesse) mit Status, Dauer und Fehlern. Mit Details enthält die Datei auch deinen Quelltext und die Antworten des Modells.", "log.file": "Datei:", "log.open": "Protokoll öffnen", "log.folder": "Ordner öffnen", "log.clear": "Leeren", "log.privacy": "API-Schlüssel, Tokens und Passwörter werden aus jedem Eintrag entfernt. Hänge die Datei an einen Fehlerbericht.", "log.empty": "Es gibt noch kein Protokoll. Schalte das Protokoll ein und wiederhole, was schiefging.", "log.cleared": "Das Protokoll wurde geleert.", "chat.openLog": "Protokoll öffnen",
  "prefs.autoCompletion": "Beim Tippen automatisch Vervollständigungen vorschlagen",
  "prefs.autoCompletionDelay": "Verzögerung (ms):",
  "mcp.dialog.shell": "MCP-Server",

@@ -33,6 +33,7 @@ PLUGIN = {
  "menu.openChat": "Open Bella Chat",
  "prefs.name": "Bella",
  "prefs.tools": "SAP Tools & ARC-1",
+ "prefs.log": "Log file",
  "context.editor.name": "Editing with Bella",
  "context.editor.description": "Text editors Bella is attached to (inline completion)",
 }
@@ -147,6 +148,7 @@ MESSAGES = {
  "prefs.editor": "Editor",
  "prefs.diffPreview": "Show a diff preview before writing into the editor",
  "prefs.sapContext": "Load SAP definitions (tables, classes, function modules) for code generation", "generate.loadingDefinitions": "Loading SAP definitions…", "diff.definitions": "SAP definitions used: {0}", "diff.lint": "Style check of the proposed code ({0} findings):", "diff.lint.more": "… and {0} more",
+ "log.description": "A log file helps to find the cause of errors. It is off by default.", "log.group": "Log file", "log.enabled": "Write a log file for troubleshooting", "log.detail": "Include details (prompts, answers, source code, tool results)", "log.detail.hint": "Normal: what Bella does (requests, tool and SAP calls, CLI processes) with status, duration and errors. With details the file also contains your source code and the model’s answers.", "log.file": "File:", "log.open": "Open log", "log.folder": "Open folder", "log.clear": "Clear", "log.privacy": "API keys, tokens and passwords are removed from every entry. Attach the file to a bug report.", "log.empty": "There is no log yet. Switch logging on and repeat what went wrong.", "log.cleared": "The log was cleared.", "chat.openLog": "Open log",
  "prefs.autoCompletion": "Suggest completions automatically while typing",
  "prefs.autoCompletionDelay": "Delay (ms):",
  "mcp.dialog.shell": "MCP server",

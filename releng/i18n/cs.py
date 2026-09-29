@@ -12,6 +12,7 @@ PLUGIN = {
  "menu.rewrite": "Přepracovat výběr…", "menu.implementMethod": "Implementovat metodu", "menu.complete": "Doplňování AI",
  "menu.refactor": "Navrhnout refaktoring (chat)", "menu.unitTest": "Navrhnout unit test (chat)", "menu.openChat": "Otevřít chat Bella",
  "prefs.name": "Bella", "prefs.tools": "Nástroje SAP a ARC-1",
+ "prefs.log": "Protokol",
  "context.editor.name": "Úpravy s Bellou",
  "context.editor.description": "Textové editory, ke kterým je Bella připojena (doplňování v řádku)",
 }
@@ -80,6 +81,7 @@ MESSAGES = {
  "prefs.commentLanguage": "Jazyk komentářů ABAP:", "prefs.editor": "Editor",
  "prefs.diffPreview": "Před zápisem do editoru zobrazit náhled rozdílů",
  "prefs.sapContext": "Načítat definice SAP (tabulky, třídy, funkční moduly) pro generování kódu", "generate.loadingDefinitions": "Načítání definic SAP…", "diff.definitions": "Použité definice SAP: {0}", "diff.lint": "Kontrola stylu navrženého kódu (upozornění: {0}):", "diff.lint.more": "… a dalších {0}",
+ "log.description": "Soubor protokolu pomáhá najít příčinu chyb. Ve výchozím stavu je vypnutý.", "log.group": "Soubor protokolu", "log.enabled": "Zapisovat soubor protokolu pro řešení problémů", "log.detail": "Zahrnout podrobnosti (prompty, odpovědi, zdrojový kód, výsledky nástrojů)", "log.detail.hint": "Normálně: co Bella dělá (požadavky, volání nástrojů a SAP, procesy CLI) se stavem, dobou trvání a chybami. S podrobnostmi obsahuje soubor i váš zdrojový kód a odpovědi modelu.", "log.file": "Soubor:", "log.open": "Otevřít protokol", "log.folder": "Otevřít složku", "log.clear": "Vyprázdnit", "log.privacy": "Klíče API, tokeny a hesla se z každého záznamu odstraňují. Přiložte soubor k hlášení chyby.", "log.empty": "Protokol zatím neexistuje. Zapněte protokolování a zopakujte, co selhalo.", "log.cleared": "Protokol byl vyprázdněn.", "chat.openLog": "Otevřít protokol",
  "prefs.autoCompletion": "Při psaní automaticky navrhovat doplnění", "prefs.autoCompletionDelay": "Zpoždění (ms):",
  "mcp.dialog.shell": "Server MCP", "mcp.dialog.title": "Server MCP",
  "mcp.dialog.message": "Připojit ARC-1 nebo jiný server MCP jako další zdroj nástrojů.",
