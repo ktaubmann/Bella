@@ -35,7 +35,32 @@ public interface ProcessLauncher {
 	 */
 	CliProcess start(List<String> command, Map<String, String> env, Path workDir) throws IOException;
 
-	/** Launcher based on {@link ProcessBuilder}. */
+	/** File name of the program, also behind {@code cmd.exe /c}. */
+	static String displayName(List<String> command) {
+		if (command.isEmpty()) {
+			return "?";
+		}
+		String exe = command.get(0);
+		if (command.size() > 2 && exe.toLowerCase(java.util.Locale.ROOT).endsWith("cmd.exe")
+				&& command.get(1).equalsIgnoreCase("/c")) {
+			exe = command.get(2);
+		}
+		int slash = Math.max(exe.lastIndexOf('/'), exe.lastIndexOf('\\'));
+		return exe.substring(slash + 1);
+	}
+
+	/** Names of the variables set and removed; values may be tokens and are never shown. */
+	static String envSummary(Map<String, String> env) {
+		List<String> set = new java.util.ArrayList<>();
+		List<String> removed = new java.util.ArrayList<>();
+		env.forEach((k, v) -> (v == null ? removed : set).add(k));
+		java.util.Collections.sort(set);
+		java.util.Collections.sort(removed);
+		return (set.isEmpty() ? "" : "set " + set) + (set.isEmpty() || removed.isEmpty() ? "" : ", ")
+				+ (removed.isEmpty() ? "" : "removed " + removed);
+	}
+
+	/** Launcher based on {@link ProcessBuilder}; logs start, exit and (with the detail level) every line. */
 	ProcessLauncher SYSTEM = (command, env, workDir) -> {
 		ProcessBuilder pb = new ProcessBuilder(command);
 		if (workDir != null) {
@@ -49,15 +74,29 @@ public interface ProcessLauncher {
 				target.put(k, v);
 			}
 		});
-		Process p = pb.start();
+		String name = displayName(command);
+		Process p;
+		try {
+			p = pb.start();
+		} catch (IOException e) {
+			Log.warn("cli", "cannot start " + String.join(" ", command) + ": " + e.getMessage());
+			throw e;
+		}
+		long started = System.nanoTime();
+		Log.info("cli", "started " + name + " (pid " + p.pid() + "): " + String.join(" ", command)
+				+ (env.isEmpty() ? "" : " | environment: " + envSummary(env))
+				+ (workDir == null ? "" : " | directory: " + workDir));
+		java.util.concurrent.atomic.AtomicBoolean stoppedByBella = new java.util.concurrent.atomic.AtomicBoolean();
 		StringBuilder tail = new StringBuilder();
 		Thread drain = new Thread(() -> {
 			byte[] buf = new byte[4096];
 			try (InputStream err = p.getErrorStream()) {
 				int n;
 				while ((n = err.read(buf)) > 0) {
+					String chunk = new String(buf, 0, n, StandardCharsets.UTF_8);
+					Log.debug("cli", () -> name + " stderr: " + Log.clip(chunk.stripTrailing()));
 					synchronized (tail) {
-						tail.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+						tail.append(chunk);
 						if (tail.length() > 8192) {
 							tail.delete(0, tail.length() - 8192);
 						}
@@ -69,15 +108,34 @@ public interface ProcessLauncher {
 		}, "bella-claude-stderr");
 		drain.setDaemon(true);
 		drain.start();
+		p.onExit().thenAccept(ended -> {
+			String err;
+			synchronized (tail) {
+				err = tail.toString().strip();
+			}
+			int code = ended.exitValue();
+			String line = name + " (pid " + ended.pid() + ") ended with exit code " + code + " after "
+					+ Log.millisSince(started) + " ms" + (stoppedByBella.get() ? " (stopped by Bella)" : "")
+					+ (err.isEmpty() ? "" : "\nstderr:\n" + Log.clip(err, 4_000));
+			if (code == 0 || stoppedByBella.get()) {
+				Log.info("cli", line);
+			} else {
+				Log.warn("cli", line);
+			}
+		});
+		OutputStream stdin = LineTap.out(p.getOutputStream(),
+				l -> Log.debug("cli", () -> name + " <- " + Log.clip(l)));
+		InputStream stdout = LineTap.in(p.getInputStream(),
+				l -> Log.debug("cli", () -> name + " -> " + Log.clip(l)));
 		return new CliProcess() {
 			@Override
 			public OutputStream stdin() {
-				return p.getOutputStream();
+				return stdin;
 			}
 
 			@Override
 			public InputStream stdout() {
-				return p.getInputStream();
+				return stdout;
 			}
 
 			@Override
@@ -99,6 +157,7 @@ public interface ProcessLauncher {
 
 			@Override
 			public void destroy() {
+				stoppedByBella.set(true);
 				p.descendants().forEach(ProcessHandle::destroyForcibly);
 				p.destroyForcibly();
 			}

@@ -12,6 +12,7 @@ import de.kiliantaubmann.bella.core.abap.AbapReferences.Reference;
 import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.CancelToken.CancelledException;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * Collects the definitions of the objects a piece of code uses, so the model
@@ -64,7 +65,8 @@ public final class AdtContext {
 
 	public static Result build(AdtClient client, List<Reference> candidates, Limits limits, CancelToken cancel)
 			throws CancelledException {
-		long deadline = System.nanoTime() + limits.timeoutMillis() * 1_000_000L;
+		long start = System.nanoTime();
+		long deadline = start + limits.timeoutMillis() * 1_000_000L;
 		StringBuilder text = new StringBuilder();
 		List<String> used = new ArrayList<>();
 		List<String> notFound = new ArrayList<>();
@@ -96,12 +98,16 @@ public final class AdtContext {
 				used.add(obj.name());
 			} catch (IOException | RuntimeException e) {
 				cancel.throwIfCancelled();
+				Log.info("adt", "context: " + ref.name() + " not readable: " + e.getMessage());
 				notFound.add(ref.name());
 			}
 		}
 		if (!notFound.isEmpty() && !used.isEmpty()) {
 			text.append("Not found: ").append(String.join(", ", notFound)).append('\n');
 		}
+		Log.info("adt", "context: " + candidates.size() + " candidates, used " + used + ", not found " + notFound
+				+ (skipped.isEmpty() ? "" : ", skipped " + skipped) + ", " + text.length() + " chars ("
+				+ Log.millisSince(start) + " ms)");
 		return new Result(text.toString(), List.copyOf(used), List.copyOf(notFound), List.copyOf(skipped));
 	}
 

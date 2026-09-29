@@ -31,6 +31,7 @@ import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * Minimal MCP server ("Streamable HTTP", JSON responses) that offers Bella's
@@ -202,6 +203,8 @@ public final class McpServer implements AutoCloseable {
 			return;
 		}
 		if (!authorized(req.headers().get("authorization"))) {
+			Log.warn("mcp", "Bella's MCP server refused a request without the right token (" + req.method() + " "
+					+ req.path() + ")");
 			write(out, 401, "Unauthorized", null, null);
 			return;
 		}
@@ -284,6 +287,7 @@ public final class McpServer implements AutoCloseable {
 			return error(id, -32600, "Invalid Request");
 		}
 		JsonObject params = Json.obj(msg, "params");
+		Log.debug("mcp", () -> "server <- " + method + (params == null ? "" : " " + Log.clip(Json.GSON.toJson(params), 2_000)));
 		return switch (method) {
 		case "initialize" -> result(id, initialize(params));
 		case "ping" -> result(id, new JsonObject());
@@ -294,6 +298,9 @@ public final class McpServer implements AutoCloseable {
 	}
 
 	private JsonObject initialize(JsonObject params) {
+		JsonObject client = Json.obj(params, "clientInfo");
+		Log.info("mcp", "Bella's MCP server: client " + Json.str(client, "name") + " " + Json.str(client, "version")
+				+ " connected");
 		JsonObject r = new JsonObject();
 		String requested = Json.str(params, "protocolVersion");
 		r.addProperty("protocolVersion", requested != null ? requested : PROTOCOL_VERSION);

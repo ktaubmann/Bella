@@ -27,6 +27,7 @@ import de.kiliantaubmann.bella.core.adt.AdtRequest;
 import de.kiliantaubmann.bella.core.adt.AdtResponse;
 import de.kiliantaubmann.bella.core.adt.AdtTransport;
 import de.kiliantaubmann.bella.core.util.CancelToken;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * Sends raw ADT REST requests through the ADT communication layer, so they
@@ -49,6 +50,8 @@ final class SdkTransport implements AdtTransport.Session {
 			Method m = factory.getClass().getMethod("createStatefulSession", String.class);
 			return (ISystemSession) m.invoke(factory, destinationId);
 		} catch (ReflectiveOperationException | ClassCastException e) {
+			Log.warn("adt", "no stateful ADT session for " + destinationId + " (factory "
+					+ factory.getClass().getName() + "): " + e);
 			throw new IOException("This ADT version does not offer stateful sessions to plug-ins ("
 					+ e.getClass().getSimpleName() + "). Writing via Bella's ADT tools is not available; "
 					+ "use ARC-1 or apply the change in the editor.", e);
@@ -68,10 +71,13 @@ final class SdkTransport implements AdtTransport.Session {
 				try {
 					return (IRestResource) m.invoke(factory, uri, session);
 				} catch (ReflectiveOperationException e) {
+					Log.warn("adt", "createRestResource(URI, " + session.getClass().getName() + ") failed: " + e);
 					throw new IOException("Cannot create ADT resource: " + e.getMessage(), e);
 				}
 			}
 		}
+		Log.warn("adt", "no createRestResource(URI, session) method for " + session.getClass().getName() + " in "
+				+ factory.getClass().getName());
 		throw new IOException("This ADT version cannot create resources for a stateful session.");
 	}
 
@@ -132,6 +138,7 @@ final class SdkTransport implements AdtTransport.Session {
 				}
 			}
 		}
+		Log.warn("adt", "IRestResource has no " + name + "(monitor, headers, type, body) method in this ADT version");
 		throw new IOException("This ADT version has no " + name + "(monitor, headers, type, body) method.");
 	}
 

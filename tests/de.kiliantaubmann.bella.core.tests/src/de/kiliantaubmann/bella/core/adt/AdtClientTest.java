@@ -130,4 +130,23 @@ class AdtClientTest {
 		// XML-only types do not try source/main
 		assertEquals(List.of("GET /sap/bc/adt/ddic/tabletypes/ztt"), adt.log);
 	}
+
+	@Test
+	void requestsAreLoggedWithStatusAndSapMessage() throws Exception {
+		FakeAdt adt = new FakeAdt().route("GET /sap/bc/adt/oo/classes/zcl_a/source/main",
+				r -> new AdtResponse(200, "text/plain", "CLASS zcl_a DEFINITION."));
+		adt.route("GET /sap/bc/adt/oo/classes/zcl_b", r -> new AdtResponse(403, "application/xml",
+				"<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\"><message lang=\"EN\">No authorization</message></exc:exception>"));
+		AdtClient c = new AdtClient(adt.stateless("D"));
+		try (de.kiliantaubmann.bella.core.testutil.LogRecorder log = de.kiliantaubmann.bella.core.testutil.LogRecorder
+				.start(de.kiliantaubmann.bella.core.util.Log.Level.INFO)) {
+			c.readSource("/sap/bc/adt/oo/classes/zcl_a", null, CancelToken.NONE);
+			assertThrows(AdtException.class, () -> c.readSource("/sap/bc/adt/oo/classes/zcl_b", null, CancelToken.NONE));
+			assertTrue(log.lines.get(0).matches("INFO \\[adt\\] GET /sap/bc/adt/oo/classes/zcl_a/source/main -> 200 \\(\\d+ ms\\)"),
+					log.lines.get(0));
+			assertTrue(log.lines.get(1).startsWith("WARN [adt] GET /sap/bc/adt/oo/classes/zcl_b/source/main -> 403"),
+					log.lines.get(1));
+			assertTrue(log.lines.get(1).endsWith("HTTP 403: No authorization"), log.lines.get(1));
+		}
+	}
 }

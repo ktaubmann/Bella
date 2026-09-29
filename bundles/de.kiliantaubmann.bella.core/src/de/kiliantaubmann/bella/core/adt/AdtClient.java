@@ -14,6 +14,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 import de.kiliantaubmann.bella.core.util.CancelToken;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * ADT REST calls used by Bella's tools. Pure request building and response
@@ -32,12 +33,36 @@ public final class AdtClient {
 	}
 
 	private AdtResponse send(AdtRequest r, CancelToken cancel) throws IOException {
-		AdtResponse response = transport.send(r, cancel);
+		AdtResponse response = exchange(transport, r, cancel);
 		if (!response.ok()) {
 			throw new AdtException(response.status(), AdtErrors.message(response));
 		}
 		return response;
 	}
+
+	/** Sends a request and writes method, path, status and duration to Bella's log. */
+	static AdtResponse exchange(AdtTransport t, AdtRequest r, CancelToken cancel) throws IOException {
+		long start = System.nanoTime();
+		String what = (t instanceof AdtTransport.Session ? "[stateful] " : "") + r.method() + " " + r.path();
+		Log.debug(AREA, () -> r.body() == null ? what : what + " body:\n" + Log.clip(r.body(), 4_000));
+		AdtResponse response;
+		try {
+			response = t.send(r, cancel);
+		} catch (IOException | RuntimeException e) {
+			Log.warn(AREA, what + " failed after " + Log.millisSince(start) + " ms: " + e);
+			throw e;
+		}
+		if (response.ok()) {
+			Log.info(AREA, what + " -> " + response.status() + " (" + Log.millisSince(start) + " ms)");
+		} else {
+			Log.warn(AREA, what + " -> " + response.status() + " (" + Log.millisSince(start) + " ms): "
+					+ AdtErrors.message(response));
+			Log.debug(AREA, () -> "response body:\n" + Log.clip(response.body(), 4_000));
+		}
+		return response;
+	}
+
+	private static final String AREA = "adt";
 
 	// ---- search ----------------------------------------------------------
 
@@ -183,7 +208,7 @@ public final class AdtClient {
 		AdtRequest lockReq = AdtRequest.post(objectUri + "?_action=LOCK&accessMode=MODIFY",
 				"application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result", null,
 				null);
-		AdtResponse lockResp = session.send(lockReq, cancel);
+		AdtResponse lockResp = exchange(session, lockReq, cancel);
 		if (!lockResp.ok()) {
 			throw new AdtException(lockResp.status(), "Could not lock object: " + AdtErrors.message(lockResp));
 		}
@@ -199,14 +224,14 @@ public final class AdtClient {
 			if (tr != null && !tr.isBlank()) {
 				path.append("&corrNr=").append(enc(tr));
 			}
-			AdtResponse put = session.send(AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8"),
+			AdtResponse put = exchange(session, AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8"),
 					cancel);
 			if (!put.ok()) {
 				throw new AdtException(put.status(), "Could not write source: " + AdtErrors.message(put));
 			}
 			return tr == null ? "" : tr;
 		} finally {
-			session.send(AdtRequest.post(objectUri + "?_action=UNLOCK&lockHandle=" + enc(lock.handle()), null, null,
+			exchange(session, AdtRequest.post(objectUri + "?_action=UNLOCK&lockHandle=" + enc(lock.handle()), null, null,
 					null), CancelToken.NONE);
 		}
 	}
@@ -350,7 +375,7 @@ public final class AdtClient {
 
 	private String atcDefaultVariant(CancelToken cancel) {
 		try {
-			AdtResponse r = transport.send(AdtRequest.get("/sap/bc/adt/atc/customizing", "application/xml"), cancel);
+			AdtResponse r = exchange(transport, AdtRequest.get("/sap/bc/adt/atc/customizing", "application/xml"), cancel);
 			if (r.ok()) {
 				for (Element p : AdtXml.elements(AdtXml.parse(r.body()), "property")) {
 					if ("systemCheckVariant".equals(AdtXml.attr(p, "name"))) {

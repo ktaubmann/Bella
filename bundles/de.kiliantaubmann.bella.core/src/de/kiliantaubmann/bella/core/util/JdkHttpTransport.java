@@ -24,8 +24,10 @@ final class JdkHttpTransport implements HttpTransport {
 		HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
 				.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
 		headers.forEach(builder::header);
+		long start = System.nanoTime();
 		try {
 			HttpResponse<InputStream> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+			log("POST", uri, response.statusCode(), start);
 			InputStream in = response.body();
 			cancel.onCancel(in);
 			return new Response() {
@@ -52,6 +54,9 @@ final class JdkHttpTransport implements HttpTransport {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("interrupted", e);
+		} catch (IOException e) {
+			Log.warn(AREA, "POST " + display(uri) + " failed after " + Log.millisSince(start) + " ms: " + e);
+			throw e;
 		}
 	}
 
@@ -59,11 +64,29 @@ final class JdkHttpTransport implements HttpTransport {
 	public void delete(URI uri, Map<String, String> headers) throws IOException {
 		HttpRequest.Builder builder = HttpRequest.newBuilder(uri).DELETE();
 		headers.forEach(builder::header);
+		long start = System.nanoTime();
 		try {
-			client.send(builder.build(), HttpResponse.BodyHandlers.discarding());
+			log("DELETE", uri, client.send(builder.build(), HttpResponse.BodyHandlers.discarding()).statusCode(), start);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("interrupted", e);
 		}
+	}
+
+	private static final String AREA = "http";
+
+	private static void log(String method, URI uri, int status, long start) {
+		String line = method + " " + display(uri) + " -> " + status + " (" + Log.millisSince(start) + " ms)";
+		if (status >= 400) {
+			Log.warn(AREA, line);
+		} else {
+			Log.info(AREA, line);
+		}
+	}
+
+	/** Scheme, host and path; user info and query may carry secrets and are left out. */
+	static String display(URI uri) {
+		return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "")
+				+ (uri.getPath() == null ? "" : uri.getPath());
 	}
 }

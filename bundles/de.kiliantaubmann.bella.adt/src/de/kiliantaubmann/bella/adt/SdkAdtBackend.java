@@ -20,6 +20,7 @@ import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
 import de.kiliantaubmann.bella.core.adt.AdtSystem;
 import de.kiliantaubmann.bella.core.adt.AdtTransport;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * {@link AdtBackend} on top of SAP's ADT SDK. Uses the ABAP projects of the
@@ -54,6 +55,7 @@ public final class SdkAdtBackend implements AdtBackend {
 		try {
 			return AdtLogonServiceFactory.createLogonService().isLoggedOn(destinationId);
 		} catch (RuntimeException e) {
+			Log.warn("adt", "cannot ask the logon service for " + destinationId + ": " + e);
 			return false;
 		}
 	}
@@ -84,12 +86,15 @@ public final class SdkAdtBackend implements AdtBackend {
 			ref = adaptToObjectReference(file);
 		}
 		if (ref == null) {
+			Reflect.once("no object reference for editor input " + editorInput.getClass().getName()
+					+ " in ABAP project " + project.getName());
 			return Optional.empty();
 		}
 		Object uri = Reflect.call(ref, "getUri");
 		String name = Reflect.string(ref, "getName");
 		String type = Reflect.string(ref, "getType");
 		if (uri == null || name == null) {
+			Reflect.once("object reference " + ref.getClass().getName() + " without URI or name");
 			return Optional.empty();
 		}
 		String path = uri instanceof URI u ? u.getPath() : String.valueOf(uri);
@@ -134,7 +139,17 @@ public final class SdkAdtBackend implements AdtBackend {
 				m.setAccessible(true);
 				return m.invoke(target);
 			} catch (ReflectiveOperationException | RuntimeException e) {
+				once(target.getClass().getName() + "." + method + "() not available: " + e);
 				return null;
+			}
+		}
+
+		private static final java.util.Set<String> REPORTED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+		/** Logs a reflection problem once per session, so repeated calls do not flood the log. */
+		static void once(String message) {
+			if (REPORTED.add(message)) {
+				Log.info("adt", "ADT SDK: " + message);
 			}
 		}
 

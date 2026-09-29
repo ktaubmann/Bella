@@ -19,6 +19,7 @@ import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * MCP over stdio: starts the server as a child process (e.g.
@@ -36,7 +37,19 @@ public final class StdioTransport implements McpTransport {
 		this.timeoutSeconds = timeoutSeconds;
 		ProcessBuilder pb = new ProcessBuilder(command);
 		pb.environment().putAll(env);
-		this.process = pb.start();
+		try {
+			this.process = pb.start();
+		} catch (IOException e) {
+			Log.warn("mcp", "cannot start MCP server " + String.join(" ", command) + ": " + e.getMessage());
+			throw e;
+		}
+		Log.info("mcp", "started MCP server (pid " + process.pid() + "): " + String.join(" ", command)
+				+ (env.isEmpty() ? "" : " | environment: set " + new java.util.TreeSet<>(env.keySet())));
+		process.onExit().thenAccept(p -> {
+			String line = "MCP server (pid " + p.pid() + ") ended with exit code " + p.exitValue();
+			String err = stderrTail().strip();
+			Log.info("mcp", err.isEmpty() ? line : line + "\nstderr:\n" + Log.clip(err, 4_000));
+		});
 		this.writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
 		Thread out = new Thread(this::readStdout, "bella-mcp-stdout");
 		out.setDaemon(true);
@@ -77,6 +90,8 @@ public final class StdioTransport implements McpTransport {
 				if (line.isBlank()) {
 					continue;
 				}
+				String l = line;
+				Log.debug("mcp", () -> "stdio -> " + Log.clip(l));
 				try {
 					JsonObject msg = Json.parseObject(line);
 					if (msg.has("id") && (msg.has("result") || msg.has("error"))) {
@@ -102,6 +117,8 @@ public final class StdioTransport implements McpTransport {
 				new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
 			String line;
 			while ((line = reader.readLine()) != null) {
+				String l = line;
+				Log.debug("mcp", () -> "stdio stderr: " + Log.clip(l));
 				synchronized (stderrTail) {
 					stderrTail.append(line).append('\n');
 					if (stderrTail.length() > 4000) {
@@ -157,7 +174,9 @@ public final class StdioTransport implements McpTransport {
 		if (!process.isAlive()) {
 			throw new IOException("MCP server process is not running. " + stderrTail());
 		}
-		writer.write(Json.GSON.toJson(message));
+		String json = Json.GSON.toJson(message);
+		Log.debug("mcp", () -> "stdio <- " + Log.clip(json));
+		writer.write(json);
 		writer.write('\n');
 		writer.flush();
 	}

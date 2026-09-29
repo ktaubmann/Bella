@@ -23,6 +23,11 @@ public interface Conversation extends AutoCloseable {
 		return "";
 	}
 
+	/** The conversation itself, or the one a decorator such as {@link LoggingConversation} wraps. */
+	default Conversation unwrap() {
+		return this;
+	}
+
 	@Override
 	default void close() {
 	}

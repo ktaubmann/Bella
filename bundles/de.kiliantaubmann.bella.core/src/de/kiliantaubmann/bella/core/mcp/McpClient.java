@@ -11,6 +11,7 @@ import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * Minimal MCP client: {@code initialize}, {@code tools/list} (paginated) and
@@ -53,6 +54,8 @@ public final class McpClient implements AutoCloseable {
 		note.addProperty("method", "notifications/initialized");
 		transport.notify(note);
 		initialized = true;
+		Log.info("mcp", "connected to " + serverName + " " + serverVersion + " (protocol "
+				+ (version == null ? PROTOCOL_VERSION : version) + ")");
 	}
 
 	public String serverName() {
@@ -141,6 +144,7 @@ public final class McpClient implements AutoCloseable {
 		JsonObject response = transport.request(req, cancel);
 		JsonObject error = Json.obj(response, "error");
 		if (error != null) {
+			Log.warn("mcp", method + " failed: " + Json.integer(error, "code", -1) + " " + Json.str(error, "message"));
 			throw new McpException(Json.integer(error, "code", -1), String.valueOf(Json.str(error, "message")));
 		}
 		JsonObject result = Json.obj(response, "result");

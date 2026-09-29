@@ -211,4 +211,41 @@ class ChatSessionTest {
 				.getAsString();
 		assertTrue(content.contains("INVALID_JSON"));
 	}
+
+	@Test
+	void turnsModelRequestsAndToolCallsAreLogged() throws Exception {
+		ScriptedLlm llm = new ScriptedLlm();
+		llm.results.add(toolUse(StopReason.TOOL_USE, call("t1", "adt_read_source")));
+		llm.results.add(text("It reads orders."));
+		ToolRegistry registry = new ToolRegistry();
+		registry.addProvider(new Tools());
+		registry.refresh(e -> {
+		});
+		ChatSession session = new ChatSession(() -> de.kiliantaubmann.bella.core.llm.LoggingProvider.wrap(llm),
+				() -> new ChatSession.Settings("m", 1000, null), "sys", registry, ToolPolicy::defaults,
+				(tool, input) -> true, null);
+		Conversation c = LoggingConversation.wrap(session);
+		assertTrue(c.unwrap() == session);
+		try (de.kiliantaubmann.bella.core.testutil.LogRecorder log = de.kiliantaubmann.bella.core.testutil.LogRecorder
+				.start(de.kiliantaubmann.bella.core.util.Log.Level.DEBUG)) {
+			c.ask("explain ZCL_X", new ConversationListener() {
+			}, CancelToken.NONE);
+			String all = log.all();
+			assertTrue(all.contains("INFO [chat] ChatSession question: 13 chars"), all);
+			assertTrue(all.contains("DEBUG [chat] question:\nexplain ZCL_X"), all);
+			assertTrue(all.contains("INFO [llm] fake request: model=m, purpose=CHAT, messages=1, tools=3"), all);
+			assertTrue(all.contains("INFO [tool] adt_read_source (adt): policy AUTO"), all);
+			assertTrue(all.contains("INFO [tool] adt_read_source -> ok, 25 chars"), all);
+			assertTrue(all.contains("DEBUG [tool] adt_read_source input: {\"name\":\"ZCL_X\""), all);
+			assertTrue(all.contains("INFO [llm] fake answer: stop=END_TURN"), all);
+			assertTrue(all.contains("DEBUG [chat] answer:\nIt reads orders."), all);
+			assertTrue(all.contains("INFO [chat] ChatSession answered"), all);
+		}
+		// switched off: nothing more is recorded
+		de.kiliantaubmann.bella.core.testutil.LogRecorder after = new de.kiliantaubmann.bella.core.testutil.LogRecorder();
+		llm.results.add(text("again"));
+		c.ask("more", new ConversationListener() {
+		}, CancelToken.NONE);
+		assertTrue(after.lines.isEmpty());
+	}
 }
