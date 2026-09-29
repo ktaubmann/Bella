@@ -13,6 +13,8 @@ public final class SecureStore {
 	public static final String OPENAI_KEY = "openai.apiKey";
 	/** Long-lived subscription token from {@code claude setup-token}. */
 	public static final String CLAUDE_CODE_TOKEN = "claudeCode.oauthToken";
+	/** Fine-grained GitHub token with the "Copilot Requests" permission. */
+	public static final String COPILOT_TOKEN = "copilot.token";
 
 	private static final String NODE = "de.kiliantaubmann.bella";
 

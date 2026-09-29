@@ -23,6 +23,9 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
 		s.setDefault(Prefs.CC_EXECUTABLE, "");
 		s.setDefault(Prefs.CC_CHAT_MODEL, "opus");
 		s.setDefault(Prefs.CC_COMPLETION_MODEL, "haiku");
+		s.setDefault(Prefs.CP_EXECUTABLE, "");
+		s.setDefault(Prefs.CP_CHAT_MODEL, "");
+		s.setDefault(Prefs.CP_COMPLETION_MODEL, "");
 		s.setDefault(Prefs.OPENAI_BASE_URL, "http://localhost:11434/v1");
 		s.setDefault(Prefs.OPENAI_CHAT_MODEL, "");
 		s.setDefault(Prefs.OPENAI_COMPLETION_MODEL, "");

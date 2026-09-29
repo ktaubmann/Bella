@@ -48,6 +48,8 @@ import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
+import de.kiliantaubmann.bella.core.copilot.CopilotProvider;
+import de.kiliantaubmann.bella.core.copilot.CopilotSession;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
@@ -207,7 +209,10 @@ class WorkbenchSmokeTest {
 					.filter(c -> List.of(c.getItems()).contains(Messages.get("prefs.provider.claudeCode"))).findFirst()
 					.orElseThrow();
 			assertEquals(List.of(Messages.get("prefs.provider.anthropic"), Messages.get("prefs.provider.claudeCode"),
-					Messages.get("prefs.provider.openai")), List.of(provider.getItems()));
+					Messages.get("prefs.provider.copilot"), Messages.get("prefs.provider.openai")),
+					List.of(provider.getItems()));
+			Group copilotGroup = find(root, Group.class).stream()
+					.filter(g -> g.getText().equals(Messages.get("prefs.cp"))).findFirst().orElseThrow();
 			Group subscription = find(root, Group.class).stream()
 					.filter(g -> g.getText().equals(Messages.get("prefs.cc"))).findFirst().orElseThrow();
 			Group apiKey = find(root, Group.class).stream()
@@ -226,8 +231,17 @@ class WorkbenchSmokeTest {
 			assertEquals(2, hints.size(), "hint under the dropdown and in the editor group");
 			assertTrue(hints.get(0).contains(shortcut), hints.get(0));
 
+			provider.select(2);
+			provider.notifyListeners(SWT.Selection, new Event());
+			assertTrue(copilotGroup.getVisible());
+			assertFalse(subscription.getVisible());
+			assertFalse(auto.getEnabled(), "automatic suggestions are off with GitHub Copilot");
+			assertTrue(find(root, Label.class).stream().map(Label::getText)
+					.anyMatch(t -> t.contains("premium request") && t.contains(shortcut)));
+
 			provider.select(0);
 			provider.notifyListeners(SWT.Selection, new Event());
+			assertFalse(copilotGroup.getVisible());
 			assertFalse(subscription.getVisible());
 			assertTrue(apiKey.getVisible());
 			assertTrue(auto.getEnabled());
@@ -254,9 +268,20 @@ class WorkbenchSmokeTest {
 			assertEquals("haiku", plugin.completionModel());
 			assertFalse(plugin.autoCompletion());
 
+			prefs.setValue(Prefs.PROVIDER, CopilotProvider.ID);
+			try (Conversation c = plugin.newConversation((tool, input) -> false, null)) {
+				assertTrue(c instanceof CopilotSession);
+				assertTrue(plugin.conversationType().isInstance(c));
+			}
+			assertTrue(plugin.provider() instanceof CopilotProvider);
+			assertFalse(plugin.autoCompletion());
+			assertEquals(Messages.fmt("chat.status.copilot", Messages.get("chat.status.copilotDefault")),
+					plugin.chatModelLabel());
+
 			prefs.setValue(Prefs.PROVIDER, AnthropicProvider.ID);
 			try (Conversation c = plugin.newConversation((tool, input) -> false, null)) {
 				assertTrue(c instanceof ChatSession);
+				assertTrue(plugin.conversationType().isInstance(c));
 			}
 			assertTrue(plugin.autoCompletion());
 		} finally {

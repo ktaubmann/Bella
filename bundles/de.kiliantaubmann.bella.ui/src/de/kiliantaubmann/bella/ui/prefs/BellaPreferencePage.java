@@ -23,6 +23,8 @@ import org.eclipse.ui.IWorkbenchPreferencePage;
 
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCli;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
+import de.kiliantaubmann.bella.core.copilot.CopilotCli;
+import de.kiliantaubmann.bella.core.copilot.CopilotProvider;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.llm.OpenAiCompatibleProvider;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
@@ -30,11 +32,18 @@ import de.kiliantaubmann.bella.ui.Languages;
 import de.kiliantaubmann.bella.ui.Messages;
 import de.kiliantaubmann.bella.ui.Shortcuts;
 
-/** Main settings: model provider (API key, Claude subscription or OpenAI-compatible), models, languages, editor behaviour. */
+/**
+ * Main settings: model provider (Claude API key, Claude subscription, GitHub
+ * Copilot or OpenAI-compatible), models, languages, editor behaviour.
+ */
 public class BellaPreferencePage extends PreferencePage implements IWorkbenchPreferencePage {
 
 	private static final List<String> PROVIDERS = List.of(AnthropicProvider.ID, ClaudeCodeProvider.ID,
-			OpenAiCompatibleProvider.ID);
+			CopilotProvider.ID, OpenAiCompatibleProvider.ID);
+
+	/** Settings of a provider that runs through a local CLI. */
+	private record CliGroup(Group group, Text executable, Text token, Label status, Button check) {
+	}
 
 	private Form form;
 	private Composite content;
@@ -42,12 +51,10 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 	private Label providerHint;
 	private Label editorHint;
 	private Group claude;
-	private Group claudeCode;
+	private CliGroup claudeCode;
+	private CliGroup copilot;
 	private Group openai;
 	private Button autoCompletion;
-	private Text ccExecutable;
-	private Text ccToken;
-	private Label ccStatus;
 
 	@Override
 	public void init(IWorkbench workbench) {
@@ -66,7 +73,8 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 		Group providerGroup = Form.group(c, Messages.get("prefs.provider"));
 		provider = form.choice(providerGroup, Messages.get("prefs.provider.label"), Prefs.PROVIDER,
 				Form.options(AnthropicProvider.ID, Messages.get("prefs.provider.anthropic"), ClaudeCodeProvider.ID,
-						Messages.get("prefs.provider.claudeCode"), OpenAiCompatibleProvider.ID,
+						Messages.get("prefs.provider.claudeCode"), CopilotProvider.ID,
+						Messages.get("prefs.provider.copilot"), OpenAiCompatibleProvider.ID,
 						Messages.get("prefs.provider.openai")));
 		providerHint = Form.hint(providerGroup);
 
@@ -79,27 +87,14 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 		form.text(claude, Messages.get("prefs.baseUrl"), Prefs.ANTHROPIC_BASE_URL, null);
 		link(claude, Messages.get("prefs.claude.link"));
 
-		claudeCode = Form.group(c, Messages.get("prefs.cc"));
-		link(claudeCode, Messages.get("prefs.cc.intro"));
-		ccExecutable = form.file(claudeCode, Messages.get("prefs.cc.executable"), Prefs.CC_EXECUTABLE,
-				Messages.get("prefs.cc.executable.tip"), Messages.get("prefs.cc.browse"));
-		new Label(claudeCode, SWT.NONE).setText(Messages.get("prefs.cc.status"));
-		Composite statusRow = new Composite(claudeCode, SWT.NONE);
-		GridLayoutFactory.fillDefaults().numColumns(2).applyTo(statusRow);
-		GridDataFactory.fillDefaults().grab(true, false).applyTo(statusRow);
-		ccStatus = new Label(statusRow, SWT.WRAP);
-		ccStatus.setText(Messages.get("prefs.cc.status.unknown"));
-		GridDataFactory.fillDefaults().grab(true, false).align(SWT.FILL, SWT.CENTER).hint(260, SWT.DEFAULT)
-				.applyTo(ccStatus);
-		Button check = new Button(statusRow, SWT.PUSH);
-		check.setText(Messages.get("prefs.cc.check"));
-		check.addListener(SWT.Selection, e -> checkClaudeCode(check));
-		ccToken = form.secret(claudeCode, Messages.get("prefs.cc.token"), SecureStore.CLAUDE_CODE_TOKEN);
-		ccToken.setToolTipText(Messages.get("prefs.cc.token.tip"));
-		form.text(claudeCode, Messages.get("prefs.chatModel"), Prefs.CC_CHAT_MODEL,
-				Messages.get("prefs.cc.chatModel.tip"));
-		form.text(claudeCode, Messages.get("prefs.completionModel"), Prefs.CC_COMPLETION_MODEL,
-				Messages.get("prefs.cc.chatModel.tip"));
+		claudeCode = cliGroup(c, "prefs.cc", "prefs.cc.intro", "prefs.cc.executable", Prefs.CC_EXECUTABLE,
+				"prefs.cc.token", SecureStore.CLAUDE_CODE_TOKEN, "prefs.cc.token.tip", Prefs.CC_CHAT_MODEL,
+				Prefs.CC_COMPLETION_MODEL, "prefs.cc.chatModel.tip");
+		claudeCode.check().addListener(SWT.Selection, e -> checkClaudeCode());
+		copilot = cliGroup(c, "prefs.cp", "prefs.cp.intro", "prefs.cp.executable", Prefs.CP_EXECUTABLE,
+				"prefs.cp.token", SecureStore.COPILOT_TOKEN, "prefs.cp.token.tip", Prefs.CP_CHAT_MODEL,
+				Prefs.CP_COMPLETION_MODEL, "prefs.cp.model.tip");
+		copilot.check().addListener(SWT.Selection, e -> checkCopilot());
 
 		openai = Form.group(c, Messages.get("prefs.openai"));
 		form.text(openai, Messages.get("prefs.baseUrl"), Prefs.OPENAI_BASE_URL, Messages.get("prefs.openai.baseUrl.tip"));
@@ -139,6 +134,30 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 		return c;
 	}
 
+	private CliGroup cliGroup(Composite parent, String titleKey, String introKey, String exeLabelKey, String exePref,
+			String tokenLabelKey, String tokenSecureKey, String tokenTipKey, String chatPref, String completionPref,
+			String modelTipKey) {
+		Group g = Form.group(parent, Messages.get(titleKey));
+		link(g, Messages.get(introKey));
+		Text exe = form.file(g, Messages.get(exeLabelKey), exePref, Messages.get("prefs.cc.executable.tip"),
+				Messages.get("prefs.cc.browse"));
+		new Label(g, SWT.NONE).setText(Messages.get("prefs.cc.status"));
+		Composite statusRow = new Composite(g, SWT.NONE);
+		GridLayoutFactory.fillDefaults().numColumns(2).applyTo(statusRow);
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(statusRow);
+		Label status = new Label(statusRow, SWT.WRAP);
+		status.setText(Messages.get("prefs.cc.status.unknown"));
+		GridDataFactory.fillDefaults().grab(true, false).align(SWT.FILL, SWT.CENTER).hint(260, SWT.DEFAULT)
+				.applyTo(status);
+		Button check = new Button(statusRow, SWT.PUSH);
+		check.setText(Messages.get("prefs.cc.check"));
+		Text token = form.secret(g, Messages.get(tokenLabelKey), tokenSecureKey);
+		token.setToolTipText(Messages.get(tokenTipKey));
+		form.text(g, Messages.get("prefs.chatModel"), chatPref, Messages.get(modelTipKey));
+		form.text(g, Messages.get("prefs.completionModel"), completionPref, Messages.get(modelTipKey));
+		return new CliGroup(g, exe, token, status, check);
+	}
+
 	private static void link(Composite parent, String text) {
 		Link link = new Link(parent, SWT.WRAP);
 		link.setText(text);
@@ -156,14 +175,18 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 	private void updateProvider() {
 		String id = selectedProvider();
 		boolean cc = ClaudeCodeProvider.ID.equals(id);
+		boolean cp = CopilotProvider.ID.equals(id);
 		show(claude, AnthropicProvider.ID.equals(id));
-		show(claudeCode, cc);
+		show(claudeCode.group(), cc);
+		show(copilot.group(), cp);
 		show(openai, OpenAiCompatibleProvider.ID.equals(id));
-		String hint = Messages.fmt(cc ? "prefs.hint.completion.cc" : "prefs.hint.completion", Shortcuts.completion());
+		String hintKey = cc ? "prefs.hint.completion.cc" : cp ? "prefs.hint.completion.cp" : "prefs.hint.completion";
+		String hint = Messages.fmt(hintKey, Shortcuts.completion());
 		providerHint.setText(hint);
 		editorHint.setText(hint);
-		autoCompletion.setEnabled(!cc);
-		autoCompletion.setToolTipText(cc ? Messages.get("prefs.autoCompletion.ccTip") : null);
+		autoCompletion.setEnabled(!cc && !cp);
+		autoCompletion.setToolTipText(cc ? Messages.get("prefs.autoCompletion.ccTip")
+				: cp ? Messages.get("prefs.autoCompletion.cpTip") : null);
 		content.layout(true, true);
 		if (content.getParent() != null) {
 			content.getParent().layout(true, true);
@@ -176,14 +199,12 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 	}
 
 	/** Runs {@code claude auth status} in the background with the values currently in the form. */
-	private void checkClaudeCode(Button check) {
-		String exe = ccExecutable.getText().trim();
-		String token = ccToken.getText().trim();
-		check.setEnabled(false);
-		ccStatus.setText(Messages.get("prefs.cc.status.checking"));
-		Thread t = new Thread(() -> {
+	private void checkClaudeCode() {
+		String exe = claudeCode.executable().getText().trim();
+		String token = claudeCode.token().getText().trim();
+		runCheck(claudeCode, () -> {
 			ClaudeCli.Status st = BellaPlugin.getDefault().claudeCli(exe, token).status();
-			String text = switch (st.state()) {
+			return switch (st.state()) {
 			case LOGGED_IN -> Messages.fmt("prefs.cc.status.ok",
 					st.subscription() != null ? st.subscription() : String.valueOf(st.authMethod()),
 					st.version() == null ? "" : st.version());
@@ -192,14 +213,47 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 			case NOT_FOUND -> Messages.get("prefs.cc.status.notFound");
 			case ERROR -> Messages.fmt("prefs.cc.status.error", String.valueOf(st.detail()));
 			};
+		});
+	}
+
+	/** Starts {@code copilot --acp} once to see whether it is logged in and which models it offers. */
+	private void checkCopilot() {
+		String exe = copilot.executable().getText().trim();
+		String token = copilot.token().getText().trim();
+		runCheck(copilot, () -> {
+			CopilotCli.Status st = BellaPlugin.getDefault().copilotCli(exe, token).status();
+			return switch (st.state()) {
+			case LOGGED_IN -> {
+				String ok = Messages.fmt("prefs.cp.status.ok", st.version() == null ? "" : st.version());
+				yield st.models().isEmpty() ? ok
+						: ok + "\n" + Messages.fmt("prefs.cp.status.models", String.join(", ", st.models()));
+			}
+			case NOT_LOGGED_IN -> Messages.get("prefs.cp.status.notLoggedIn");
+			case NOT_FOUND -> Messages.get("prefs.cp.status.notFound");
+			case ERROR -> Messages.fmt("prefs.cc.status.error", String.valueOf(st.detail()));
+			};
+		});
+	}
+
+	private void runCheck(CliGroup g, java.util.function.Supplier<String> check) {
+		g.check().setEnabled(false);
+		g.status().setText(Messages.get("prefs.cc.status.checking"));
+		Thread t = new Thread(() -> {
+			String text;
+			try {
+				text = check.get();
+			} catch (RuntimeException e) {
+				text = Messages.fmt("prefs.cc.status.error", String.valueOf(e.getMessage()));
+			}
+			String result = text;
 			Display.getDefault().asyncExec(() -> {
-				if (!ccStatus.isDisposed()) {
-					ccStatus.setText(text);
-					check.setEnabled(true);
+				if (!g.status().isDisposed()) {
+					g.status().setText(result);
+					g.check().setEnabled(true);
 					content.layout(true, true);
 				}
 			});
-		}, "bella-claude-status");
+		}, "bella-cli-status");
 		t.setDaemon(true);
 		t.start();
 	}

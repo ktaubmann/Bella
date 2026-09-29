@@ -45,7 +45,6 @@ import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
 import de.kiliantaubmann.bella.core.agent.Conversation;
-import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.prompt.EditorContext;
@@ -339,7 +338,7 @@ public class ChatView extends ViewPart {
 		if (running != null) {
 			return;
 		}
-		if (BellaPlugin.getDefault().usesClaudeCode() != (session instanceof ClaudeCodeSession)) {
+		if (!BellaPlugin.getDefault().conversationType().isInstance(session)) {
 			newSession(); // provider switched in the preferences: the old chat cannot continue
 			updateStatus();
 		}

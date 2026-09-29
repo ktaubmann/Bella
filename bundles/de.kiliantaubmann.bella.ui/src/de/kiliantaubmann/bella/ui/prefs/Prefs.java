@@ -3,7 +3,7 @@ package de.kiliantaubmann.bella.ui.prefs;
 /** Preference keys (instance scope of the UI bundle). */
 public final class Prefs {
 
-	/** {@code anthropic}, {@code claude-code} or {@code openai}. */
+	/** {@code anthropic}, {@code claude-code}, {@code copilot} or {@code openai}. */
 	public static final String PROVIDER = "provider";
 	public static final String ANTHROPIC_BASE_URL = "anthropic.baseUrl";
 	public static final String CHAT_MODEL = "chat.model";
@@ -17,6 +17,12 @@ public final class Prefs {
 	public static final String CC_EXECUTABLE = "claudeCode.executable";
 	public static final String CC_CHAT_MODEL = "claudeCode.chatModel";
 	public static final String CC_COMPLETION_MODEL = "claudeCode.completionModel";
+
+	/** Path to the {@code copilot} executable, empty for automatic detection. */
+	public static final String CP_EXECUTABLE = "copilot.executable";
+	/** Empty for the Copilot default model. */
+	public static final String CP_CHAT_MODEL = "copilot.chatModel";
+	public static final String CP_COMPLETION_MODEL = "copilot.completionModel";
 
 	public static final String OPENAI_BASE_URL = "openai.baseUrl";
 	public static final String OPENAI_CHAT_MODEL = "openai.chatModel";

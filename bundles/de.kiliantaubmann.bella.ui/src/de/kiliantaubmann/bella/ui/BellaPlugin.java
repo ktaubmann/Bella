@@ -24,6 +24,9 @@ import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCli;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
+import de.kiliantaubmann.bella.core.copilot.CopilotCli;
+import de.kiliantaubmann.bella.core.copilot.CopilotProvider;
+import de.kiliantaubmann.bella.core.copilot.CopilotSession;
 import de.kiliantaubmann.bella.core.util.ProcessLauncher;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.llm.LlmProvider;
@@ -152,7 +155,19 @@ public class BellaPlugin extends AbstractUIPlugin {
 	/** {@code anthropic}, {@code claude-code} or {@code openai}. */
 	public String providerId() {
 		String id = prefs().getString(Prefs.PROVIDER);
-		return ClaudeCodeProvider.ID.equals(id) || OpenAiCompatibleProvider.ID.equals(id) ? id : AnthropicProvider.ID;
+		return ClaudeCodeProvider.ID.equals(id) || CopilotProvider.ID.equals(id) || OpenAiCompatibleProvider.ID.equals(id)
+				? id
+				: AnthropicProvider.ID;
+	}
+
+	/** Models from the developer's GitHub Copilot subscription through the Copilot CLI. */
+	public boolean usesCopilot() {
+		return CopilotProvider.ID.equals(providerId());
+	}
+
+	/** Provider that runs through a local CLI (seconds per request, no suggestions while typing). */
+	public boolean usesCli() {
+		return usesClaudeCode() || usesCopilot();
 	}
 
 	/** Claude through the developer's subscription (Claude Code CLI) instead of an API key. */
@@ -168,6 +183,9 @@ public class BellaPlugin extends AbstractUIPlugin {
 		IPreferenceStore s = prefs();
 		if (usesClaudeCode()) {
 			return new ClaudeCodeProvider(claudeCli());
+		}
+		if (usesCopilot()) {
+			return new CopilotProvider(copilotCli());
 		}
 		if (usesAnthropic()) {
 			return new AnthropicProvider(() -> SecureStore.get(SecureStore.ANTHROPIC_KEY),
@@ -187,6 +205,16 @@ public class BellaPlugin extends AbstractUIPlugin {
 		return claudeCli(prefs().getString(Prefs.CC_EXECUTABLE), SecureStore.get(SecureStore.CLAUDE_CODE_TOKEN));
 	}
 
+	/** The Copilot CLI as configured; {@code executable} and {@code token} override the stored values. */
+	public CopilotCli copilotCli(String executable, String token) {
+		java.nio.file.Path workDir = getStateLocation().append("copilot").toPath();
+		return new CopilotCli(new CopilotCli.Config(executable, token), ProcessLauncher.SYSTEM, workDir);
+	}
+
+	public CopilotCli copilotCli() {
+		return copilotCli(prefs().getString(Prefs.CP_EXECUTABLE), SecureStore.get(SecureStore.COPILOT_TOKEN));
+	}
+
 	/**
 	 * A new chat for the configured provider. With the subscription the CLI
 	 * runs the tool loop and calls Bella's tools through a private MCP server;
@@ -197,33 +225,49 @@ public class BellaPlugin extends AbstractUIPlugin {
 			return new ClaudeCodeSession(claudeCli(), this::chatSettings, prompts().chatSystem(),
 					new ToolExecutor(tools(), this::policy, confirmer, writeGuard), VERSION);
 		}
+		if (usesCopilot()) {
+			return new CopilotSession(copilotCli(), this::chatSettings, prompts().chatSystem(),
+					new ToolExecutor(tools(), this::policy, confirmer, writeGuard), VERSION);
+		}
 		return new ChatSession(this::provider, this::chatSettings, prompts().chatSystem(), tools(), this::policy,
 				confirmer::confirm, writeGuard);
 	}
 
 	public String chatModel() {
-		String key = usesClaudeCode() ? Prefs.CC_CHAT_MODEL : usesAnthropic() ? Prefs.CHAT_MODEL : Prefs.OPENAI_CHAT_MODEL;
+		String key = usesClaudeCode() ? Prefs.CC_CHAT_MODEL
+				: usesCopilot() ? Prefs.CP_CHAT_MODEL : usesAnthropic() ? Prefs.CHAT_MODEL : Prefs.OPENAI_CHAT_MODEL;
 		return prefs().getString(key).trim();
+	}
+
+	/** Conversation class the current provider needs; a chat of another type has to start over. */
+	public Class<? extends Conversation> conversationType() {
+		return usesClaudeCode() ? ClaudeCodeSession.class : usesCopilot() ? CopilotSession.class : ChatSession.class;
 	}
 
 	/** Model for the status line, e.g. "opus (subscription)". */
 	public String chatModelLabel() {
+		if (usesCopilot()) {
+			String m = chatModel();
+			return Messages.fmt("chat.status.copilot", m.isEmpty() ? Messages.get("chat.status.copilotDefault") : m);
+		}
 		return usesClaudeCode() ? Messages.fmt("chat.status.subscription", chatModel()) : chatModel();
 	}
 
 	public String completionModel() {
 		String key = usesClaudeCode() ? Prefs.CC_COMPLETION_MODEL
-				: usesAnthropic() ? Prefs.COMPLETION_MODEL : Prefs.OPENAI_COMPLETION_MODEL;
+				: usesCopilot() ? Prefs.CP_COMPLETION_MODEL
+						: usesAnthropic() ? Prefs.COMPLETION_MODEL : Prefs.OPENAI_COMPLETION_MODEL;
 		String m = prefs().getString(key).trim();
 		return m.isEmpty() ? chatModel() : m;
 	}
 
 	/**
-	 * Suggestions while typing. Off with the subscription: every suggestion
-	 * starts the CLI, which takes seconds; the shortcut still works.
+	 * Suggestions while typing. Off with the Claude subscription and GitHub
+	 * Copilot: every suggestion starts a CLI, which takes seconds (and costs a
+	 * premium request with Copilot); the shortcut still works.
 	 */
 	public boolean autoCompletion() {
-		return prefs().getBoolean(Prefs.AUTO_COMPLETION) && !usesClaudeCode();
+		return prefs().getBoolean(Prefs.AUTO_COMPLETION) && !usesCli();
 	}
 
 	public ChatSession.Settings chatSettings() {
