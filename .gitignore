@@ -4,3 +4,7 @@ bin/
 *.class
 .DS_Store
 __pycache__/
+# Bella log files may contain source code of SAP systems: never commit them
+*.log
+*.log.1
+bella.log*

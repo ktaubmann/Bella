@@ -7,7 +7,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -28,6 +30,7 @@ import de.kiliantaubmann.bella.core.adt.AdtResponse;
 import de.kiliantaubmann.bella.core.adt.AdtTransport;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Log;
+import de.kiliantaubmann.bella.core.util.Reflection;
 
 /**
  * Sends raw ADT REST requests through the ADT communication layer, so they
@@ -42,6 +45,11 @@ final class SdkTransport implements AdtTransport.Session {
 	SdkTransport(String destinationId, ISystemSession session) {
 		this.destinationId = destinationId;
 		this.session = session;
+	}
+
+	@Override
+	public boolean isStateful() {
+		return session != null;
 	}
 
 	static ISystemSession openStatefulSession(String destinationId) throws IOException {
@@ -117,29 +125,33 @@ final class SdkTransport implements AdtTransport.Session {
 	}
 
 	/**
-	 * POST/PUT with headers and a raw body. Resolved reflectively because the
-	 * overloads differ between ADT releases: {@code (monitor, headers, type, body)}.
+	 * POST/PUT with headers and a raw body. The overloads differ between ADT
+	 * releases, e.g. {@code (monitor, headers, type, body)} or with trailing
+	 * query parameters, so the method is chosen by parameter types.
 	 */
 	private static IResponse invoke(IRestResource resource, String name, IProgressMonitor monitor, IHeaders headers,
 			IMessageBody body) throws IOException {
-		for (Method m : IRestResource.class.getMethods()) {
-			Class<?>[] p = m.getParameterTypes();
-			if (m.getName().equals(name) && p.length == 4 && p[0] == IProgressMonitor.class && p[1] == IHeaders.class
-					&& p[2] == Class.class) {
-				try {
-					return (IResponse) m.invoke(resource, monitor, headers, IResponse.class, body);
-				} catch (InvocationTargetException e) {
-					if (e.getCause() instanceof ResourceException re) {
-						throw re;
-					}
-					throw new IOException(String.valueOf(e.getCause()), e.getCause());
-				} catch (IllegalAccessException e) {
-					throw new IOException(e);
-				}
-			}
+		Optional<Reflection.Call> call = Reflection.bestMatch(IRestResource.class, name, monitor, headers,
+				IResponse.class, body);
+		if (call.isEmpty()) {
+			List<String> available = Reflection.signatures(IRestResource.class, name);
+			Log.warn("adt", "IRestResource has no usable " + name + " overload in this ADT version; available: "
+					+ available);
+			throw new IOException("Bella cannot " + name.toUpperCase(java.util.Locale.ROOT)
+					+ " through this ADT version (available: " + available
+					+ "). Change the code in the editor instead, or use ARC-1.");
 		}
-		Log.warn("adt", "IRestResource has no " + name + "(monitor, headers, type, body) method in this ADT version");
-		throw new IOException("This ADT version has no " + name + "(monitor, headers, type, body) method.");
+		Log.debug("adt", () -> "using " + call.get().method());
+		try {
+			return (IResponse) call.get().invoke(resource);
+		} catch (InvocationTargetException e) {
+			if (e.getCause() instanceof ResourceException re) {
+				throw re;
+			}
+			throw new IOException(String.valueOf(e.getCause()), e.getCause());
+		} catch (IllegalAccessException | IllegalArgumentException e) {
+			throw new IOException(e);
+		}
 	}
 
 	private static AdtResponse toResponse(IResponse response, int fallbackStatus) throws IOException {

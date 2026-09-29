@@ -85,6 +85,8 @@ class AbapReferencesTest {
 		assertEquals(List.of("BAPI_USER_GET_DETAIL"),
 				names(AbapReferences.fromInstruction("Call function 'BAPI_USER_GET_DETAIL' for the user")));
 		assertTrue(AbapReferences.fromInstruction("").isEmpty());
+		assertEquals(List.of(), names(AbapReferences.fromInstruction("TABLES entfernen")));
+		assertEquals(List.of(), names(AbapReferences.fromInstruction("remove unit tests and rename the method")));
 		assertTrue(AbapReferences.fromInstruction("a b c d e f g h i j k l m n o p q r s t u v w x y z aaa bbb ccc ddd eee fff ggg hhh iii jjj")
 				.size() <= AbapReferences.MAX_INSTRUCTION_NAMES);
 	}

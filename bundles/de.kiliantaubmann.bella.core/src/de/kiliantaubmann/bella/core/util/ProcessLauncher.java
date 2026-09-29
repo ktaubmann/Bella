@@ -108,7 +108,9 @@ public interface ProcessLauncher {
 		}, "bella-claude-stderr");
 		drain.setDaemon(true);
 		drain.start();
+		ProtocolLog protocol = new ProtocolLog(name);
 		p.onExit().thenAccept(ended -> {
+			protocol.finish();
 			String err;
 			synchronized (tail) {
 				err = tail.toString().strip();
@@ -123,10 +125,8 @@ public interface ProcessLauncher {
 				Log.warn("cli", line);
 			}
 		});
-		OutputStream stdin = LineTap.out(p.getOutputStream(),
-				l -> Log.debug("cli", () -> name + " <- " + Log.clip(l)));
-		InputStream stdout = LineTap.in(p.getInputStream(),
-				l -> Log.debug("cli", () -> name + " -> " + Log.clip(l)));
+		OutputStream stdin = LineTap.out(p.getOutputStream(), l -> protocol.line("<-", l));
+		InputStream stdout = LineTap.in(p.getInputStream(), l -> protocol.line("->", l));
 		return new CliProcess() {
 			@Override
 			public OutputStream stdin() {

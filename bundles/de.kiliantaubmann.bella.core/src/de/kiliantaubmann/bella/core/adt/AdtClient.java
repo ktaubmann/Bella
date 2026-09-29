@@ -43,7 +43,7 @@ public final class AdtClient {
 	/** Sends a request and writes method, path, status and duration to Bella's log. */
 	static AdtResponse exchange(AdtTransport t, AdtRequest r, CancelToken cancel) throws IOException {
 		long start = System.nanoTime();
-		String what = (t instanceof AdtTransport.Session ? "[stateful] " : "") + r.method() + " " + r.path();
+		String what = (t.isStateful() ? "[stateful] " : "") + r.method() + " " + r.path();
 		Log.debug(AREA, () -> r.body() == null ? what : what + " body:\n" + Log.clip(r.body(), 4_000));
 		AdtResponse response;
 		try {

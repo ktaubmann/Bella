@@ -1,6 +1,7 @@
 package de.kiliantaubmann.bella.core.adt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -147,6 +148,22 @@ class AdtClientTest {
 			assertTrue(log.lines.get(1).startsWith("WARN [adt] GET /sap/bc/adt/oo/classes/zcl_b/source/main -> 403"),
 					log.lines.get(1));
 			assertTrue(log.lines.get(1).endsWith("HTTP 403: No authorization"), log.lines.get(1));
+		}
+	}
+
+	@Test
+	void onlyStatefulSessionsAreLabelled() throws Exception {
+		FakeAdt adt = new FakeAdt().route("GET /sap/bc/adt/programs/programs/zr_demo/source/main",
+				r -> new AdtResponse(200, "text/plain", "REPORT zr_demo."));
+		assertFalse(adt.stateless("D").isStateful());
+		try (de.kiliantaubmann.bella.core.testutil.LogRecorder log = de.kiliantaubmann.bella.core.testutil.LogRecorder
+				.start(de.kiliantaubmann.bella.core.util.Log.Level.INFO); AdtTransport.Session s = adt.stateful("D")) {
+			assertTrue(s.isStateful());
+			new AdtClient(adt.stateless("D")).readSource("/sap/bc/adt/programs/programs/zr_demo", null, CancelToken.NONE);
+			AdtClient.exchange(s, AdtRequest.get("/sap/bc/adt/programs/programs/zr_demo/source/main", "text/plain"),
+					CancelToken.NONE);
+			assertTrue(log.lines.get(0).startsWith("INFO [adt] GET /sap"), log.all());
+			assertTrue(log.lines.get(1).startsWith("INFO [adt] [stateful] GET /sap"), log.all());
 		}
 	}
 }

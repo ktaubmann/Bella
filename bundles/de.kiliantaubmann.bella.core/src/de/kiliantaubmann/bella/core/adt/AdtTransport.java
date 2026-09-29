@@ -14,8 +14,18 @@ public interface AdtTransport {
 
 	AdtResponse send(AdtRequest request, CancelToken cancel) throws IOException;
 
+	/** Whether requests share one ABAP session (needed for lock, write, unlock). */
+	default boolean isStateful() {
+		return false;
+	}
+
 	/** A stateful session keeps the ABAP session (and its enqueue locks) across requests. */
 	interface Session extends AdtTransport, AutoCloseable {
+		@Override
+		default boolean isStateful() {
+			return true;
+		}
+
 		@Override
 		void close();
 	}

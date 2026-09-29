@@ -34,6 +34,14 @@ jobs:
           cache: maven
       - name: Build with ADT (SAP tools p2 repository)
         run: mvn -B -ntp -Padt verify -DskipTests
+      - name: Show ADT REST resource overloads (diagnostics)
+        run: |
+          for jar in $(find ~/.m2/repository -name 'com.sap.adt.communication*.jar'); do
+            if unzip -l "$jar" | grep -q 'com/sap/adt/communication/resources/IRestResource.class'; then
+              echo "$jar"
+              javap -cp "$jar" com.sap.adt.communication.resources.IRestResource | grep -E ' (get|post|put|delete)\(' || true
+            fi
+          done
       - name: Upload update site
         uses: actions/upload-artifact@v4
         with:
