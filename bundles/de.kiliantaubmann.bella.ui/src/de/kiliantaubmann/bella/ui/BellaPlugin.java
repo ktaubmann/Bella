@@ -24,7 +24,7 @@ import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCli;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
-import de.kiliantaubmann.bella.core.claudecode.ProcessLauncher;
+import de.kiliantaubmann.bella.core.util.ProcessLauncher;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.llm.LlmProvider;
 import de.kiliantaubmann.bella.core.llm.OpenAiCompatibleProvider;

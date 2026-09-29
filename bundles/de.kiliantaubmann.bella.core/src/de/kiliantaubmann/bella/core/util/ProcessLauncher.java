@@ -1,4 +1,4 @@
-package de.kiliantaubmann.bella.core.claudecode;
+package de.kiliantaubmann.bella.core.util;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-/** Starts the CLI; replaced by a fake in tests. */
+/** Starts a CLI process (Claude Code, Copilot); replaced by a fake in tests. */
 public interface ProcessLauncher {
 
 	/** A running CLI process. */

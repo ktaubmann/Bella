@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+import de.kiliantaubmann.bella.core.util.ProcessLauncher;
 
 class ClaudeCliTest {
 

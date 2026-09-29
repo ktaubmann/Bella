@@ -21,6 +21,7 @@ import de.kiliantaubmann.bella.core.llm.StreamListener;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.CancelToken.CancelledException;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.ProcessLauncher;
 
 /**
  * Single requests without tools through the Claude Code CLI: explain,

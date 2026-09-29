@@ -16,6 +16,7 @@ import java.util.function.BiConsumer;
 import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.ProcessLauncher;
 
 /**
  * Stands in for the {@code claude} process: records how it was started and

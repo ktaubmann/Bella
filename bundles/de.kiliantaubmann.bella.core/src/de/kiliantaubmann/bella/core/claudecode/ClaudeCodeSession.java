@@ -23,6 +23,7 @@ import de.kiliantaubmann.bella.core.tools.ToolExecutor;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.CancelToken.CancelledException;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.ProcessLauncher;
 
 /**
  * A chat that runs through the Claude Code CLI and therefore the developer's

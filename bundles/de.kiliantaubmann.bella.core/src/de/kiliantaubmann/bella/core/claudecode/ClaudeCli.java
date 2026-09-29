@@ -19,6 +19,8 @@ import com.google.gson.JsonParseException;
 
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Executables;
+import de.kiliantaubmann.bella.core.util.ProcessLauncher;
 
 /**
  * The locally installed Claude Code CLI ({@code claude}). Bella uses it to
@@ -77,61 +79,36 @@ public final class ClaudeCli {
 	 */
 	static Optional<Path> find(String configured, Map<String, String> env, String osName, Path home,
 			Predicate<Path> exists) {
-		if (configured != null && !configured.isBlank()) {
-			Path p = Path.of(configured.trim());
-			return exists.test(p) ? Optional.of(p) : Optional.empty();
-		}
-		boolean windows = osName.toLowerCase(Locale.ROOT).startsWith("windows");
+		boolean windows = Executables.isWindows(osName);
 		List<String> names = windows ? List.of("claude.exe", "claude.cmd") : List.of("claude");
-		List<Path> candidates = new ArrayList<>();
-		String path = env.getOrDefault("PATH", env.getOrDefault("Path", ""));
-		for (String dir : path.split(windows ? ";" : ":")) {
-			if (dir.isBlank()) {
-				continue;
-			}
-			for (String n : names) {
-				candidates.add(Path.of(stripQuotes(dir.trim())).resolve(n));
-			}
-		}
+		List<Path> extra = new ArrayList<>();
 		if (windows) {
-			candidates.add(home.resolve(".local").resolve("bin").resolve("claude.exe"));
+			extra.add(home.resolve(".local").resolve("bin").resolve("claude.exe"));
 			String appData = env.get("APPDATA");
 			if (appData != null) {
-				candidates.add(Path.of(appData, "npm", "claude.cmd"));
+				extra.add(Path.of(appData, "npm", "claude.cmd"));
 			}
 			String localAppData = env.get("LOCALAPPDATA");
 			if (localAppData != null) {
-				candidates.add(Path.of(localAppData, "Programs", "claude", "claude.exe"));
+				extra.add(Path.of(localAppData, "Programs", "claude", "claude.exe"));
 			}
 		} else {
-			candidates.add(home.resolve(".local/bin/claude"));
-			candidates.add(home.resolve(".claude/local/claude"));
-			candidates.add(home.resolve(".npm-global/bin/claude"));
-			candidates.add(home.resolve(".volta/bin/claude"));
-			candidates.add(Path.of("/opt/homebrew/bin/claude"));
-			candidates.add(Path.of("/usr/local/bin/claude"));
-			candidates.add(Path.of("/usr/bin/claude"));
+			extra.add(home.resolve(".local/bin/claude"));
+			extra.add(home.resolve(".claude/local/claude"));
+			extra.add(home.resolve(".npm-global/bin/claude"));
+			extra.add(home.resolve(".volta/bin/claude"));
+			extra.add(Path.of("/opt/homebrew/bin/claude"));
+			extra.add(Path.of("/usr/local/bin/claude"));
+			extra.add(Path.of("/usr/bin/claude"));
 		}
-		return candidates.stream().filter(exists).findFirst();
-	}
-
-	private static String stripQuotes(String s) {
-		return s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"") ? s.substring(1, s.length() - 1) : s;
+		return Executables.find(configured, env, osName, exists, names, extra);
 	}
 
 	// ---- commands ---------------------------------------------------------------------
 
 	/** Full command line for the executable plus {@code args}. */
 	static List<String> command(Path executable, List<String> args) {
-		List<String> cmd = new ArrayList<>();
-		String name = executable.getFileName().toString().toLowerCase(Locale.ROOT);
-		if (name.endsWith(".cmd") || name.endsWith(".bat")) {
-			cmd.add("cmd.exe");
-			cmd.add("/c");
-		}
-		cmd.add(executable.toString());
-		cmd.addAll(args);
-		return cmd;
+		return Executables.command(executable, args);
 	}
 
 	/** Arguments for a long-lived chat process that talks stream-json on stdin/stdout. */
