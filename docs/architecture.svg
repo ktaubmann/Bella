@@ -106,12 +106,13 @@
   <text x="272" y="510" class="s">ADT REST (/sap/bc/adt)</text>
 
   <!-- Claude -->
-  <rect class="ext" x="720" y="140" width="260" height="112" rx="12"/>
-  <text x="738" y="168" class="h">Claude API</text>
-  <text x="738" y="187" class="s">or Claude Code (subscription, local CLI)</text>
-  <text x="738" y="203" class="s">or OpenAI-compatible (Ollama …)</text>
-  <text x="738" y="225" class="s">returns text and tool_use,</text>
-  <text x="738" y="241" class="s">never talks to SAP directly</text>
+  <rect class="ext" x="720" y="136" width="260" height="136" rx="12"/>
+  <text x="738" y="162" class="h">Claude API</text>
+  <text x="738" y="181" class="s">or Claude Code (subscription, local CLI)</text>
+  <text x="738" y="197" class="s">or GitHub Copilot (Copilot CLI)</text>
+  <text x="738" y="213" class="s">or OpenAI-compatible (Ollama …)</text>
+  <text x="738" y="237" class="s">returns text and tool_use,</text>
+  <text x="738" y="253" class="s">never talks to SAP directly</text>
   <path d="M650 180H718" class="line" marker-end="url(#a)"/>
   <path d="M718 222H650" class="line" marker-end="url(#a)"/>
   <circle cx="684" cy="168" r="9" class="num"/><text x="684" y="172" class="numt" text-anchor="middle">3</text>

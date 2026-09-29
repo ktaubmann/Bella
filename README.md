@@ -2,7 +2,7 @@
 
 # Bella – AI assistant for ABAP in Eclipse
 
-Bella brings Claude into the SAP ABAP Development Tools (ADT). You can use it with an API key, **with your Claude subscription**, or with another model through an OpenAI-compatible endpoint.
+Bella brings Claude into the SAP ABAP Development Tools (ADT). You can use it with an API key, **with your Claude subscription**, **with your GitHub Copilot subscription**, or with another model through an OpenAI-compatible endpoint.
 
 - Explain code: right-click → *What happens here?*
 - Chat with the code in your editor as context
@@ -21,7 +21,7 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/generate.png"> | **Generate code here…** Writes code at the cursor position | Right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/rewrite.png"> | **Rework selection…** Fix errors, modern syntax, ABAP Cloud, performance, comments | Right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/method.png"> | **Implement method** Writes the body of the METHOD/FORM/FUNCTION at the cursor | Right-click → Bella |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **AI completion** as grey ghost text; Tab accepts, Esc dismisses | `Ctrl+↑` (macOS: `Cmd+Option+Enter`), or automatically while typing (not with the subscription) |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **AI completion** as grey ghost text; Tab accepts, Esc dismisses | `Ctrl+↑` (macOS: `Cmd+Option+Enter`), or automatically while typing (not with the Claude subscription or GitHub Copilot) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Suggest refactoring / unit test** | Right-click → Bella (chat) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** with editor context, streaming and tool calls; insert code blocks, replace the selection or take them over as a method body | `Ctrl+Alt+B`, pink B in the toolbar, menu *Bella* |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, write, create, activate | automatically in the chat |
@@ -51,7 +51,7 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 <p align="center"><img src="docs/architecture.svg" alt="Architecture: developer, Eclipse with ADT editor and Bella, Claude, optional ARC-1, SAP system"></p>
 
 1. and 2. Bella reads the source from the ADT editor and writes suggestions only into its buffer.
-3. **Only Bella calls the model.** Prompt, code context and tool list go out; text and `tool_use` requests come back. With the subscription, the local Claude Code CLI makes this call for Bella.
+3. **Only Bella calls the model.** Prompt, code context and tool list go out; text and `tool_use` requests come back. With the Claude subscription or GitHub Copilot, the local Claude Code CLI or Copilot CLI makes this call for Bella.
 4. Optionally Bella runs tool requests through ARC-1 or another MCP server.
 5. Tools reach the SAP system in one of two ways:
    - **5a (default):** Bella's own `adt_*` tools use the ADT communication layer with the logon of your ABAP projects, including SSO. There is no second logon and no extra process.
@@ -103,12 +103,12 @@ Bella does not ship or download ADT. The update site contains only Bella's own b
 
 <p align="center"><img src="docs/screenshots/preferences-provider.png" width="760" alt="Bella preferences with the provider drop-down and the Claude subscription settings"></p>
 
-- **Provider** (drop-down at the top): *Claude (API key)*, *Claude subscription (Claude Code CLI)* or *OpenAI-compatible*. The page only shows the fields of the selected provider, plus a note on code completion.
+- **Provider** (drop-down at the top): *Claude (API key)*, *Claude subscription (Claude Code CLI)*, *GitHub Copilot (Copilot CLI)* or *OpenAI-compatible*. The page only shows the fields of the selected provider, plus a note on code completion.
 - **Claude (API key)**:
   - Enter an API key from [console.anthropic.com](https://console.anthropic.com/settings/keys). It is stored encrypted in Eclipse secure storage.
   - Default models: `claude-opus-5` for chat and code, `claude-haiku-4-5` for fast completion.
   - Effort and the server-side fallback model for declined requests can be set.
-- **Claude subscription**: see the next section.
+- **Claude subscription** and **GitHub Copilot**: see the next sections.
 - **OpenAI-compatible** (optional): base URL, key and model, e.g. `http://localhost:11434/v1` for Ollama. The source code then stays in-house.
 - **Languages**:
   - User interface: like Eclipse or fixed. Menus switch right away, no restart needed.
@@ -143,6 +143,32 @@ Limits:
 - Your subscription's usage limits apply. When the limit is reached, Bella says so in the chat.
 - *Stop* interrupts the running answer. If the CLI does not react within 3 seconds, Bella ends the process; the next message then starts without the earlier conversation, and Bella tells you.
 
+### GitHub Copilot subscription
+
+With a GitHub Copilot subscription, Bella uses the locally installed [GitHub Copilot CLI](https://github.com/features/copilot/cli). It handles logon and billing through your Copilot plan, and you can pick any model your plan offers (Claude, GPT and others).
+
+1. Install the Copilot CLI and log in once in a terminal:
+   ```powershell
+   winget install GitHub.Copilot      # Windows; or: npm install -g @github/copilot, brew install copilot-cli
+   copilot login                      # opens the browser
+   ```
+   Instead of `copilot login` you can create a fine-grained personal access token with the **Copilot Requests** permission and enter it in Bella as *Token*. Classic `ghp_` tokens are not supported.
+2. Choose *Preferences → Bella → Provider: GitHub Copilot (Copilot CLI)* and click **Check**. The status line shows "logged in", the CLI version and the models your plan offers.
+   - You only need to set the path to `copilot` if Bella does not find it. Bella searches `PATH` and on Windows also `%LOCALAPPDATA%\Microsoft\WinGet\Links` and `%APPDATA%\npm`.
+   - Models: leave empty for the Copilot default, or enter a model ID from the list shown by **Check**.
+
+What happens:
+
+- Bella starts `copilot --acp` (Agent Client Protocol) in its own empty working directory in the Eclipse workspace metadata. One CLI process runs per chat; *New chat* ends it.
+- The CLI's own abilities are switched off: no shell commands (`--deny-tool shell`), no file changes (`--deny-tool write`), no web access (`--deny-tool url`), no GitHub MCP server and none of your own Copilot MCP servers.
+- The CLI gets Bella's SAP tools through the same **local MCP server** as the Claude subscription (loopback only, random token). Tool policy, confirmation dialog and the router for open objects apply as usual. Bella rejects every other action the CLI asks permission for and says so in the chat.
+
+Limits:
+
+- **Premium requests:** every chat message, explanation or completion counts against your Copilot plan's premium requests, depending on the model.
+- **Completion:** every suggestion starts the CLI and takes a few seconds, so there are no automatic suggestions while typing, only on `Ctrl+↑`.
+- *Stop* cancels the running answer; if the CLI does not react within 3 seconds, Bella ends the process and the next message starts a new conversation.
+
 ### Connecting ARC-1 (optional)
 
 Under *Preferences → Bella → SAP-Tools & ARC-1 → Add…*:
@@ -173,15 +199,17 @@ python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 
 | Module | Contents |
 |---|---|
-| `bundles/de.kiliantaubmann.bella.core` | no UI and no ADT: Anthropic and OpenAI-compatible providers (streaming, tool use, prompt caching), Claude Code integration (CLI, `stream-json`, local MCP server), tool registry and policy, MCP client (HTTP and stdio), chat tool loop, ABAP scanner, prompts, ADT REST client and `adt_*` tools |
+| `bundles/de.kiliantaubmann.bella.core` | no UI and no ADT: Anthropic and OpenAI-compatible providers (streaming, tool use, prompt caching), Claude Code integration (CLI, `stream-json`, local MCP server), GitHub Copilot integration (Copilot CLI, Agent Client Protocol), tool registry and policy, MCP client (HTTP and stdio), chat tool loop, ABAP scanner, prompts, ADT REST client and `adt_*` tools |
 | `bundles/de.kiliantaubmann.bella.ui` | chat view, context menu, diff preview, router, ghost text, preferences, icons, translations |
 | `bundles/de.kiliantaubmann.bella.adt` | the only dependency on the ADT SDK: projects, logon and REST transport as an OSGi service |
-| `tests/…core.tests` | unit tests for providers, MCP client and server, Claude Code session (with a fake CLI), tool loop, ABAP scanner, ADT client, translations |
-| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription hint), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, router, language switch |
+| `tests/…core.tests` | unit tests for providers, MCP client and server, Claude Code and Copilot sessions (with simulated CLIs), tool loop, ABAP scanner, ADT client, translations |
+| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription and Copilot hints), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, router, language switch |
 
 The Claude integration deliberately uses `java.net.http` instead of the Anthropic Java SDK. This keeps the OSGi bundle free of OkHttp, Kotlin and Jackson.
 
 ### Status and known limits
+
+- The **GitHub Copilot** integration is tested with a simulated CLI speaking the Agent Client Protocol; handshake, command-line options and the "not logged in" case were checked against the real Copilot CLI 1.0.89. A full chat with a Copilot subscription still needs to be tried.
 
 - The **ADT bundle** compiles in CI (`-Padt`) against the current ADT SDK from SAP's p2 site. Generating, explaining and writing into the editor have been used with a real ABAP system; the SAP tools in the chat (search, where-used, ATC, activation …) still need broader testing.
   - Stateful sessions (for locks) and the object reference of an editor are read via reflection.
