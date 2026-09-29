@@ -214,6 +214,7 @@ When something does not work, switch on the log under *Preferences → Bella →
 - Bella never opens an SAP logon itself. Tools only use projects that are already logged on.
 - Writing tools ask first, releasing transports is blocked, and open objects are only changed in the editor.
 - The log file is off by default and never contains keys or tokens; with details on it contains source code.
+- With a personal subscription (Claude Pro/Max, GitHub Copilot for individuals) the provider's data settings apply. Check whether your chats may be used for model training, and switch that off if your company's code must not be used for it. Anthropic and GitHub do not train on data from API keys or business plans by default.
 
 ## Development
 
@@ -224,6 +225,8 @@ mvn -Padt verify              # plus the ADT bundle and the update site
                               #   (downloads ADT from tools.hana.ondemand.com)
 python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 ```
+
+`-Padt` downloads ADT from SAP's update site; SAP's license terms for these downloads (SAP Developer License Agreement) apply to whoever runs the build. The ADT bundles are only used to compile against and are not part of Bella's update site.
 
 **Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files (e.g. with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release. When the repository variable `PAGES_ENABLED` is `true`, it then publishes the same update site on GitHub Pages (`pages.yml`, address from the variable `UPDATE_SITE_URL`); *Actions → Update site → Run workflow* publishes an existing release again.
 
@@ -249,6 +252,10 @@ The Claude integration deliberately uses `java.net.http` instead of the Anthropi
 - Command names in *Keys* and *Quick Access* still follow the operating system language; Eclipse resolves them before Bella starts.
 - All translations except German and English were machine-generated. Corrections are welcome.
 
-## License
+## License, disclaimer and trademarks
 
 [MIT](LICENSE) © 2026 Kilian Taubmann
+
+Bella is free software provided as is, without warranty. It can change ABAP code and, after you confirm, write and activate objects in SAP systems. Review what it generates, use it in development systems, and keep your usual transport and review process. You are responsible for the code you save and activate.
+
+Bella is an independent project and is not affiliated with, endorsed or sponsored by SAP, Anthropic, GitHub, OpenAI or the Eclipse Foundation. SAP, ABAP and the other SAP products mentioned are trademarks or registered trademarks of SAP SE (or an SAP affiliate company) in Germany and other countries. Claude and Anthropic are trademarks of Anthropic, PBC. GitHub and GitHub Copilot are trademarks of GitHub, Inc. OpenAI is a trademark of OpenAI. Eclipse is a trademark of the Eclipse Foundation. All other names are trademarks of their respective owners and are used only to describe compatibility.

@@ -7,6 +7,6 @@
       <category name="bella"/>
    </feature>
    <category-def name="bella" label="Bella – AI assistant for ABAP">
-      <description>Claude-native AI assistant for ABAP development in Eclipse ADT.</description>
+      <description>AI assistant for ABAP development in Eclipse ADT, working with Claude and other models.</description>
    </category-def>
 </site>
