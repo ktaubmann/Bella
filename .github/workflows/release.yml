@@ -47,7 +47,23 @@ jobs:
             exit 1
           fi
       - name: Build and test (incl. ADT integration)
-        run: xvfb-run -a mvn -B -ntp -Padt verify
+        # Signs the update site with PGP when the secret BELLA_GPG_KEY is set
+        # (see "Signing" in the README); without it the release stays unsigned.
+        env:
+          BELLA_GPG_KEY: ${{ secrets.BELLA_GPG_KEY }}
+          BELLA_GPG_KEYNAME: ${{ vars.BELLA_GPG_KEYNAME }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.BELLA_GPG_PASSPHRASE }}
+        run: |
+          sign=""
+          if [ -n "$BELLA_GPG_KEY" ]; then
+            export BELLA_GPG_KEY_FILE="$RUNNER_TEMP/bella-signing-key.asc"
+            printf '%s\n' "$BELLA_GPG_KEY" > "$BELLA_GPG_KEY_FILE"
+            sign="-Psign"
+          else
+            echo "::warning::Secret BELLA_GPG_KEY is not set, the update site is not signed"
+          fi
+          xvfb-run -a mvn -B -ntp -Padt $sign verify
+          rm -f "$RUNNER_TEMP/bella-signing-key.asc"
       - name: Package update site
         run: |
           cd releng/de.kiliantaubmann.bella.updatesite/target/repository
@@ -66,6 +82,8 @@ jobs:
             **Install:** Eclipse → *Help → Install New Software… → Add…* and either enter the update site
             ${{ vars.UPDATE_SITE_URL || 'https://bella.kilian-taubmann.de/' }} or choose *Archive…* and select `bella-update-site-${{ env.TAG }}.zip`.
             Tick both features (*Bella* and *Bella ADT integration*), restart, then set up Claude (API key or Claude subscription) under *Window → Preferences → Bella*.
+
+            ${{ vars.BELLA_GPG_KEYNAME && format('Signed with PGP. Key fingerprint: `{0}`', vars.BELLA_GPG_KEYNAME) || '' }}
 
             Requires Eclipse 2024-12+ with Java 21 and SAP ABAP Development Tools. Bella uses the installed ADT and does not update it.
 

@@ -107,6 +107,8 @@ Requirements:
 
 **From a ZIP (offline):** download `bella-update-site-vX.Y.Z.zip` from [Releases](https://github.com/ktaubmann/Bella/releases), do not unzip it, and choose *Add… → Archive…* instead of entering the address. *Check for Updates* does not find new versions of a local ZIP; install the next ZIP the same way.
 
+**Signature:** the bundles and features are signed with PGP. On the first installation Eclipse asks whether you trust the key; compare its fingerprint with the one on the [Releases](https://github.com/ktaubmann/Bella/releases) page and tick it. Eclipse remembers the key for later updates.
+
 Bella does not ship or download ADT. The update site contains only Bella's own bundles, and they accept any installed ADT version, so an existing ADT installation is left as it is. To be on the safe side, you can untick *Contact all update sites during install to find required software* in the install dialog; Eclipse then only looks at Bella's update site.
 
 ## Setup
@@ -229,6 +231,16 @@ python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 `-Padt` downloads ADT from SAP's update site; SAP's license terms for these downloads (SAP Developer License Agreement) apply to whoever runs the build. The ADT bundles are only used to compile against and are not part of Bella's update site.
 
 **Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files (e.g. with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release. When the repository variable `PAGES_ENABLED` is `true`, it then publishes the same update site on GitHub Pages (`pages.yml`, address from the variable `UPDATE_SITE_URL`); *Actions → Update site → Run workflow* publishes an existing release again.
+
+**Signing:** the release build signs the update site with PGP (`tycho-gpg-plugin`, profile `sign` in the update site's `pom.xml`). It needs one key pair, created once:
+
+```bash
+gpg --quick-gen-key "Bella (Eclipse update site) <you@example.com>" rsa4096 sign 5y
+gpg --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}'   # fingerprint
+gpg --armor --export-secret-keys <fingerprint>                      # for the secret
+```
+
+In the repository settings (*Settings → Secrets and variables → Actions*), store the exported secret key as the secret `BELLA_GPG_KEY` and its passphrase as the secret `BELLA_GPG_PASSPHRASE`, and store the fingerprint as the variable `BELLA_GPG_KEYNAME`. Without `BELLA_GPG_KEY` the release is built unsigned and the workflow shows a warning. Keep a backup of the key: updates signed with a different key make Eclipse ask again.
 
 | Module | Contents |
 |---|---|

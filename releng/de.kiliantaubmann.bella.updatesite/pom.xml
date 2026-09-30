@@ -24,4 +24,39 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!--
+      PGP-signs every bundle and feature in the update site, so Eclipse shows
+      the key in its trust dialog instead of "unsigned content". Only the
+      release build activates it (-Psign) and needs these environment
+      variables: BELLA_GPG_KEY_FILE (path to the ASCII-armored secret key),
+      BELLA_GPG_KEYNAME (key fingerprint) and MAVEN_GPG_PASSPHRASE.
+    -->
+    <profile>
+      <id>sign</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.eclipse.tycho</groupId>
+            <artifactId>tycho-gpg-plugin</artifactId>
+            <version>${tycho.version}</version>
+            <executions>
+              <execution>
+                <id>pgpsigner</id>
+                <goals>
+                  <goal>sign-p2-artifacts</goal>
+                </goals>
+                <configuration>
+                  <signer>bc</signer>
+                  <secretKeys>${env.BELLA_GPG_KEY_FILE}</secretKeys>
+                  <keyname>${env.BELLA_GPG_KEYNAME}</keyname>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
