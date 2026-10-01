@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
 
 import de.kiliantaubmann.bella.core.tools.SchemaCheck;
@@ -124,5 +128,100 @@ class AdtToolProviderTest {
 
 		ToolResult nothing = p.call("adt_context", Json.parseObject("{\"source\":\"WRITE 'x'.\"}"), CancelToken.NONE);
 		assertEquals("No referenced repository objects found.", nothing.content());
+	}
+
+	private static final String CLASS_SRC = "CLASS zcl_a DEFINITION PUBLIC.\n  PUBLIC SECTION.\n    METHODS run.\nENDCLASS.\n"
+			+ "CLASS zcl_a IMPLEMENTATION.\n  METHOD run.\n    WRITE 'x'.\n  ENDMETHOD.\n  METHOD other.\n  ENDMETHOD.\nENDCLASS.\n";
+
+	private static ToolResult call(AdtToolProvider p, String tool, String json) {
+		return p.call(tool, Json.parseObject(json), CancelToken.NONE);
+	}
+
+	@Test
+	void readsOneMethodOrMatchingLines() {
+		FakeAdt adt = twoSystems().route("GET /sap/bc/adt/oo/classes/zcl_a/source/main",
+				r -> new AdtResponse(200, "text/plain", CLASS_SRC));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolResult m = call(p, "adt_read_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"method\":\"run\"}");
+		assertEquals("Lines from 6:\nDeclaration:\nMETHODS run.\n\nImplementation:\n  METHOD run.\n    WRITE 'x'.\n  ENDMETHOD.",
+				m.content());
+		ToolResult missing = call(p, "adt_read_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"method\":\"nope\"}");
+		assertTrue(missing.isError());
+		assertTrue(missing.content().contains("Implemented methods: RUN, OTHER"), missing.content());
+		ToolResult g = call(p, "adt_read_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"grep\":\"write\"}");
+		assertTrue(g.content().startsWith("1 matching line:\n5: CLASS zcl_a IMPLEMENTATION."), g.content());
+	}
+
+	@Test
+	void repeatedReadIsRevalidatedWithEtagAndWriteDropsTheCache() {
+		List<String> ifNoneMatch = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/oo/classes/zcl_a/source/main", r -> {
+					String tag = r.headers().get("If-None-Match");
+					ifNoneMatch.add(String.valueOf(tag));
+					return "\"v1\"".equals(tag) ? new AdtResponse(304, "", "")
+							: new AdtResponse(200, "text/plain", CLASS_SRC, Map.of("ETag", "\"v1\""));
+				})
+				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/oo/classes/zcl_a/source/main", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=UNLOCK", r -> FakeAdt.ok(""));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		String json = "{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}";
+		assertEquals(CLASS_SRC, call(p, "adt_read_source", json).content());
+		assertEquals(CLASS_SRC, call(p, "adt_read_source", json).content());
+		assertFalse(call(p, "adt_write_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"source\":\"x\"}").isError());
+		call(p, "adt_read_source", json);
+		assertEquals(List.of("null", "\"v1\"", "null"), ifNoneMatch);
+	}
+
+	@Test
+	void autoVersionNotesUnactivatedChanges() {
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/oo/classes/zcl_a/source/main?version=active",
+						r -> new AdtResponse(200, "text/plain", "active"))
+				.route("GET /sap/bc/adt/oo/classes/zcl_a/source/main", r -> new AdtResponse(200, "text/plain", "inactive"))
+				.route("GET /sap/bc/adt/activation/inactiveobjects", r -> FakeAdt.ok(
+						"<ioc:inactiveObjects xmlns:ioc=\"http://www.sap.com/abapxml/inactiveCtsObjects\" xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+								+ "<ioc:entry><ioc:object><ioc:ref adtcore:uri=\"/sap/bc/adt/oo/classes/zcl_a\" adtcore:name=\"ZCL_A\"/></ioc:object>"
+								+ "<ioc:transport><ioc:ref adtcore:uri=\"/sap/bc/adt/cts/transportrequests/K900001\" adtcore:name=\"K900001\"/></ioc:transport></ioc:entry>"
+								+ "</ioc:inactiveObjects>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolResult auto = call(p, "adt_read_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}");
+		assertTrue(auto.content().startsWith("Note: ZCL_A has saved changes that are not activated yet"), auto.content());
+		assertTrue(auto.content().endsWith("\n\ninactive"), auto.content());
+		assertEquals("active", call(p, "adt_read_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"version\":\"active\"}").content());
+		assertTrue(call(p, "adt_read_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"version\":\"x\"}").isError());
+		assertEquals(List.of("ZCL_A"), adtInactive(adt));
+	}
+
+	private static List<String> adtInactive(FakeAdt adt) {
+		try {
+			return new AdtClient(adt.stateless("dev")).inactiveObjects(CancelToken.NONE);
+		} catch (java.io.IOException e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	@Test
+	void writesOnlyTheGivenMethod() {
+		List<String> written = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/oo/classes/zcl_a/source/main", r -> new AdtResponse(200, "text/plain", CLASS_SRC))
+				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/oo/classes/zcl_a/source/main", r -> {
+					written.add(r.body());
+					return FakeAdt.ok("");
+				})
+				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=UNLOCK", r -> FakeAdt.ok(""));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolResult r = call(p, "adt_write_source",
+				"{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"method\":\"run\",\"source\":\"WRITE 'y'.\"}");
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Saved method RUN of ZCL_A"), r.content());
+		assertEquals(List.of(CLASS_SRC.replace("WRITE 'x'.", "WRITE 'y'.")), written);
+		assertTrue(call(p, "adt_write_source",
+				"{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"method\":\"nope\",\"source\":\"x\"}").isError());
 	}
 }

@@ -26,6 +26,13 @@ public record AdtRequest(String method, String path, Map<String, String> headers
 		return new AdtRequest("PUT", path, new LinkedHashMap<>(), body, contentType);
 	}
 
+	/** A copy of this request with one more header. */
+	public AdtRequest withHeader(String name, String value) {
+		Map<String, String> h = new LinkedHashMap<>(headers);
+		h.put(name, value);
+		return new AdtRequest(method, path, h, body, contentType);
+	}
+
 	private static Map<String, String> accept(String accept) {
 		Map<String, String> h = new LinkedHashMap<>();
 		if (accept != null) {
