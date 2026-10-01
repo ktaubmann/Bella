@@ -98,7 +98,7 @@ MESSAGES = {
  "tools.mcp.hint": "ARC-1 yerel olarak (npx -y arc-1@latest, port 3000) veya merkezi olarak SAP BTP üzerinde çalışır. Sunucu tarafı korumaları Bella’nın kurallarına ek olarak geçerlidir.",
  "tools.policy": "Araç kuralları",
  "tools.policy.hint": "Satır başına bir kural: desen=AUTO|CONFIRM|DENY (ör. adt_activate=AUTO). Kendi kurallarınız önceliklidir. Transport serbest bırakma her zaman reddedilir.",
- "tools.policy.defaults": "Varsayılanlar:", "tools.testing": "{0} ile bağlantı kuruluyor…",
+ "tools.policy.defaults": "Varsayılanlar:", "tools.packages": "İzin verilen paketler", "tools.packages.hint": "Bella’nın SAP araçları yalnızca bu paketlerde yazar, oluşturur ve etkinleştirir (virgülle ayrılmış, * joker karakter, ör. $TMP, Z*, Y*). Boş bırakılırsa tüm paketlere izin verilir. Açık düzenleyicideki değişiklikler etkilenmez.", "tools.testing": "{0} ile bağlantı kuruluyor…",
  "tools.test.ok": "{0}: {1} araç bulundu.\n\n{2}", "tools.test.failed": "{0} erişilemiyor:\n{1}",
  "chat.status.subscription": "{0} (abonelik)",
  "chat.notice.cc_login": "Claude Code oturum açmamış. Bir terminalde claude auth login çalıştırın veya claude setup-token ile alınan bir belirteci Bella tercihlerine kaydedin.",

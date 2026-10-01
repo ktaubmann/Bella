@@ -177,7 +177,7 @@ MESSAGES = {
  "tools.mcp.hint": "ARC-1 läuft lokal (npx -y arc-1@latest, Port 3000) oder zentral auf SAP BTP. Seine serverseitigen Sicherheitsflags gelten zusätzlich zu Bellas Regeln.",
  "tools.policy": "Tool-Regeln",
  "tools.policy.hint": "Eine Regel pro Zeile: Muster=AUTO|CONFIRM|DENY (z. B. adt_activate=AUTO). Eigene Regeln gehen vor. Transporte freigeben wird immer abgelehnt.",
- "tools.policy.defaults": "Standard:",
+ "tools.policy.defaults": "Standard:", "tools.packages": "Erlaubte Pakete", "tools.packages.hint": "Bellas SAP-Tools schreiben, legen an und aktivieren nur in diesen Paketen (durch Komma getrennt, * als Platzhalter, z. B. $TMP, Z*, Y*). Leer erlaubt alle Pakete. Änderungen im geöffneten Editor sind nicht betroffen.",
  "tools.testing": "Verbinde mit {0}…",
  "tools.test.ok": "{0}: {1} Tools gefunden.\n\n{2}",
  "tools.test.failed": "{0} ist nicht erreichbar:\n{1}",

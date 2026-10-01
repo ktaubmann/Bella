@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -30,6 +31,7 @@ public final class AdtToolProvider implements ToolProvider {
 
 	private final AdtBackend backend;
 	private final Supplier<String> defaultDestination;
+	private final Supplier<String> writePackages;
 	private final SourceCache cache = new SourceCache();
 
 	/**
@@ -37,8 +39,41 @@ public final class AdtToolProvider implements ToolProvider {
 	 *                           model does not name a system; may return {@code null}
 	 */
 	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination) {
+		this(backend, defaultDestination, () -> "");
+	}
+
+	/**
+	 * @param writePackages packages the tools may write to, create in and
+	 *                      activate in, e.g. {@code $TMP, Z*, Y*}; empty allows all
+	 */
+	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages) {
 		this.backend = backend;
 		this.defaultDestination = defaultDestination;
+		this.writePackages = writePackages;
+	}
+
+	/** Package patterns from a comma, semicolon or space separated list; {@code *} is a wildcard. */
+	static List<String> packagePatterns(String list) {
+		List<String> out = new ArrayList<>();
+		if (list != null) {
+			for (String p : list.split("[,;\\s]+")) {
+				if (!p.isBlank()) {
+					out.add(p.trim().toUpperCase(Locale.ROOT));
+				}
+			}
+		}
+		return out;
+	}
+
+	static boolean packageAllowed(String pkg, List<String> patterns) {
+		String p = pkg.toUpperCase(Locale.ROOT);
+		for (String pattern : patterns) {
+			String regex = Pattern.quote(pattern).replace("*", "\\E.*\\Q");
+			if (p.matches(regex)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -163,6 +198,55 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	// ---- execution -------------------------------------------------------------
+
+	@Override
+	public Optional<String> refuse(String name, JsonObject in, CancelToken cancel) {
+		List<String> patterns = packagePatterns(writePackages.get());
+		if (patterns.isEmpty() || !List.of("adt_write_source", "adt_create_object", "adt_activate").contains(name)) {
+			return Optional.empty();
+		}
+		try {
+			if (name.equals("adt_create_object")) {
+				String pkg = Json.str(in, "package");
+				return checkPackage(Json.str(in, "name"), pkg == null ? "" : pkg.trim(), patterns);
+			}
+			AdtClient c = client(system(in));
+			List<JsonObject> objects = new ArrayList<>();
+			if (name.equals("adt_activate")) {
+				JsonArray arr = Json.arr(in, "objects");
+				if (arr != null) {
+					arr.forEach(e -> objects.add(e.getAsJsonObject()));
+				}
+			} else {
+				objects.add(in);
+			}
+			for (JsonObject o : objects) {
+				AdtObjectRef ref = c.resolve(Json.str(o, "name").trim(), Json.str(o, "type"), cancel);
+				String pkg = ref.packageName().isEmpty() ? c.packageOf(ref.uri(), cancel)
+						: ref.packageName().toUpperCase(Locale.ROOT);
+				Optional<String> refused = checkPackage(ref.name(), pkg, patterns);
+				if (refused.isPresent()) {
+					return refused;
+				}
+			}
+			return Optional.empty();
+		} catch (IOException | RuntimeException e) {
+			return Optional.of("Could not check the package before writing: " + e.getMessage());
+		}
+	}
+
+	private static Optional<String> checkPackage(String object, String pkg, List<String> patterns) {
+		if (pkg.isEmpty()) {
+			return Optional.of("The package of " + object + " could not be determined, so Bella does not write to it. "
+					+ "Allowed packages: " + String.join(", ", patterns) + ".");
+		}
+		if (packageAllowed(pkg, patterns)) {
+			return Optional.empty();
+		}
+		return Optional.of(object + " is in package " + pkg.toUpperCase(Locale.ROOT)
+				+ ", where Bella may not write, create or activate (allowed: " + String.join(", ", patterns)
+				+ "; Preferences → Bella → SAP-Tools & ARC-1). Do not retry; tell the developer.");
+	}
 
 	@Override
 	public ToolResult call(String name, JsonObject in, CancelToken cancel) {

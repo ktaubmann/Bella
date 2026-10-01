@@ -258,6 +258,30 @@ public final class AdtClient {
 		return e.status() == 404 || e.status() == 406 || e.status() == 415 || e.status() == 405;
 	}
 
+	/**
+	 * Package of an object from its ADT description (upper case), or empty if
+	 * the description names none. Function modules take their group's package.
+	 */
+	public String packageOf(String objectUri, CancelToken cancel) throws IOException {
+		String uri = AdtObjectRef.objectUri(objectUri);
+		String pkg = parsePackage(send(AdtRequest.get(uri, "application/*"), cancel).body());
+		int fm = uri.indexOf("/fmodules/");
+		if (pkg.isEmpty() && fm > 0) {
+			pkg = parsePackage(send(AdtRequest.get(uri.substring(0, fm), "application/*"), cancel).body());
+		}
+		return pkg;
+	}
+
+	static String parsePackage(String xml) throws IOException {
+		for (Element e : AdtXml.elements(AdtXml.parse(xml), "packageRef")) {
+			String name = AdtXml.attr(e, "name");
+			if (!name.isEmpty()) {
+				return name.toUpperCase(Locale.ROOT);
+			}
+		}
+		return "";
+	}
+
 	/** Lock result: handle plus the transport the object is already assigned to (if any). */
 	public record Lock(String handle, String transport, boolean local) {
 	}

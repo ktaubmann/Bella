@@ -89,6 +89,10 @@ public class ToolsPreferencePage extends PreferencePage implements IWorkbenchPre
 		GridDataFactory.fillDefaults().grab(true, false).span(2, 1).hint(500, SWT.DEFAULT).applyTo(arc1);
 
 		Group policy = Form.group(c, Messages.get("tools.policy"));
+		form.text(policy, Messages.get("tools.packages"), Prefs.WRITE_PACKAGES, Messages.get("tools.packages.hint"));
+		Label pkgInfo = new Label(policy, SWT.WRAP);
+		pkgInfo.setText(Messages.get("tools.packages.hint"));
+		GridDataFactory.fillDefaults().grab(true, false).span(2, 1).hint(500, SWT.DEFAULT).applyTo(pkgInfo);
 		Label pinfo = new Label(policy, SWT.WRAP);
 		pinfo.setText(Messages.get("tools.policy.hint"));
 		GridDataFactory.fillDefaults().grab(true, false).span(2, 1).hint(500, SWT.DEFAULT).applyTo(pinfo);

@@ -98,7 +98,7 @@ MESSAGES = {
  "tools.mcp.hint": "ARC-1 可在本地运行（npx -y arc-1@latest，端口 3000），也可集中部署在 SAP BTP 上。其服务器端的安全设置在 Bella 规则之外另行生效。",
  "tools.policy": "工具规则",
  "tools.policy.hint": "每行一条规则：模式=AUTO|CONFIRM|DENY（例如 adt_activate=AUTO）。你的规则优先。释放传输请求始终会被拒绝。",
- "tools.policy.defaults": "默认：", "tools.testing": "正在连接 {0}…",
+ "tools.policy.defaults": "默认：", "tools.packages": "允许的包", "tools.packages.hint": "Bella 的 SAP 工具只在这些包中写入、创建和激活（用逗号分隔，* 为通配符，例如 $TMP, Z*, Y*）。留空表示允许所有包。不影响在已打开编辑器中的修改。", "tools.testing": "正在连接 {0}…",
  "tools.test.ok": "{0}：找到 {1} 个工具。\n\n{2}", "tools.test.failed": "无法连接 {0}：\n{1}",
  "chat.status.subscription": "{0}（订阅）",
  "chat.notice.cc_login": "Claude Code 尚未登录。请在终端运行 claude auth login，或在 Bella 首选项中保存 claude setup-token 生成的令牌。",

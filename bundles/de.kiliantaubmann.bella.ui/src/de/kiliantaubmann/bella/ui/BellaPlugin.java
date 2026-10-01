@@ -78,7 +78,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 			public AdtBackend addingService(org.osgi.framework.ServiceReference<AdtBackend> reference) {
 				AdtBackend backend = super.addingService(reference);
 				Log.info("bella", "ADT integration available");
-				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination));
+				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination,
+						() -> prefs().getString(Prefs.WRITE_PACKAGES)));
 				return backend;
 			}
 
