@@ -1,6 +1,7 @@
 package de.kiliantaubmann.bella.core.prompt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -71,7 +72,20 @@ class PromptsTest {
 		assertTrue(p.user().contains("- Warning line 2: Performance: SELECT *\n"
 				+ "  code: SELECT * FROM mara INTO TABLE @DATA(lt).\n- Info: no line\n"), p.user());
 		assertTrue(p.user().contains("complete corrected source"), p.user());
+		assertTrue(p.user().contains("as it is, including comments, formatting"), "continued lines are joined");
+		assertFalse(p.user().contains("\t"), "no tabs from the source indentation");
 		assertEquals(2, AbapPrompts.lineNumber("Error line 2: x"));
 		assertEquals(0, AbapPrompts.lineNumber("Error: inline 2"));
+	}
+
+	@Test
+	void transportReviewPromptNamesTheToolAndTheSections() {
+		String p = new AbapPrompts(null, null).reviewTransport("DEVK900100", "S4H_100");
+		assertTrue(p.startsWith("Review transport request DEVK900100 in system S4H_100 before it is released."), p);
+		for (String part : List.of("adt_transport_review", "**What the transport does**", "**Security**", "AUTHORITY-CHECK",
+				"**Completeness**", "**Verdict**", "Do not change, activate or release anything")) {
+			assertTrue(p.contains(part), part);
+		}
+		assertTrue(new AbapPrompts(null, null).chatSystem().contains("adt_transport_review"));
 	}
 }

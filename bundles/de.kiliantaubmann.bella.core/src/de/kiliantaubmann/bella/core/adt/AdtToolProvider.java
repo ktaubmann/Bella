@@ -180,6 +180,21 @@ public final class AdtToolProvider implements ToolProvider {
 						"Package, needed when the object does not exist yet.", "create", "boolean",
 						"true if the object is about to be created; default false (change).")),
 				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_list_transports",
+				"Transport requests of a user with their tasks and number of objects: modifiable ones by default, "
+						+ "released ones with status R.",
+				schema(new String[0], "user", "string", "Owner; default the logged-on user, '*' for all users.", "status",
+						"string", "D modifiable (default) or R released.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_transport_review",
+				"Everything needed to review a transport request, read only: header, tasks, objects, per source the diff "
+						+ "against the version before the request, syntax check, ATC and ABAP Unit results, objects that are "
+						+ "not activated, and customer objects the changed code uses that are missing, inactive or held in "
+						+ "another open request. With 'object' only that object's complete diff.",
+				schema(new String[] { "request" }, "request", "string", "Transport request number, e.g. DEVK900123.",
+						"object", "string", "Only this object of the request, with its whole diff.", "checks", "boolean",
+						"Run syntax check, ATC and ABAP Unit (default true).", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_short_dumps",
 				"Runtime errors (short dumps, ST22): without 'id' a list of the newest dumps (by default the developer's own), "
 						+ "with 'id' the full dump text including the source position.",
@@ -279,6 +294,8 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_atc_check" -> atc(in, cancel);
 			case "adt_transport_info" -> transportInfo(in, cancel);
 			case "adt_short_dumps" -> shortDumps(in, cancel);
+			case "adt_list_transports" -> listTransports(in, cancel);
+			case "adt_transport_review" -> transportReview(in, cancel);
 			case "adt_write_source" -> writeSource(in, cancel);
 			case "adt_create_object" -> create(in, cancel);
 			case "adt_activate" -> activate(in, cancel);
@@ -533,6 +550,48 @@ public final class AdtToolProvider implements ToolProvider {
 			t.candidates().forEach(r -> sb.append("- ").append(r).append('\n'));
 		}
 		return ToolResult.ok(sb.toString());
+	}
+
+	private ToolResult listTransports(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		String user = Json.str(in, "user");
+		user = user == null || user.isBlank() ? s.user() : user.trim();
+		String status = Json.str(in, "status");
+		List<AdtTransportRequest> list = client(s).transports(user == null ? "*" : user, status, cancel);
+		if (list.isEmpty()) {
+			return ToolResult.ok("No " + ("R".equalsIgnoreCase(status) ? "released" : "modifiable")
+					+ " transport requests" + (user == null ? "" : " of " + user.toUpperCase(Locale.ROOT)) + ".");
+		}
+		StringBuilder sb = new StringBuilder();
+		for (AdtTransportRequest t : list) {
+			sb.append(t.id()).append("  ").append(t.description()).append("  (").append(t.owner());
+			if (!t.target().isBlank()) {
+				sb.append(", target ").append(t.target());
+			}
+			sb.append(", ").append(t.tasks().size()).append(" tasks, ").append(t.entries().size()).append(" objects)\n");
+		}
+		return ToolResult.ok(sb.toString());
+	}
+
+	private ToolResult transportReview(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		String id = Json.str(in, "request");
+		if (id == null || id.isBlank()) {
+			return ToolResult.error("Give 'request', the transport request number.");
+		}
+		Optional<AdtTransportRequest> tr = c.transport(id, cancel);
+		if (tr.isEmpty()) {
+			return ToolResult.error("Transport request " + id.trim().toUpperCase(Locale.ROOT) + " does not exist.");
+		}
+		String object = Json.str(in, "object");
+		boolean single = object != null && !object.isBlank();
+		boolean checks = !in.has("checks") || !in.get("checks").isJsonPrimitive() || in.get("checks").getAsBoolean();
+		try {
+			return ToolResult.ok(TransportReview.build(c, tr.get(), object, checks && !single,
+					single ? TransportReview.Limits.SINGLE : TransportReview.Limits.DEFAULT, cancel));
+		} catch (CancelToken.CancelledException e) {
+			return ToolResult.error("Cancelled.");
+		}
 	}
 
 	/** Characters of a dump text a tool result carries at most. */

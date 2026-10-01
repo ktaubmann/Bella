@@ -52,6 +52,7 @@ public final class AbapPrompts {
 				- Run abap_lint on code you write and fix the findings that apply.
 				- Before writing code that depends on the release, check it with adt_list_systems (SAP_BASIS release
 				  or ABAP Cloud) and use only syntax and APIs that release offers.
+				- To review a transport request, start with adt_transport_review; never change or release anything.
 				- For a runtime error, read the short dump (adt_short_dumps). Before writing a non-local object, ask
 				  adt_transport_info which transport request to use.
 				- Save tokens on large objects: read one method (adt_read_source with 'method') or the matching lines
@@ -206,6 +207,31 @@ public final class AbapPrompts {
 		return new Prompt(chatSystem(), user);
 	}
 
+	/** Chat message that starts the review of a transport request. */
+	public String reviewTransport(String request, String system) {
+		return """
+				Review transport request %s%s before it is released.
+
+				1. Call adt_transport_review for it. Read more where you need it: adt_transport_review with 'object' \
+				for a whole diff, adt_read_source for surrounding code, adt_context for used objects. Do not change, \
+				activate or release anything.
+				2. Answer with these sections:
+				   **What the transport does**: the purpose in business terms and the objects involved.
+				   **Findings**: per object, each finding with its severity (blocking / should fix / note) and line: \
+				correctness, error handling, performance (e.g. SELECT in loops, missing WHERE), clean code, \
+				released APIs on ABAP Cloud.
+				   **Security**: missing AUTHORITY-CHECK where data is read or changed, dynamic SQL or dynamic \
+				WHERE/ORDER BY built from input (injection), CALL 'SYSTEM' or kernel calls, CLIENT SPECIFIED or \
+				cross-client access, hard-coded users, passwords, hosts or keys, debugging leftovers (BREAK-POINT, \
+				break user), unchecked file, RFC or HTTP access, exposure of personal data.
+				   **Checks**: syntax check, ATC and ABAP Unit results in short.
+				   **Completeness**: objects not activated, objects used but missing or held in other requests, \
+				anything that will fail in the target system.
+				   **Verdict**: ready to release, or what must be done first, as a short list.
+				Base every finding on the dossier or on code you read; say so when something could not be checked.
+				""".formatted(request, system == null || system.isBlank() ? "" : " in system " + system);
+	}
+
 	/**
 	 * Corrected complete source for selected ATC findings; the answer must be a
 	 * single code block with the whole source.
@@ -235,7 +261,9 @@ public final class AbapPrompts {
 				%s
 				```
 
-				Change only what the findings require and keep everything else exactly as it is, including 				comments, formatting and the order of methods. If a finding cannot be fixed safely in the code, 				leave that place unchanged.
+				Change only what the findings require and keep everything else exactly as it is, including \
+				comments, formatting and the order of methods. If a finding cannot be fixed safely in the code, \
+				leave that place unchanged.
 				Reply with exactly one ```abap code block that contains the complete corrected source. No explanation.
 				""".formatted(ctx.describeObject(), list, ctx.source());
 		return new Prompt(chatSystem(), user);

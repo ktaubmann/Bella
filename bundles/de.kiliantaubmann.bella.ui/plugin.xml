@@ -41,6 +41,8 @@
             name="%cmd.complete" description="%cmd.complete.desc"/>
       <command id="de.kiliantaubmann.bella.ui.atcFix" categoryId="de.kiliantaubmann.bella.ui.commands"
             name="%cmd.atcFix" description="%cmd.atcFix.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.reviewTransport" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.reviewTransport" description="%cmd.reviewTransport.desc"/>
    </extension>
 
    <extension point="org.eclipse.ui.commandImages">
@@ -53,6 +55,7 @@
       <image commandId="de.kiliantaubmann.bella.ui.implementMethod" icon="icons/method.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.complete" icon="icons/insert.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.atcFix" icon="icons/atc.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.reviewTransport" icon="icons/transport.png"/>
    </extension>
 
    <extension point="org.eclipse.ui.handlers">
@@ -78,6 +81,7 @@
       <handler commandId="de.kiliantaubmann.bella.ui.complete" class="de.kiliantaubmann.bella.ui.handlers.CompletionHandler">
          <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
       </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.reviewTransport" class="de.kiliantaubmann.bella.ui.handlers.ReviewTransportHandler"/>
       <handler commandId="de.kiliantaubmann.bella.ui.atcFix" class="de.kiliantaubmann.bella.ui.handlers.AtcFixHandler">
          <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
       </handler>

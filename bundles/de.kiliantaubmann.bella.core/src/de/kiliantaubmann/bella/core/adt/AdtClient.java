@@ -7,8 +7,10 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -440,6 +442,66 @@ public final class AdtClient {
 		return send(AdtRequest.get("/sap/bc/adt/runtime/dump/" + segment + "/formatted", "text/plain"), cancel).body();
 	}
 
+	// ---- transport requests and versions ----------------------------------------
+
+	/**
+	 * Transport requests of a user (Workbench, Customizing, transport of copies).
+	 *
+	 * @param status {@code D} modifiable (default), {@code R} released
+	 */
+	public List<AdtTransportRequest> transports(String user, String status, CancelToken cancel) throws IOException {
+		String st = status == null || status.isBlank() ? "D" : status.trim().toUpperCase(Locale.ROOT);
+		String path = "/sap/bc/adt/cts/transportrequests?user=" + enc(user == null ? "*" : user.toUpperCase(Locale.ROOT))
+				+ "&target=true&requestType=KWT&requestStatus=" + enc(st);
+		List<AdtTransportRequest> all = AdtTransportRequest.parse(send(AdtRequest.get(path,
+				"application/vnd.sap.adt.transportorganizertree.v1+xml"), cancel).body());
+		// some releases ignore requestStatus
+		return all.stream().filter(t -> st.equals("R") ? t.released() : !t.released()).toList();
+	}
+
+	/** One transport request with its tasks and objects; empty if it does not exist. */
+	public Optional<AdtTransportRequest> transport(String id, CancelToken cancel) throws IOException {
+		String wanted = id.trim().toUpperCase(Locale.ROOT);
+		AdtResponse r = exchange(transport, AdtRequest.get("/sap/bc/adt/cts/transportrequests/" + enc(wanted),
+				"application/vnd.sap.adt.transportorganizer.v1+xml"), cancel);
+		if (r.status() == 404) {
+			return Optional.empty();
+		}
+		if (!r.ok()) {
+			throw new AdtException(r.status(), AdtErrors.message(r));
+		}
+		// 7.50 answers an unknown number with the user's whole list
+		return AdtTransportRequest.parse(r.body()).stream().filter(t -> t.id().equalsIgnoreCase(wanted)).findFirst();
+	}
+
+	/** Version history of a source; empty when the object has none or the type keeps none. */
+	public List<AdtRevisions.Revision> revisions(String versionsUri, CancelToken cancel) throws IOException {
+		AdtResponse r = exchange(transport, AdtRequest.get(versionsUri, "application/atom+xml;type=feed"), cancel);
+		if (r.status() == 404) {
+			return List.of();
+		}
+		if (!r.ok()) {
+			throw new AdtException(r.status(), AdtErrors.message(r));
+		}
+		return AdtRevisions.parse(r.body());
+	}
+
+	/** Source text of one version. */
+	public String revisionText(String contentUri, CancelToken cancel) throws IOException {
+		return send(AdtRequest.get(contentUri, "text/plain"), cancel).body();
+	}
+
+	/** The request an object is currently locked in (empty if none or unknown). */
+	public String lockedIn(String objectUri, CancelToken cancel) throws IOException {
+		AdtResponse r = exchange(transport, AdtRequest.get(AdtObjectRef.objectUri(objectUri) + "/transports",
+				"application/vnd.sap.as+xml"), cancel);
+		if (!r.ok() || r.body() == null || r.body().isBlank()) {
+			return "";
+		}
+		Matcher m = CORRNR.matcher(r.body());
+		return m.find() ? m.group(1).trim() : "";
+	}
+
 	/** Lock result: handle plus the transport the object is already assigned to (if any). */
 	public record Lock(String handle, String transport, boolean local) {
 	}
@@ -532,8 +594,25 @@ public final class AdtClient {
 					.append("</chkrun:content></chkrun:artifact></chkrun:artifacts>");
 		}
 		body.append("</chkrun:checkObject></chkrun:checkObjectList>");
+		return runCheck(body.toString(), cancel);
+	}
+
+	/** Syntax check of several saved objects in one run. */
+	public List<Message> syntaxCheck(List<String> objectUris, CancelToken cancel) throws IOException {
+		StringBuilder body = new StringBuilder()
+				.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+				.append("<chkrun:checkObjectList xmlns:chkrun=\"http://www.sap.com/adt/checkrun\" xmlns:adtcore=\"http://www.sap.com/adt/core\">");
+		for (String uri : objectUris) {
+			body.append("<chkrun:checkObject adtcore:uri=\"").append(AdtXml.escape(uri))
+					.append("\" chkrun:version=\"inactive\"/>");
+		}
+		body.append("</chkrun:checkObjectList>");
+		return runCheck(body.toString(), cancel);
+	}
+
+	private List<Message> runCheck(String body, CancelToken cancel) throws IOException {
 		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/checkruns?reporters=abapCheckRun",
-				"application/vnd.sap.adt.checkmessages+xml", body.toString(), "application/vnd.sap.adt.checkobjects+xml"),
+				"application/vnd.sap.adt.checkmessages+xml", body, "application/vnd.sap.adt.checkobjects+xml"),
 				cancel);
 		return parseCheckMessages(r.body());
 	}
@@ -557,6 +636,15 @@ public final class AdtClient {
 
 	/** ABAP Unit run; returns a readable summary. */
 	public String runUnitTests(String objectUri, CancelToken cancel) throws IOException {
+		return runUnitTests(List.of(objectUri), cancel);
+	}
+
+	/** ABAP Unit run over several objects; returns a readable summary. */
+	public String runUnitTests(List<String> objectUris, CancelToken cancel) throws IOException {
+		StringBuilder refs = new StringBuilder();
+		for (String uri : objectUris) {
+			refs.append("<adtcore:objectReference adtcore:uri=\"").append(AdtXml.escape(uri)).append("\"/>");
+		}
 		String body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
 				+ "<aunit:runConfiguration xmlns:aunit=\"http://www.sap.com/adt/aunit\">"
 				+ "<external><coverage active=\"false\"/></external>"
@@ -566,8 +654,8 @@ public final class AdtClient {
 				+ "<testDurations short=\"true\" medium=\"true\" long=\"true\"/>"
 				+ "<withNavigationUri enabled=\"false\"/></options>"
 				+ "<adtcore:objectSets xmlns:adtcore=\"http://www.sap.com/adt/core\"><objectSet kind=\"inclusive\">"
-				+ "<adtcore:objectReferences><adtcore:objectReference adtcore:uri=\"" + AdtXml.escape(objectUri)
-				+ "\"/></adtcore:objectReferences></objectSet></adtcore:objectSets></aunit:runConfiguration>";
+				+ "<adtcore:objectReferences>" + refs
+				+ "</adtcore:objectReferences></objectSet></adtcore:objectSets></aunit:runConfiguration>";
 		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/abapunit/testruns", "application/xml", body,
 				"application/vnd.sap.adt.abapunit.testruns.config.v4+xml"), cancel);
 		return summarizeUnitResult(r.body());
@@ -617,6 +705,11 @@ public final class AdtClient {
 
 	/** ATC check with the given variant (or the system default). */
 	public List<Message> atcCheck(String objectUri, String variant, CancelToken cancel) throws IOException {
+		return atcCheck(List.of(objectUri), variant, cancel);
+	}
+
+	/** One ATC run over several objects with the given variant (or the system default). */
+	public List<Message> atcCheck(List<String> objectUris, String variant, CancelToken cancel) throws IOException {
 		String v = variant;
 		if (v == null || v.isBlank()) {
 			v = atcDefaultVariant(cancel);
@@ -625,8 +718,9 @@ public final class AdtClient {
 				null), cancel).body().trim();
 		String run = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><atc:run maximumVerdicts=\"100\" xmlns:atc=\"http://www.sap.com/adt/atc\">"
 				+ "<objectSets xmlns:adtcore=\"http://www.sap.com/adt/core\"><objectSet kind=\"inclusive\"><adtcore:objectReferences>"
-				+ "<adtcore:objectReference adtcore:uri=\"" + AdtXml.escape(objectUri)
-				+ "\"/></adtcore:objectReferences></objectSet></objectSets></atc:run>";
+				+ objectUris.stream().map(u -> "<adtcore:objectReference adtcore:uri=\"" + AdtXml.escape(u) + "\"/>")
+						.collect(Collectors.joining())
+				+ "</adtcore:objectReferences></objectSet></objectSets></atc:run>";
 		send(AdtRequest.post("/sap/bc/adt/atc/runs?worklistId=" + enc(worklist), "application/xml", run,
 				"application/xml"), cancel);
 		AdtResponse result = send(AdtRequest.get(
