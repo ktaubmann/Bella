@@ -46,31 +46,15 @@ jobs:
             echo "::error::Tag v$tag does not match project version $version (pom.xml)"
             exit 1
           fi
-      - name: Build and test (incl. ADT integration)
-        # Signs the update site with PGP when the secret BELLA_GPG_KEY is set
-        # (fingerprint in the variable BELLA_GPG_KEYNAME, optional passphrase
-        # in the secret BELLA_GPG_PASSPHRASE); without it the release stays unsigned.
+      - name: Build, test and package the update site (incl. ADT integration)
+        # Signs with PGP when the secret BELLA_GPG_KEY is set (fingerprint in the
+        # variable BELLA_GPG_KEYNAME, optional passphrase in the secret
+        # BELLA_GPG_PASSPHRASE); without it the release stays unsigned.
         env:
           BELLA_GPG_KEY: ${{ secrets.BELLA_GPG_KEY }}
           BELLA_GPG_KEYNAME: ${{ vars.BELLA_GPG_KEYNAME }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.BELLA_GPG_PASSPHRASE }}
-        run: |
-          sign=""
-          if [ -n "$BELLA_GPG_KEY" ]; then
-            export BELLA_GPG_KEY_FILE="$RUNNER_TEMP/bella-signing-key.asc"
-            printf '%s\n' "$BELLA_GPG_KEY" > "$BELLA_GPG_KEY_FILE"
-            # Tycho needs a value even for a key without passphrase; it is ignored then.
-            export MAVEN_GPG_PASSPHRASE="${MAVEN_GPG_PASSPHRASE:-none}"
-            sign="-Psign"
-          else
-            echo "::warning::Secret BELLA_GPG_KEY is not set, the update site is not signed"
-          fi
-          xvfb-run -a mvn -B -ntp -Padt $sign verify
-          rm -f "$RUNNER_TEMP/bella-signing-key.asc"
-      - name: Package update site
-        run: |
-          cd releng/de.kiliantaubmann.bella.updatesite/target/repository
-          zip -r "$GITHUB_WORKSPACE/bella-update-site-${TAG}.zip" .
+        run: releng/build-update-site.sh "bella-update-site-${TAG}.zip"
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:

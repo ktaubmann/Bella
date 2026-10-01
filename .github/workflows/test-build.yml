@@ -1,0 +1,58 @@
+name: Test build
+
+# Every push to the branch "test" builds a signed update site and publishes it
+# as the pre-release "test", replacing the previous one:
+#   https://github.com/<owner>/<repo>/releases/download/test/bella-update-site-test.zip
+# It is never marked as latest release and never reaches the update site on
+# GitHub Pages (pages.yml only takes regular releases).
+on:
+  push:
+    branches: [ test ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: test-build
+  cancel-in-progress: true
+
+jobs:
+  test-build:
+    name: Build and publish test build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build, test and package the update site (incl. ADT integration)
+        env:
+          BELLA_GPG_KEY: ${{ secrets.BELLA_GPG_KEY }}
+          BELLA_GPG_KEYNAME: ${{ vars.BELLA_GPG_KEYNAME }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.BELLA_GPG_PASSPHRASE }}
+        run: releng/build-update-site.sh bella-update-site-test.zip
+      - name: Replace the pre-release "test"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEYNAME: ${{ vars.BELLA_GPG_KEYNAME }}
+        run: |
+          short="${GITHUB_SHA::7}"
+          version=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout)
+          {
+            echo "**Test build, not for production use.** It is replaced by every push to the branch \`test\`."
+            echo
+            echo "Version ${version}, commit ${GITHUB_SHA} (branch \`${GITHUB_REF_NAME}\`)."
+            echo
+            echo "**Install:** Eclipse → *Help → Install New Software… → Add… → Archive…* and select \`bella-update-site-test.zip\`."
+            if [ -n "$KEYNAME" ]; then
+              echo
+              echo "Signed with PGP. Key fingerprint: \`${KEYNAME}\`"
+            fi
+          } > notes.md
+          gh release delete test --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create test bella-update-site-test.zip --repo "$GITHUB_REPOSITORY" \
+            --prerelease --latest=false --target "$GITHUB_SHA" \
+            --title "Bella test build (${short})" --notes-file notes.md
