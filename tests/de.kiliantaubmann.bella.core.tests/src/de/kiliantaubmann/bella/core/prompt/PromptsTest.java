@@ -3,6 +3,8 @@ package de.kiliantaubmann.bella.core.prompt;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 class PromptsTest {
@@ -58,5 +60,18 @@ class PromptsTest {
 		assertEquals("sys\nTarget system: SAP_BASIS 750, on-premise. Use only ABAP syntax and APIs available there.",
 				with.system());
 		assertEquals("user", with.user());
+	}
+
+	@Test
+	void atcFixPromptQuotesTheLinesOfTheFindings() {
+		EditorContext ctx = new EditorContext("ZCL_A", "CLAS/OC", "S4H",
+				"REPORT z.\nSELECT * FROM mara INTO TABLE @DATA(lt).\n", "", 0);
+		Prompt p = new AbapPrompts(null, null).fixAtcFindings(ctx,
+				List.of("Warning line 2: Performance: SELECT *", "Info: no line"));
+		assertTrue(p.user().contains("- Warning line 2: Performance: SELECT *\n"
+				+ "  code: SELECT * FROM mara INTO TABLE @DATA(lt).\n- Info: no line\n"), p.user());
+		assertTrue(p.user().contains("complete corrected source"), p.user());
+		assertEquals(2, AbapPrompts.lineNumber("Error line 2: x"));
+		assertEquals(0, AbapPrompts.lineNumber("Error: inline 2"));
 	}
 }

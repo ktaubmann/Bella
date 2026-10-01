@@ -22,6 +22,7 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/rewrite.png"> | **Rework selection…** Fix errors, modern syntax, ABAP Cloud, performance, comments | Right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/method.png"> | **Implement method** Writes the body of the METHOD/FORM/FUNCTION at the cursor | Right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **AI completion** as grey ghost text; Tab accepts, Esc dismisses | `Ctrl+↑` (macOS: `Cmd+Option+Enter`), or automatically while typing (not with the Claude subscription or GitHub Copilot) |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/atc.png"> | **Check with ATC and fix…** Runs ATC on the object, lists the findings; Bella fixes the ticked ones in the editor (diff preview, not saved) | Right-click → Bella, toolbar |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Suggest refactoring / unit test** | Right-click → Bella (chat) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** with editor context, streaming and tool calls; insert code blocks, replace the selection or take them over as a method body | `Ctrl+Alt+B`, pink B in the toolbar, menu *Bella* |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read (also DDIC tables, structures, data elements, domains, table types, function modules, message classes), context of used objects, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, style check, write, create, activate | automatically in the chat |
@@ -42,12 +43,14 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 A model that does not know your system guesses field names and signatures. Bella therefore reads them from the system through your ADT logon:
 
 - **Editor actions** (*Generate code here…*, *Rework selection…*, *Implement method*) first collect the objects the code and your instruction mention: tables in `SELECT`, types after `TYPE`, classes before `=>` or after `NEW`, function modules in `CALL FUNCTION`, and names such as `MARA` in "select mara and show". Bella loads their definitions (at most 12 objects, 8 seconds), adds them to the request and lists them in the diff preview under *SAP definitions used*. You can switch this off under *Preferences → Bella → Editor*. It needs ADT and an ABAP editor of a logged-on system; the completion (`Ctrl+↑`) stays without it so that it stays fast.
-- **In the chat** the model calls `adt_context` or `adt_read_source` itself. `adt_context` takes an object name, a piece of code or a list of names and returns in one call: the public section of classes, interfaces, table and structure fields, CDS views, function module signatures, data elements and table types.
+- **In the chat** the model calls `adt_context` or `adt_read_source` itself. To save tokens, `adt_read_source` can return a single method (`method`) or only the matching lines (`grep`), and `adt_write_source` can replace a single method. Sources are cached and revalidated with SAP (ETag), and a note tells the model when an object has saved changes that are not activated yet. `adt_context` takes an object name, a piece of code or a list of names and returns in one call: the public section of classes, interfaces, table and structure fields, CDS views, function module signatures, data elements and table types.
 - **Style check**: `abap_lint` checks code without SAP access for obsolete statements (`MOVE`, `CALL METHOD`, `CREATE OBJECT`, header lines, `FORM` …), `SELECT *`, `SELECT` in loops, `SELECT … ENDSELECT`, unchecked `SELECT SINGLE`, `CATCH cx_root`, empty `CATCH` blocks, break-points and aborting messages. The diff preview shows its findings for generated code. It is a small rule set of Bella's own, not abaplint and no replacement for ATC.
 
 Tables and structures are read as source on newer ABAP releases (7.52 and later). On older releases, and for data elements, domains, table types and message classes, Bella summarizes the object's ADT description.
 
-**Compared with ARC-1:** with Bella's tools the model now gets the same kind of system knowledge ARC-1's `SAPRead` and `SAPContext` provide. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log, rate limits and a package allowlist, or when the tools should run on a server instead of in Eclipse.
+- **System knowledge**: `adt_list_systems` shows each system's SAP_BASIS release or whether it is an ABAP Cloud system, and the editor actions tell the model the release. `adt_transport_info` asks SAP which transport request a change needs, `adt_short_dumps` lists and reads runtime errors (ST22).
+
+**Compared with ARC-1:** Bella's tools now cover what ARC-1's `SAPRead` (incl. single methods, grep and active/inactive versions), `SAPContext`, read-only `SAPTransport` and the dumps of `SAPDiagnose` offer, plus a package allowlist for writes. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log and rate limits, Git (gCTS/abapGit), or when the tools should run on a server instead of in Eclipse.
 
 ### Ground rule: open objects are only changed in the editor
 
@@ -78,11 +81,12 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 
 | Tool | Default |
 |---|---|
-| Read and check (`adt_search_objects`, `adt_read_source`, `adt_context`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, `abap_lint`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
+| Read and check (`adt_search_objects`, `adt_read_source`, `adt_context`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, `adt_transport_info`, `adt_short_dumps`, `abap_lint`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
 | Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
 | Release transports | always refused |
 
 - Add your own rules under *Preferences → Bella → SAP-Tools & ARC-1*, one per line as `pattern=AUTO|CONFIRM|DENY`.
+- **Allowed packages** (same page, default `$TMP, Z*, Y*`): Bella's tools write, create and activate only there; other writes are refused before you are asked. Empty allows all packages. Writing into an open editor is not affected.
 - With ARC-1, its server-side safety flags apply in addition.
 
 <p align="center"><img src="docs/screenshots/preferences-sap-tools.png" width="760" alt="Preferences page SAP-Tools and ARC-1 with MCP servers and tool policy"></p>

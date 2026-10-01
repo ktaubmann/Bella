@@ -121,7 +121,7 @@ class WorkbenchSmokeTest {
 		assertNotNull(BellaPlugin.getDefault());
 		ICommandService commands = PlatformUI.getWorkbench().getService(ICommandService.class);
 		for (String id : List.of("openChat", "explain", "refactor", "unitTest", "generate", "rewrite",
-				"implementMethod", "complete")) {
+				"implementMethod", "complete", "atcFix")) {
 			Command c = commands.getCommand("de.kiliantaubmann.bella.ui." + id);
 			assertTrue(c.isDefined(), id);
 		}
@@ -163,6 +163,21 @@ class WorkbenchSmokeTest {
 		pump();
 		assertTrue(doc.get().contains("  METHOD total.\n    rv = 42.\n  ENDMETHOD."), doc.get());
 		assertTrue(editor.isDirty(), "the change stays unsaved in the editor");
+	}
+
+	@Test
+	void atcFixReplacesTheWholeSourceWithoutSaving() throws Exception {
+		BellaPlugin.getDefault().prefs().setValue(Prefs.DIFF_PREVIEW, false);
+		IEditorPart part = openDemoEditor();
+		ITextEditor editor = EditorBridge.textEditor(part).orElseThrow();
+		IDocument doc = EditorBridge.document(editor);
+		String fixed = doc.get().replace("rv = 0.", "rv = 1.").stripTrailing();
+		CodeActions.apply(part, editor, CodeActions.Target.DOCUMENT, fixed);
+		pump();
+		assertTrue(doc.get().contains("rv = 1."), doc.get());
+		assertTrue(doc.get().endsWith("\n"), "the final line break is kept");
+		assertTrue(editor.isDirty(), "the change stays unsaved in the editor");
+		assertFalse(Messages.get("atc.fix").startsWith("!"));
 	}
 
 	@Test
@@ -239,6 +254,16 @@ class WorkbenchSmokeTest {
 		other.addProperty("name", "ZCL_OTHER");
 		other.addProperty("source", "x");
 		assertTrue(new OpenEditorRouter().intercept(write, other).isEmpty(), "closed objects are not intercepted");
+
+		JsonObject method = new JsonObject();
+		method.addProperty("name", "ZCL_DEMO");
+		method.addProperty("method", "total");
+		method.addProperty("source", "rv = 8.");
+		ToolResult m = new OpenEditorRouter().intercept(write, method).orElseThrow();
+		pump();
+		assertFalse(m.isError(), m.content());
+		assertTrue(EditorBridge.document(editor).get().contains("  METHOD total.\n    rv = 8.\n  ENDMETHOD."),
+				EditorBridge.document(editor).get());
 	}
 
 	private static <T extends Control> List<T> find(Composite root, Class<T> type) {
@@ -370,8 +395,8 @@ class WorkbenchSmokeTest {
 		IPreferenceStore prefs = BellaPlugin.getDefault().prefs();
 		Shell shell = new Shell(Display.getCurrent());
 		try {
-			for (String[] lang : new String[][] { { "en", "What happens here?", "Bella Chat" },
-					{ "de", "Was passiert hier?", "Bella-Chat" } }) {
+			for (String[] lang : new String[][] { { "en", "What happens here?", "Bella Chat", "Check with ATC and fix…" },
+					{ "de", "Was passiert hier?", "Bella-Chat", "Mit ATC prüfen und beheben…" } }) {
 				prefs.setValue(Prefs.UI_LANGUAGE, lang[0]);
 				Menu menu = new Menu(shell, SWT.POP_UP);
 				BellaMenuItems items = new BellaMenuItems(BellaMenuItems.POPUP_ID);
@@ -380,7 +405,8 @@ class WorkbenchSmokeTest {
 				List<String> labels = java.util.Arrays.stream(menu.getItems()).map(MenuItem::getText)
 						.filter(t -> !t.isEmpty()).toList();
 				assertTrue(labels.get(0).startsWith(lang[1]), labels.toString());
-				assertEquals(8, labels.size(), labels.toString());
+				assertEquals(9, labels.size(), labels.toString());
+				assertTrue(labels.contains(lang[3]), labels.toString());
 				menu.dispose();
 				ChatView view = ChatView.open().orElseThrow();
 				pump();
