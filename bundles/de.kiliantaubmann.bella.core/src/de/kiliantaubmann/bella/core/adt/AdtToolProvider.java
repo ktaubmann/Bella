@@ -4,13 +4,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import de.kiliantaubmann.bella.core.abap.AbapEdit;
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
+import de.kiliantaubmann.bella.core.abap.AbapSlices;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolProvider;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -27,6 +30,7 @@ public final class AdtToolProvider implements ToolProvider {
 
 	private final AdtBackend backend;
 	private final Supplier<String> defaultDestination;
+	private final SourceCache cache = new SourceCache();
 
 	/**
 	 * @param defaultDestination destination of the active editor, used when the
@@ -93,9 +97,14 @@ public final class AdtToolProvider implements ToolProvider {
 		t.add(ToolSpec.of("adt_read_source",
 				"Read the saved source or definition of a repository object: classes, interfaces, programs, CDS views, function modules, "
 						+ "DDIC tables and structures (fields and types), data elements, domains (incl. fixed values), table types and message classes. "
-						+ "For classes, 'include' selects main (default), definitions, implementations, macros or testclasses.",
+						+ "For classes, 'include' selects main (default), definitions, implementations, macros or testclasses. "
+						+ "To save tokens, read one method with 'method' or only matching lines with 'grep' instead of the whole source.",
 				schema(new String[] { "name" }, objectProps("include", "string",
-						"Class include: main, definitions, implementations, macros, testclasses.")),
+						"Class include: main, definitions, implementations, macros, testclasses.", "method", "string",
+						"Only this method: its declaration and METHOD … ENDMETHOD, e.g. GET_ITEMS or ZIF_X~SAVE.", "grep",
+						"string", "Only lines matching this regex (case-insensitive), with line numbers and 2 lines of context.",
+						"version", "string",
+						"auto (default: newest saved version, with a note if it is not activated), active or inactive.")),
 				Capability.READ_SOURCE, ToolSpec.Kind.READ));
 		JsonObject contextSchema = schema(new String[0], "name", "string",
 				"Object whose used objects should be looked up, e.g. ZCL_SALES_ORDER.", "type", "string", TYPE_DESC,
@@ -127,8 +136,10 @@ public final class AdtToolProvider implements ToolProvider {
 						"ATC check variant; omit for the system default.")),
 				Capability.ATC, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_write_source",
-				"Replace the complete source of an object (main source or a class include). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system.",
-				schema(new String[] { "name", "source" }, objectProps("source", "string", "Complete new source code.",
+				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system.",
+				schema(new String[] { "name", "source" }, objectProps("source", "string",
+						"Complete new source code, or with 'method' the new method body.", "method", "string",
+						"Replace only the body of this method (between METHOD and ENDMETHOD).",
 						"include", "string", "Class include, default main.", "transport", "string",
 						"Transport request, required for non-local objects unless already assigned.")),
 				Capability.WRITE_SOURCE, ToolSpec.Kind.WRITE));
@@ -222,7 +233,7 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private AdtClient client(AdtSystem s) {
-		return new AdtClient(backend.stateless(s.destinationId()));
+		return new AdtClient(backend.stateless(s.destinationId()), cache, s.destinationId());
 	}
 
 	private AdtObjectRef resolve(AdtClient c, JsonObject in, CancelToken cancel) throws IOException {
@@ -254,11 +265,43 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtClient c = client(system(in));
 		AdtObjectRef ref = resolve(c, in, cancel);
 		String include = Json.str(in, "include");
-		String src = include == null || include.isBlank() || include.equalsIgnoreCase("main")
-				? c.readDefinition(ref, cancel)
-				: c.readSource(AdtObjectRef.objectUri(ref.uri()), include, cancel);
-		return ToolResult.ok(src.isEmpty() ? "(empty source)" : src);
+		boolean main = include == null || include.isBlank() || include.equalsIgnoreCase("main");
+		String version = Json.str(in, "version");
+		version = version == null || version.isBlank() ? "auto" : version.trim().toLowerCase(Locale.ROOT);
+		if (!List.of("auto", "active", "inactive").contains(version)) {
+			return ToolResult.error("Unknown version '" + version + "'; use auto, active or inactive.");
+		}
+		String uri = AdtObjectRef.objectUri(ref.uri());
+		String src;
+		if (!version.equals("auto") && !AdtClient.xmlOnly(ref.type())) {
+			src = c.readSource(uri, include, version, cancel);
+		} else {
+			src = main ? c.readDefinition(ref, cancel) : c.readSource(uri, include, cancel);
+		}
+		String note = "";
+		if (version.equals("auto") && !AdtClient.xmlOnly(ref.type()) && c.inactiveObjects(cancel).contains(ref.name())) {
+			note = "Note: " + ref.name() + " has saved changes that are not activated yet; this is that inactive version. "
+					+ "Use version=active for the active one.\n\n";
+		}
+		String method = Json.str(in, "method");
+		if (method != null && !method.isBlank()) {
+			Optional<AbapSlices.Slice> slice = AbapSlices.method(src, ref.name(), method);
+			if (slice.isEmpty()) {
+				return ToolResult.error("Method " + method.toUpperCase(Locale.ROOT) + " is not implemented in "
+						+ ref.name() + (main ? "" : " (" + include + ")") + ". Implemented methods: "
+						+ String.join(", ", AbapSlices.methodNames(src)));
+			}
+			src = "Lines from " + slice.get().firstLine() + ":\n" + slice.get().text();
+		}
+		String grep = Json.str(in, "grep");
+		if (grep != null && !grep.isBlank()) {
+			src = AbapSlices.grep(src, grep, 2, GREP_MAX_LINES);
+		}
+		return ToolResult.ok(note + (src.isEmpty() ? "(empty source)" : src));
 	}
+
+	/** Lines a grep result returns at most. */
+	static final int GREP_MAX_LINES = 200;
 
 	private ToolResult context(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
@@ -342,12 +385,27 @@ public final class AdtToolProvider implements ToolProvider {
 
 	private ToolResult writeSource(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem s = system(in);
-		AdtObjectRef ref = resolve(client(s), in, cancel);
+		AdtClient c = client(s);
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String uri = AdtObjectRef.objectUri(ref.uri());
+		String include = Json.str(in, "include");
+		String source = Json.str(in, "source");
+		String method = Json.str(in, "method");
+		if (method != null && !method.isBlank()) {
+			String current = c.readSource(uri, include, cancel);
+			Optional<String> updated = AbapEdit.replaceMethod(current, method, source == null ? "" : source);
+			if (updated.isEmpty()) {
+				return ToolResult.error("Method " + method.toUpperCase(Locale.ROOT) + " is not implemented in "
+						+ ref.name() + ". Implemented methods: " + String.join(", ", AbapSlices.methodNames(current)));
+			}
+			source = updated.get();
+		}
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-			String tr = AdtClient.writeSource(session, AdtObjectRef.objectUri(ref.uri()), Json.str(in, "include"),
-					Json.str(in, "source"), Json.str(in, "transport"), cancel);
-			return ToolResult.ok("Saved " + ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")")
-					+ ". Not activated yet.");
+			String tr = AdtClient.writeSource(session, uri, include, source, Json.str(in, "transport"), cancel);
+			return ToolResult.ok("Saved " + (method == null || method.isBlank() ? "" : "method " + method.toUpperCase(Locale.ROOT) + " of ")
+					+ ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
+		} finally {
+			c.invalidate(uri);
 		}
 	}
 
@@ -360,6 +418,8 @@ public final class AdtToolProvider implements ToolProvider {
 		if (source != null && !source.isBlank()) {
 			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
 				AdtClient.writeSource(session, ref.uri(), null, source, Json.str(in, "transport"), cancel);
+			} finally {
+				c.invalidate(ref.uri());
 			}
 		}
 		return ToolResult.ok("Created " + ref.name() + " (" + ref.type() + ") in package "
@@ -380,7 +440,12 @@ public final class AdtToolProvider implements ToolProvider {
 		if (refs.isEmpty()) {
 			return ToolResult.error("No objects given.");
 		}
-		List<AdtClient.Message> msgs = c.activate(refs, cancel);
+		List<AdtClient.Message> msgs;
+		try {
+			msgs = c.activate(refs, cancel);
+		} finally {
+			refs.forEach(r -> c.invalidate(AdtObjectRef.objectUri(r.uri())));
+		}
 		boolean errors = msgs.stream().anyMatch(m -> m.severity().equals("Error"));
 		String names = String.join(", ", refs.stream().map(AdtObjectRef::name).toList());
 		if (errors) {

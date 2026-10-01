@@ -23,9 +23,21 @@ import de.kiliantaubmann.bella.core.util.Log;
 public final class AdtClient {
 
 	private final AdtTransport transport;
+	private final SourceCache cache;
+	private final String cacheScope;
 
 	public AdtClient(AdtTransport transport) {
+		this(transport, null, null);
+	}
+
+	/**
+	 * @param cache      source cache shared across calls, or {@code null}
+	 * @param cacheScope key of the system in the cache (e.g. the destination id)
+	 */
+	public AdtClient(AdtTransport transport, SourceCache cache, String cacheScope) {
 		this.transport = transport;
+		this.cache = cache;
+		this.cacheScope = cacheScope;
 	}
 
 	static String enc(String s) {
@@ -127,7 +139,75 @@ public final class AdtClient {
 	// ---- source ------------------------------------------------------------
 
 	public String readSource(String objectUri, String include, CancelToken cancel) throws IOException {
-		return send(AdtRequest.get(AdtObjectRef.sourceUri(objectUri, include), "text/plain"), cancel).body();
+		return readSource(objectUri, include, null, cancel);
+	}
+
+	/**
+	 * Source text of an object or class include.
+	 *
+	 * @param version {@code active}, {@code inactive} or {@code null} for what
+	 *                ADT returns by default (the inactive version if there is one)
+	 */
+	public String readSource(String objectUri, String include, String version, CancelToken cancel) throws IOException {
+		String path = AdtObjectRef.sourceUri(objectUri, include);
+		if (version != null && !version.isBlank()) {
+			path += "?version=" + enc(version.toLowerCase(Locale.ROOT));
+		}
+		AdtRequest request = AdtRequest.get(path, "text/plain");
+		SourceCache.Entry cached = cache == null ? null : cache.get(cacheScope, path);
+		if (cached != null) {
+			request = request.withHeader("If-None-Match", cached.etag());
+		}
+		AdtResponse r = exchange(transport, request, cancel);
+		if (r.status() == 304 && cached != null) {
+			return cached.text();
+		}
+		if (!r.ok()) {
+			throw new AdtException(r.status(), AdtErrors.message(r));
+		}
+		String etag = r.header("ETag");
+		if (cache != null && etag != null && !etag.isBlank()) {
+			cache.put(cacheScope, path, etag, r.body());
+		}
+		return r.body();
+	}
+
+	/** Drops cached sources of an object after it was written or activated. */
+	public void invalidate(String objectUri) {
+		if (cache != null) {
+			cache.invalidate(cacheScope, objectUri);
+		}
+	}
+
+	/**
+	 * Names (upper case) of the objects with changes that are saved but not
+	 * activated, from the developer's inactive-objects list. Empty when the
+	 * system does not offer the list.
+	 */
+	public List<String> inactiveObjects(CancelToken cancel) throws IOException {
+		AdtResponse r = exchange(transport, AdtRequest.get("/sap/bc/adt/activation/inactiveobjects",
+				"application/vnd.sap.adt.inactivectsobjects.v1+xml, application/xml;q=0.8"), cancel);
+		if (!r.ok()) {
+			return List.of();
+		}
+		return parseInactiveObjects(r.body());
+	}
+
+	static List<String> parseInactiveObjects(String xml) throws IOException {
+		List<String> out = new ArrayList<>();
+		if (xml == null || xml.isBlank()) {
+			return out;
+		}
+		for (Element e : AdtXml.elements(AdtXml.parse(xml), "ref")) {
+			String name = AdtXml.attr(e, "name").toUpperCase(Locale.ROOT);
+			if (AdtXml.attr(e, "uri").contains("/cts/")) {
+				continue; // the transport request an object is recorded in
+			}
+			if (!name.isEmpty() && !out.contains(name)) {
+				out.add(name);
+			}
+		}
+		return out;
 	}
 
 	/** Main types ADT describes only as XML, without a source text. */

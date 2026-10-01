@@ -1,5 +1,6 @@
 package de.kiliantaubmann.bella.ui.editor;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -14,6 +15,8 @@ import org.eclipse.ui.texteditor.ITextEditor;
 
 import com.google.gson.JsonObject;
 
+import de.kiliantaubmann.bella.core.abap.AbapEdit;
+import de.kiliantaubmann.bella.core.abap.AbapSlices;
 import de.kiliantaubmann.bella.core.abap.ObjectTarget;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
@@ -40,12 +43,14 @@ public final class OpenEditorRouter implements WriteGuard {
 		}
 		String source = ObjectTarget.sourceFromToolInput(input);
 		String include = Json.str(input, "include");
+		String method = Json.str(input, "method");
 		AtomicReference<Optional<ToolResult>> result = new AtomicReference<>(Optional.empty());
-		Display.getDefault().syncExec(() -> result.set(writeIntoOpenEditor(target.get(), include, source)));
+		Display.getDefault().syncExec(() -> result.set(writeIntoOpenEditor(target.get(), include, method, source)));
 		return result.get();
 	}
 
-	private static Optional<ToolResult> writeIntoOpenEditor(ObjectTarget target, String include, String source) {
+	private static Optional<ToolResult> writeIntoOpenEditor(ObjectTarget target, String include, String method,
+			String source) {
 		IEditorPart part = findOpenEditor(target);
 		if (part == null) {
 			return Optional.empty();
@@ -59,6 +64,15 @@ public final class OpenEditorRouter implements WriteGuard {
 		}
 		IDocument doc = EditorBridge.document(editor.get());
 		String before = doc.get();
+		if (method != null && !method.isBlank()) {
+			Optional<String> updated = AbapEdit.replaceMethod(before, method, source);
+			if (updated.isEmpty()) {
+				return Optional.of(ToolResult.error("Method " + method.toUpperCase(Locale.ROOT)
+						+ " is not implemented in the open editor of " + target.name() + ". Implemented methods: "
+						+ String.join(", ", AbapSlices.methodNames(before))));
+			}
+			source = updated.get();
+		}
 		if (before.equals(source)) {
 			return Optional.of(ToolResult.ok("The open editor of " + target.name() + " already contains this source."));
 		}

@@ -46,6 +46,8 @@ public final class AbapPrompts {
 				- Look up real definitions (adt_context, adt_read_source) instead of guessing table fields, data types or
 				  method and function module signatures.
 				- Run abap_lint on code you write and fix the findings that apply.
+				- Save tokens on large objects: read one method (adt_read_source with 'method') or the matching lines
+				  ('grep') instead of the whole source, and change one method with adt_write_source 'method'.
 
 				Rules for changing code:
 				- If the object is open in the developer's editor, a write goes into the editor buffer only. It is not

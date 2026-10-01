@@ -169,7 +169,44 @@ final class SdkTransport implements AdtTransport.Session {
 				text = in == null ? "" : new String(in.readAllBytes(), StandardCharsets.UTF_8);
 			}
 		}
-		return new AdtResponse(code, contentType, text);
+		String etag = header(response, "ETag");
+		return new AdtResponse(code, contentType, text, etag == null ? Map.of() : Map.of("etag", etag));
+	}
+
+	/**
+	 * A response header, read via reflection because the header API differs
+	 * between ADT releases; {@code null} if absent or not readable.
+	 */
+	static String header(Object response, String name) {
+		Object headers = SdkAdtBackend.Reflect.call(response, "getHeaders");
+		if (headers == null) {
+			return null;
+		}
+		boolean readable = false;
+		for (String getter : new String[] { "getField", "getFirstField", "getHeader", "get" }) {
+			Object field;
+			try {
+				Method m = headers.getClass().getMethod(getter, String.class);
+				m.setAccessible(true);
+				field = m.invoke(headers, name);
+				readable = true;
+			} catch (ReflectiveOperationException | RuntimeException e) {
+				continue;
+			}
+			if (field instanceof String value) {
+				return value;
+			}
+			for (String value : new String[] { "getValue", "getContent", "getFieldValue" }) {
+				String v = field == null ? null : SdkAdtBackend.Reflect.string(field, value);
+				if (v != null) {
+					return v;
+				}
+			}
+		}
+		if (!readable) {
+			SdkAdtBackend.Reflect.once("response headers not readable from " + headers.getClass().getName());
+		}
+		return null;
 	}
 
 	@Override
