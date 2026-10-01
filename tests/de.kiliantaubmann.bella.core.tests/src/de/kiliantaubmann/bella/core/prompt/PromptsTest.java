@@ -49,4 +49,14 @@ class PromptsTest {
 		assertTrue(d.user().strip().endsWith("Follow the reply format given above."), d.user());
 		assertTrue(new AbapPrompts(null, null).chatSystem().contains("abap_lint"));
 	}
+
+	@Test
+	void systemLineGoesIntoTheSystemPrompt() {
+		Prompt p = new Prompt("sys", "user");
+		assertEquals(p, AbapPrompts.withSystem(p, null));
+		Prompt with = AbapPrompts.withSystem(p, "SAP_BASIS 750, on-premise");
+		assertEquals("sys\nTarget system: SAP_BASIS 750, on-premise. Use only ABAP syntax and APIs available there.",
+				with.system());
+		assertEquals("user", with.user());
+	}
 }
