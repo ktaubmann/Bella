@@ -40,6 +40,7 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
 		s.setDefault(Prefs.AUTO_COMPLETION_DELAY, 500);
 		s.setDefault(Prefs.PREFERRED_TOOLS, "adt");
 		s.setDefault(Prefs.POLICY_RULES, "");
+		s.setDefault(Prefs.WRITE_PACKAGES, "$TMP, Z*, Y*");
 		s.setDefault(Prefs.MCP_SERVERS, McpServerConfig.toJson(List.of(
 				new McpServerConfig("arc1", "ARC-1", true, "http://localhost:3000/mcp", "npx -y arc-1@latest", false))));
 	}

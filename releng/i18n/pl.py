@@ -98,7 +98,7 @@ MESSAGES = {
  "tools.mcp.hint": "ARC-1 działa lokalnie (npx -y arc-1@latest, port 3000) lub centralnie na SAP BTP. Jego zabezpieczenia po stronie serwera obowiązują dodatkowo do reguł Belli.",
  "tools.policy": "Reguły narzędzi",
  "tools.policy.hint": "Jedna reguła na linię: wzorzec=AUTO|CONFIRM|DENY (np. adt_activate=AUTO). Twoje reguły mają pierwszeństwo. Zwalnianie transportów jest zawsze odrzucane.",
- "tools.policy.defaults": "Domyślne:", "tools.testing": "Łączenie z {0}…",
+ "tools.policy.defaults": "Domyślne:", "tools.packages": "Dozwolone pakiety", "tools.packages.hint": "Narzędzia SAP Belli zapisują, tworzą i aktywują tylko w tych pakietach (oddzielone przecinkami, * jako symbol wieloznaczny, np. $TMP, Z*, Y*). Puste pole zezwala na wszystkie pakiety. Nie dotyczy zmian w otwartym edytorze.", "tools.testing": "Łączenie z {0}…",
  "tools.test.ok": "{0}: znaleziono narzędzia: {1}.\n\n{2}", "tools.test.failed": "{0} jest nieosiągalny:\n{1}",
  "chat.status.subscription": "{0} (subskrypcja)",
  "chat.notice.cc_login": "Claude Code nie jest zalogowany. Uruchom claude auth login w terminalu albo zapisz token z claude setup-token w ustawieniach Belli.",

@@ -98,7 +98,7 @@ MESSAGES = {
  "tools.mcp.hint": "ARC-1은 로컬(npx -y arc-1@latest, 포트 3000) 또는 SAP BTP에서 중앙 집중식으로 실행됩니다. 서버 측 보호 설정은 Bella의 규칙에 추가로 적용됩니다.",
  "tools.policy": "도구 규칙",
  "tools.policy.hint": "한 줄에 규칙 하나: 패턴=AUTO|CONFIRM|DENY(예: adt_activate=AUTO). 사용자 규칙이 우선합니다. 전송 릴리스는 항상 거부됩니다.",
- "tools.policy.defaults": "기본값:", "tools.testing": "{0}에 연결하는 중…",
+ "tools.policy.defaults": "기본값:", "tools.packages": "허용된 패키지", "tools.packages.hint": "Bella의 SAP 도구는 이 패키지에서만 쓰기, 생성, 활성화를 합니다(쉼표로 구분, *는 와일드카드, 예: $TMP, Z*, Y*). 비워 두면 모든 패키지를 허용합니다. 열려 있는 편집기의 변경에는 적용되지 않습니다.", "tools.testing": "{0}에 연결하는 중…",
  "tools.test.ok": "{0}: 도구 {1}개를 찾았습니다.\n\n{2}", "tools.test.failed": "{0}에 연결할 수 없습니다:\n{1}",
  "chat.status.subscription": "{0} (구독)",
  "chat.notice.cc_login": "Claude Code에 로그인되어 있지 않습니다. 터미널에서 claude auth login을 실행하거나 claude setup-token의 토큰을 Bella 환경설정에 저장하세요.",

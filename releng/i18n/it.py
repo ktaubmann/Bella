@@ -98,7 +98,7 @@ MESSAGES = {
  "tools.mcp.hint": "ARC-1 gira in locale (npx -y arc-1@latest, porta 3000) o centralmente su SAP BTP. Le sue protezioni lato server valgono in aggiunta alle regole di Bella.",
  "tools.policy": "Regole degli strumenti",
  "tools.policy.hint": "Una regola per riga: modello=AUTO|CONFIRM|DENY (ad es. adt_activate=AUTO). Le tue regole hanno la precedenza. Il rilascio dei trasporti è sempre rifiutato.",
- "tools.policy.defaults": "Predefiniti:", "tools.testing": "Connessione a {0}…",
+ "tools.policy.defaults": "Predefiniti:", "tools.packages": "Pacchetti consentiti", "tools.packages.hint": "Gli strumenti SAP di Bella scrivono, creano e attivano solo in questi pacchetti (separati da virgola, * come jolly, ad es. $TMP, Z*, Y*). Vuoto consente tutti i pacchetti. Le modifiche nell’editor aperto non sono interessate.", "tools.testing": "Connessione a {0}…",
  "tools.test.ok": "{0}: {1} strumenti trovati.\n\n{2}", "tools.test.failed": "{0} non è raggiungibile:\n{1}",
  "chat.status.subscription": "{0} (abbonamento)",
  "chat.notice.cc_login": "Claude Code non ha effettuato l’accesso. Esegui claude auth login in un terminale oppure salva un token di claude setup-token nelle preferenze di Bella.",

@@ -224,4 +224,46 @@ class AdtToolProviderTest {
 		assertTrue(call(p, "adt_write_source",
 				"{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"method\":\"nope\",\"source\":\"x\"}").isError());
 	}
+
+	@Test
+	void packagePatterns() {
+		List<String> p = AdtToolProvider.packagePatterns(" $tmp, Z*;y*  /ABC/* ");
+		assertEquals(List.of("$TMP", "Z*", "Y*", "/ABC/*"), p);
+		assertTrue(AdtToolProvider.packageAllowed("$TMP", p));
+		assertTrue(AdtToolProvider.packageAllowed("zsales", p));
+		assertTrue(AdtToolProvider.packageAllowed("/ABC/CORE", p));
+		assertFalse(AdtToolProvider.packageAllowed("SAPLMARA", p));
+		assertFalse(AdtToolProvider.packageAllowed("$TMPX", p));
+		assertTrue(AdtToolProvider.packagePatterns("  ").isEmpty());
+	}
+
+	@Test
+	void writesOnlyToAllowedPackages() {
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/oo/classes/zcl_a", r -> FakeAdt.ok(
+						"<class:abapClass xmlns:class=\"http://www.sap.com/adt/oo/classes\" xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+								+ "<adtcore:packageRef adtcore:name=\"ZSALES\"/></class:abapClass>"))
+				.route("GET /sap/bc/adt/oo/classes/cl_sap", r -> FakeAdt.ok(
+						"<class:abapClass xmlns:class=\"http://www.sap.com/adt/oo/classes\" xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+								+ "<adtcore:packageRef adtcore:name=\"SABP\"/></class:abapClass>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev", () -> "$TMP, Z*");
+		assertTrue(p.refuse("adt_write_source", Json.parseObject("{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"source\":\"x\"}"),
+				CancelToken.NONE).isEmpty());
+		String refused = p.refuse("adt_write_source",
+				Json.parseObject("{\"name\":\"CL_SAP\",\"type\":\"CLAS\",\"source\":\"x\"}"), CancelToken.NONE).orElseThrow();
+		assertTrue(refused.startsWith("CL_SAP is in package SABP"), refused);
+		assertTrue(p.refuse("adt_activate", Json.parseObject(
+				"{\"objects\":[{\"name\":\"ZCL_A\",\"type\":\"CLAS\"},{\"name\":\"CL_SAP\",\"type\":\"CLAS\"}]}"),
+				CancelToken.NONE).isPresent());
+		assertTrue(p.refuse("adt_create_object", Json.parseObject(
+				"{\"name\":\"ZCL_B\",\"type\":\"CLAS\",\"description\":\"d\",\"package\":\"$tmp\"}"), CancelToken.NONE).isEmpty());
+		assertTrue(p.refuse("adt_create_object", Json.parseObject(
+				"{\"name\":\"ZCL_B\",\"type\":\"CLAS\",\"description\":\"d\",\"package\":\"SABP\"}"), CancelToken.NONE).isPresent());
+		assertTrue(p.refuse("adt_read_source", Json.parseObject("{\"name\":\"CL_SAP\"}"), CancelToken.NONE).isEmpty());
+		assertTrue(new AdtToolProvider(adt, () -> "dev", () -> "").refuse("adt_write_source",
+				Json.parseObject("{\"name\":\"CL_SAP\",\"type\":\"CLAS\",\"source\":\"x\"}"), CancelToken.NONE).isEmpty());
+		String unknown = p.refuse("adt_write_source",
+				Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\",\"source\":\"x\"}"), CancelToken.NONE).orElseThrow();
+		assertTrue(unknown.startsWith("Could not check the package"), unknown);
+	}
 }

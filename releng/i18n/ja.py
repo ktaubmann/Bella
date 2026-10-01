@@ -98,7 +98,7 @@ MESSAGES = {
  "tools.mcp.hint": "ARC-1 はローカル（npx -y arc-1@latest、ポート 3000）または SAP BTP 上で集中運用できます。サーバー側の安全設定は Bella のルールに加えて適用されます。",
  "tools.policy": "ツールのルール",
  "tools.policy.hint": "1 行に 1 ルール：パターン=AUTO|CONFIRM|DENY（例：adt_activate=AUTO）。独自のルールが優先されます。移送のリリースは常に拒否されます。",
- "tools.policy.defaults": "既定：", "tools.testing": "{0} に接続中…",
+ "tools.policy.defaults": "既定：", "tools.packages": "許可されたパッケージ", "tools.packages.hint": "Bella の SAP ツールは、これらのパッケージでのみ書き込み・作成・有効化を行います（カンマ区切り、* はワイルドカード、例: $TMP, Z*, Y*）。空欄にするとすべてのパッケージを許可します。開いているエディターでの変更は対象外です。", "tools.testing": "{0} に接続中…",
  "tools.test.ok": "{0}：{1} 個のツールが見つかりました。\n\n{2}", "tools.test.failed": "{0} に接続できません：\n{1}",
  "chat.status.subscription": "{0}（サブスクリプション）",
  "chat.notice.cc_login": "Claude Code にログインしていません。ターミナルで claude auth login を実行するか、claude setup-token のトークンを Bella の設定に保存してください。",

@@ -100,13 +100,18 @@ public final class ToolExecutor {
 			Log.info(AREA, tool.name() + ": redirected into the open editor");
 			return intercepted.get();
 		}
-		if (decision == ToolPolicy.Decision.CONFIRM && !confirmer.confirm(tool, input)) {
-			Log.info(AREA, tool.name() + ": declined by the developer");
-			return ToolResult.error("The developer declined this tool call.");
-		}
 		Optional<ToolProvider> owner = tools.providerOf(tool.name());
 		if (owner.isEmpty()) {
 			return ToolResult.error("Tool provider is no longer available: " + tool.name());
+		}
+		Optional<String> refused = owner.get().refuse(tool.remoteName(), input, cancel);
+		if (refused.isPresent()) {
+			Log.info(AREA, tool.name() + ": refused by the provider: " + refused.get());
+			return ToolResult.error(refused.get());
+		}
+		if (decision == ToolPolicy.Decision.CONFIRM && !confirmer.confirm(tool, input)) {
+			Log.info(AREA, tool.name() + ": declined by the developer");
+			return ToolResult.error("The developer declined this tool call.");
 		}
 		try {
 			return owner.get().call(tool.remoteName(), input, cancel);

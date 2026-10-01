@@ -98,7 +98,7 @@ MESSAGES = {
  "tools.mcp.hint": "ARC-1 běží lokálně (npx -y arc-1@latest, port 3000) nebo centrálně na SAP BTP. Jeho ochrany na straně serveru platí navíc k pravidlům Belly.",
  "tools.policy": "Pravidla nástrojů",
  "tools.policy.hint": "Jedno pravidlo na řádek: vzor=AUTO|CONFIRM|DENY (např. adt_activate=AUTO). Vaše pravidla mají přednost. Uvolnění transportů je vždy zamítnuto.",
- "tools.policy.defaults": "Výchozí:", "tools.testing": "Připojování k {0}…",
+ "tools.policy.defaults": "Výchozí:", "tools.packages": "Povolené balíky", "tools.packages.hint": "Nástroje SAP v Belle zapisují, vytvářejí a aktivují jen v těchto balících (oddělené čárkou, * jako zástupný znak, např. $TMP, Z*, Y*). Prázdné pole povoluje všechny balíky. Změn v otevřeném editoru se to netýká.", "tools.testing": "Připojování k {0}…",
  "tools.test.ok": "{0}: nalezené nástroje: {1}.\n\n{2}", "tools.test.failed": "{0} není dostupný:\n{1}",
  "chat.status.subscription": "{0} (předplatné)",
  "chat.notice.cc_login": "Claude Code není přihlášen. Spusťte v terminálu claude auth login nebo uložte token z claude setup-token do nastavení Belly.",

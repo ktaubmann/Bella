@@ -49,6 +49,7 @@ public final class Prefs {
 	/** {@code adt} or {@code mcp}: whose tool wins when both offer the same capability. */
 	public static final String PREFERRED_TOOLS = "tools.preferred";
 	public static final String POLICY_RULES = "tools.policyRules";
+	public static final String WRITE_PACKAGES = "tools.writePackages";
 	/** JSON array of MCP server definitions, see {@link McpServerConfig}. */
 	public static final String MCP_SERVERS = "mcp.servers";
 
