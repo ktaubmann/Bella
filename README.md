@@ -240,7 +240,7 @@ gpg --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}'   # fingerprin
 gpg --armor --export-secret-keys <fingerprint>                      # for the secret
 ```
 
-In the repository settings (*Settings → Secrets and variables → Actions*), store the exported secret key as the secret `BELLA_GPG_KEY` and its passphrase as the secret `BELLA_GPG_PASSPHRASE`, and store the fingerprint as the variable `BELLA_GPG_KEYNAME`. Without `BELLA_GPG_KEY` the release is built unsigned and the workflow shows a warning. Keep a backup of the key: updates signed with a different key make Eclipse ask again.
+In the repository settings (*Settings → Secrets and variables → Actions*, tab *Secrets* and *Variables*, each under *Repository*), store the exported secret key as the secret `BELLA_GPG_KEY` and its passphrase, if it has one, as the secret `BELLA_GPG_PASSPHRASE`, and store the fingerprint as the variable `BELLA_GPG_KEYNAME`. Without `BELLA_GPG_KEY` the release is built unsigned and the workflow shows a warning. Keep a backup of the key: updates signed with a different key make Eclipse ask again.
 
 | Module | Contents |
 |---|---|

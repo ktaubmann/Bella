@@ -58,6 +58,8 @@ jobs:
           if [ -n "$BELLA_GPG_KEY" ]; then
             export BELLA_GPG_KEY_FILE="$RUNNER_TEMP/bella-signing-key.asc"
             printf '%s\n' "$BELLA_GPG_KEY" > "$BELLA_GPG_KEY_FILE"
+            # Tycho needs a value even for a key without passphrase; it is ignored then.
+            export MAVEN_GPG_PASSPHRASE="${MAVEN_GPG_PASSPHRASE:-none}"
             sign="-Psign"
           else
             echo "::warning::Secret BELLA_GPG_KEY is not set, the update site is not signed"
