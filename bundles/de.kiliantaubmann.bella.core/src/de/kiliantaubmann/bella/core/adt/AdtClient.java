@@ -91,6 +91,13 @@ public final class AdtClient {
 		return parseObjectReferences(r.body());
 	}
 
+	/** Objects of a package (search by package name; nodestructure mixes up descriptions on real systems). */
+	public List<AdtObjectRef> packageContents(String packageName, int max, CancelToken cancel) throws IOException {
+		String path = "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=*&packageName="
+				+ enc(packageName.trim().toUpperCase(Locale.ROOT)) + "&maxResults=" + max;
+		return parseObjectReferences(send(AdtRequest.get(path, "application/xml"), cancel).body());
+	}
+
 	static List<AdtObjectRef> parseObjectReferences(String xml) throws IOException {
 		List<AdtObjectRef> refs = new ArrayList<>();
 		for (Element e : AdtXml.elements(AdtXml.parse(xml), "objectReference")) {

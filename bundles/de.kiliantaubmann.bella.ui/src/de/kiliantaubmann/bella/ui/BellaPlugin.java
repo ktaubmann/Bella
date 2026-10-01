@@ -40,6 +40,7 @@ import de.kiliantaubmann.bella.core.mcp.StdioTransport;
 import de.kiliantaubmann.bella.core.mcp.StreamableHttpTransport;
 import de.kiliantaubmann.bella.core.prompt.AbapPrompts;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
+import de.kiliantaubmann.bella.core.conventions.ProjectConventions;
 import de.kiliantaubmann.bella.core.tools.ToolPolicy;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
 import de.kiliantaubmann.bella.core.tools.WriteGuard;
@@ -91,7 +92,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 			}
 		};
 		adtTracker.open();
-		tools.addProvider(new LintToolProvider());
+		tools.addProvider(new LintToolProvider(() -> conventions(activeDestination).naming()));
 		configureLog();
 		getPreferenceStore().addPropertyChangeListener(e -> {
 			if (Prefs.LOG_ENABLED.equals(e.getProperty()) || Prefs.LOG_DETAIL.equals(e.getProperty())) {
@@ -376,6 +377,24 @@ public class BellaPlugin extends AbstractUIPlugin {
 				effort == null || effort.isBlank() ? null : effort);
 	}
 
+	/**
+	 * The conventions for a system: those for all systems joined with the
+	 * system's own (its naming rules win per kind).
+	 *
+	 * @param destinationId ADT destination, or {@code null} for the general ones only
+	 */
+	public ProjectConventions conventions(String destinationId) {
+		ProjectConventions general = ProjectConventions.of(
+				prefs().getString(Prefs.CONVENTIONS_TEXT + Prefs.CONVENTIONS_GLOBAL),
+				prefs().getString(Prefs.CONVENTIONS_NAMING + Prefs.CONVENTIONS_GLOBAL));
+		if (destinationId == null || destinationId.isBlank()) {
+			return general;
+		}
+		return ProjectConventions.merge(general, ProjectConventions.of(
+				prefs().getString(Prefs.CONVENTIONS_TEXT + destinationId),
+				prefs().getString(Prefs.CONVENTIONS_NAMING + destinationId)));
+	}
+
 	public AbapPrompts prompts() {
 		String answer = prefs().getString(Prefs.ANSWER_LANGUAGE);
 		String answerName = switch (answer == null ? "" : answer) {
@@ -383,7 +402,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 		case "", "ui" -> Languages.englishName(Languages.uiTag());
 		default -> Languages.englishName(answer);
 		};
-		return new AbapPrompts(answerName, Languages.englishName(prefs().getString(Prefs.COMMENT_LANGUAGE)));
+		return new AbapPrompts(answerName, Languages.englishName(prefs().getString(Prefs.COMMENT_LANGUAGE)),
+				conventions(activeDestination));
 	}
 
 	public ToolPolicy policy() {

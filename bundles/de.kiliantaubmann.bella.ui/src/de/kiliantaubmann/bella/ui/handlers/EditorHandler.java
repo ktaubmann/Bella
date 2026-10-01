@@ -21,6 +21,7 @@ import de.kiliantaubmann.bella.core.adt.AdtClient;
 import de.kiliantaubmann.bella.core.adt.AdtContext;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
 import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
+import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.llm.ChatRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
@@ -77,6 +78,8 @@ abstract class EditorHandler extends AbstractHandler {
 		Log.debug("editor", () -> "instruction: " + instruction);
 		String model = plugin.chatModel();
 		var settings = plugin.chatSettings();
+		NamingRules naming = plugin.conventions(EditorBridge.adtObject(part).map(AdtEditorObject::destinationId)
+				.orElse(null)).naming();
 		CancelToken cancel = new CancelToken();
 		Job job = new Job(Messages.get("generate.jobName")) {
 			@Override
@@ -121,7 +124,7 @@ abstract class EditorHandler extends AbstractHandler {
 						error(part, Messages.get("generate.empty"));
 						return Status.OK_STATUS;
 					}
-					List<AbapLint.Finding> findings = AbapLint.check(code);
+					List<AbapLint.Finding> findings = AbapLint.check(code, naming);
 					Log.info("editor", "proposal for " + objectName + ": " + code.length() + " chars, "
 							+ findings.size() + " style findings, definitions " + used);
 					String notes = CodeActions.previewNotes(used, findings);

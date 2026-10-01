@@ -189,6 +189,24 @@ Limits:
 - **Completion:** every suggestion starts the CLI and takes a few seconds, so there are no automatic suggestions while typing, only on `Ctrl+↑`.
 - *Stop* cancels the running answer; if the CLI does not react within 3 seconds, Bella ends the process and the next message starts a new conversation.
 
+### Project conventions
+
+Under *Preferences → Bella → Project conventions* you describe your project for Bella, for all systems and per ABAP project (a system's settings are added to those for all systems):
+
+- **Project information** (Markdown): package structure, architecture, dos and don'ts. Bella gives it to the model in the chat and in the editor actions.
+- **Naming rules**, one per line as `kind = pattern, pattern` (`*` any characters, `?` one character), e.g.
+  ```
+  class = ZCL_SD_*
+  local_data = lv_*, lt_*, ls_*, lo_*, lr_*
+  importing = iv_*, it_*, is_*, io_*
+  field_symbol = <ls_*>, <lv_*>
+  test_class = ltc_*
+  ```
+  *Insert standard rules* fills in common SAP conventions. The model follows the rules, and the style check (`abap_lint`, diff preview) reports names that break them: data by where it is declared (local, global, attribute), constants, field symbols, types, methods and their parameters, local and test classes, and the names of programs, global classes and interfaces.
+- **Derive from package…** reads the objects and a few sources of a package and lets the model propose both parts; review them before you apply.
+
+The parameters of ATC check variants (e.g. a naming check) cannot be read through ADT, so they cannot be imported; findings of such a check are fixed with *Check with ATC and fix…*.
+
 ### Connecting ARC-1 (optional)
 
 Under *Preferences → Bella → SAP-Tools & ARC-1 → Add…*:

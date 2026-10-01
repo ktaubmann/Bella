@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 
 import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
 import de.kiliantaubmann.bella.core.abap.AbapStructureScanner.Statement;
+import de.kiliantaubmann.bella.core.conventions.NamingRules;
 
 /**
  * Bella's style check: a small set of rules for obsolete statements,
@@ -44,6 +45,11 @@ public final class AbapLint {
 	}
 
 	public static List<Finding> check(String source) {
+		return check(source, NamingRules.NONE);
+	}
+
+	/** The style rules plus the project's naming rules (rule {@code naming}). */
+	public static List<Finding> check(String source, NamingRules naming) {
 		List<Finding> out = new ArrayList<>();
 		if (source == null || source.isBlank()) {
 			return out;
@@ -174,6 +180,7 @@ public final class AbapLint {
 						"Consider a table expression itab[ key = … ] or line_exists( ) instead of READ TABLE … WITH KEY."));
 			}
 		}
+		out.addAll(NamingCheck.check(source, naming, lineStarts));
 		out.sort(Comparator.comparingInt(Finding::line));
 		return out;
 	}
@@ -237,7 +244,7 @@ public final class AbapLint {
 		return starts.stream().mapToInt(Integer::intValue).toArray();
 	}
 
-	private static int lineOf(int[] starts, int offset) {
+	static int lineOf(int[] starts, int offset) {
 		int lo = 0;
 		int hi = starts.length - 1;
 		while (lo < hi) {

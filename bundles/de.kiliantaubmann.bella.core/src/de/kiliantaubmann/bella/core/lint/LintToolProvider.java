@@ -1,10 +1,12 @@
 package de.kiliantaubmann.bella.core.lint;
 
 import java.util.List;
+import java.util.function.Supplier;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
+import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.tools.ToolProvider;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
@@ -14,6 +16,17 @@ import de.kiliantaubmann.bella.core.util.Json;
 
 /** The {@code abap_lint} tool: Bella's style check, needs no SAP system. */
 public final class LintToolProvider implements ToolProvider {
+
+	private final Supplier<NamingRules> naming;
+
+	public LintToolProvider() {
+		this(() -> NamingRules.NONE);
+	}
+
+	/** @param naming the project's naming rules, checked as rule {@code naming} */
+	public LintToolProvider(Supplier<NamingRules> naming) {
+		this.naming = naming;
+	}
 
 	@Override
 	public String id() {
@@ -41,8 +54,8 @@ public final class LintToolProvider implements ToolProvider {
 		return List.of(ToolSpec.of("abap_lint",
 				"Bella's style check for ABAP code, without SAP access: obsolete statements (MOVE, CALL METHOD, "
 						+ "CREATE OBJECT, header lines, FORM …), SELECT *, SELECT in loops, SELECT … ENDSELECT, unchecked "
-						+ "SELECT SINGLE, CATCH cx_root, empty CATCH, break-points and aborting messages. Run it on code you "
-						+ "write and fix the findings that apply.",
+						+ "SELECT SINGLE, CATCH cx_root, empty CATCH, break-points and aborting messages, and the project's "
+						+ "naming rules. Run it on code you write and fix the findings that apply.",
 				schema, null, ToolSpec.Kind.READ));
 	}
 
@@ -55,6 +68,6 @@ public final class LintToolProvider implements ToolProvider {
 		if (source == null || source.isBlank()) {
 			return ToolResult.error("No source given.");
 		}
-		return ToolResult.ok(AbapLint.format(AbapLint.check(source)));
+		return ToolResult.ok(AbapLint.format(AbapLint.check(source, naming.get())));
 	}
 }
