@@ -48,7 +48,8 @@ jobs:
           fi
       - name: Build and test (incl. ADT integration)
         # Signs the update site with PGP when the secret BELLA_GPG_KEY is set
-        # (see "Signing" in the README); without it the release stays unsigned.
+        # (fingerprint in the variable BELLA_GPG_KEYNAME, optional passphrase
+        # in the secret BELLA_GPG_PASSPHRASE); without it the release stays unsigned.
         env:
           BELLA_GPG_KEY: ${{ secrets.BELLA_GPG_KEY }}
           BELLA_GPG_KEYNAME: ${{ vars.BELLA_GPG_KEYNAME }}

@@ -107,8 +107,6 @@ Requirements:
 
 **From a ZIP (offline):** download `bella-update-site-vX.Y.Z.zip` from [Releases](https://github.com/ktaubmann/Bella/releases), do not unzip it, and choose *Add… → Archive…* instead of entering the address. *Check for Updates* does not find new versions of a local ZIP; install the next ZIP the same way.
 
-**Signature:** the bundles and features are signed with PGP. On the first installation Eclipse asks whether you trust the key; compare its fingerprint with the one on the [Releases](https://github.com/ktaubmann/Bella/releases) page and tick it. Eclipse remembers the key for later updates.
-
 Bella does not ship or download ADT. The update site contains only Bella's own bundles, and they accept any installed ADT version, so an existing ADT installation is left as it is. To be on the safe side, you can untick *Contact all update sites during install to find required software* in the install dialog; Eclipse then only looks at Bella's update site.
 
 ## Setup
@@ -232,16 +230,6 @@ python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 
 **Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files (e.g. with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release. When the repository variable `PAGES_ENABLED` is `true`, it then publishes the same update site on GitHub Pages (`pages.yml`, address from the variable `UPDATE_SITE_URL`); *Actions → Update site → Run workflow* publishes an existing release again.
 
-**Signing:** the release build signs the update site with PGP (`tycho-gpg-plugin`, profile `sign` in the update site's `pom.xml`). It needs one key pair, created once:
-
-```bash
-gpg --quick-gen-key "Bella (Eclipse update site) <you@example.com>" rsa4096 sign 5y
-gpg --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}'   # fingerprint
-gpg --armor --export-secret-keys <fingerprint>                      # for the secret
-```
-
-In the repository settings (*Settings → Secrets and variables → Actions*, tab *Secrets* and *Variables*, each under *Repository*), store the exported secret key as the secret `BELLA_GPG_KEY` and its passphrase, if it has one, as the secret `BELLA_GPG_PASSPHRASE`, and store the fingerprint as the variable `BELLA_GPG_KEYNAME`. Without `BELLA_GPG_KEY` the release is built unsigned and the workflow shows a warning. Keep a backup of the key: updates signed with a different key make Eclipse ask again.
-
 | Module | Contents |
 |---|---|
 | `bundles/de.kiliantaubmann.bella.core` | no UI and no ADT: Anthropic and OpenAI-compatible providers (streaming, tool use, prompt caching), Claude Code integration (CLI, `stream-json`, local MCP server), GitHub Copilot integration (Copilot CLI, Agent Client Protocol), tool registry and policy, MCP client (HTTP and stdio), chat tool loop, ABAP scanner, reference finder and style check, prompts, ADT REST client, `adt_*` tools and the context builder |
@@ -254,7 +242,7 @@ The Claude integration deliberately uses `java.net.http` instead of the Anthropi
 
 ### Status and known limits
 
-- The **GitHub Copilot** integration is tested with a simulated CLI speaking the Agent Client Protocol; handshake, command-line options and the "not logged in" case were checked against the real Copilot CLI 1.0.89. A full chat with a Copilot subscription still needs to be tried.
+- The **GitHub Copilot** integration is tested with a simulated CLI speaking the Agent Client Protocol; handshake, command-line options and the "not logged in" case were checked against the real Copilot CLI 1.0.89. A chat with the Copilot Free plan works.
 
 - The **ADT bundle** compiles in CI (`-Padt`) against the current ADT SDK from SAP's p2 site. Generating, explaining and writing into the editor have been used with a real ABAP system; the SAP tools in the chat (search, where-used, ATC, activation …) still need broader testing.
   - Stateful sessions (for locks) and the object reference of an editor are read via reflection.
