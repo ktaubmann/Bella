@@ -1,5 +1,9 @@
 package de.kiliantaubmann.bella.core.prompt;
 
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
 
 /**
@@ -200,6 +204,48 @@ public final class AbapPrompts {
 				classDefinition == null ? "(not in this source)" : truncate(classDefinition, CONTEXT_CHARS),
 				ctx.source().substring(routine.start(), routine.end()), kind, kind);
 		return new Prompt(chatSystem(), user);
+	}
+
+	/**
+	 * Corrected complete source for selected ATC findings; the answer must be a
+	 * single code block with the whole source.
+	 *
+	 * @param findings one entry per finding, e.g. {@code "Error line 12: Performance: SELECT * …"}
+	 */
+	public Prompt fixAtcFindings(EditorContext ctx, List<String> findings) {
+		String[] lines = ctx.source().replace("\r\n", "\n").split("\n", -1);
+		StringBuilder list = new StringBuilder();
+		for (String f : findings) {
+			list.append("- ").append(f);
+			int line = lineNumber(f);
+			if (line > 0 && line <= lines.length) {
+				list.append("\n  code: ").append(lines[line - 1].strip());
+			}
+			list.append('\n');
+		}
+		String user = """
+				Fix these ATC (ABAP Test Cockpit) findings in the ABAP source below.
+
+				Object: %s
+
+				Findings (line numbers refer to the source below):
+				%s
+				Source:
+				```abap
+				%s
+				```
+
+				Change only what the findings require and keep everything else exactly as it is, including 				comments, formatting and the order of methods. If a finding cannot be fixed safely in the code, 				leave that place unchanged.
+				Reply with exactly one ```abap code block that contains the complete corrected source. No explanation.
+				""".formatted(ctx.describeObject(), list, ctx.source());
+		return new Prompt(chatSystem(), user);
+	}
+
+	private static final Pattern LINE = Pattern.compile("\\bline (\\d+)\\b");
+
+	static int lineNumber(String finding) {
+		Matcher m = LINE.matcher(finding);
+		return m.find() ? Integer.parseInt(m.group(1)) : 0;
 	}
 
 	/**

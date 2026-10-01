@@ -39,6 +39,8 @@
             name="%cmd.implementMethod" description="%cmd.implementMethod.desc"/>
       <command id="de.kiliantaubmann.bella.ui.complete" categoryId="de.kiliantaubmann.bella.ui.commands"
             name="%cmd.complete" description="%cmd.complete.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.atcFix" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.atcFix" description="%cmd.atcFix.desc"/>
    </extension>
 
    <extension point="org.eclipse.ui.commandImages">
@@ -50,6 +52,7 @@
       <image commandId="de.kiliantaubmann.bella.ui.rewrite" icon="icons/rewrite.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.implementMethod" icon="icons/method.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.complete" icon="icons/insert.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.atcFix" icon="icons/atc.png"/>
    </extension>
 
    <extension point="org.eclipse.ui.handlers">
@@ -73,6 +76,9 @@
          <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
       </handler>
       <handler commandId="de.kiliantaubmann.bella.ui.complete" class="de.kiliantaubmann.bella.ui.handlers.CompletionHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.atcFix" class="de.kiliantaubmann.bella.ui.handlers.AtcFixHandler">
          <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
       </handler>
    </extension>
@@ -107,6 +113,8 @@
          <toolbar id="de.kiliantaubmann.bella.ui.toolbar" label="%category.name">
             <command commandId="de.kiliantaubmann.bella.ui.openChat" icon="icons/bella.png"
                   tooltip="%cmd.openChat.desc" style="push"/>
+            <command commandId="de.kiliantaubmann.bella.ui.atcFix" icon="icons/atc.png"
+                  tooltip="%cmd.atcFix.desc" style="push"/>
          </toolbar>
       </menuContribution>
    </extension>

@@ -26,7 +26,7 @@ import de.kiliantaubmann.bella.ui.Messages;
 public final class CodeActions {
 
 	public enum Target {
-		CURSOR, SELECTION, METHOD
+		CURSOR, SELECTION, METHOD, DOCUMENT
 	}
 
 	private CodeActions() {
@@ -94,6 +94,11 @@ public final class CodeActions {
 			offset = r.offset();
 			length = r.length();
 			text = r.text();
+		}
+		case DOCUMENT -> {
+			offset = 0;
+			length = before.length();
+			text = before.endsWith("\n") && !code.endsWith("\n") ? code + "\n" : code;
 		}
 		default -> throw new IllegalStateException();
 		}
