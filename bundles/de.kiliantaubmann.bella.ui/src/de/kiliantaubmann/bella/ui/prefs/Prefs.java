@@ -50,6 +50,11 @@ public final class Prefs {
 	public static final String PREFERRED_TOOLS = "tools.preferred";
 	public static final String POLICY_RULES = "tools.policyRules";
 	public static final String WRITE_PACKAGES = "tools.writePackages";
+	/** Project information per ABAP project; suffix is the destination id or {@link #CONVENTIONS_GLOBAL}. */
+	public static final String CONVENTIONS_TEXT = "conventions.text.";
+	/** Naming rules per ABAP project, same suffixes as {@link #CONVENTIONS_TEXT}. */
+	public static final String CONVENTIONS_NAMING = "conventions.naming.";
+	public static final String CONVENTIONS_GLOBAL = "global";
 	/** JSON array of MCP server definitions, see {@link McpServerConfig}. */
 	public static final String MCP_SERVERS = "mcp.servers";
 

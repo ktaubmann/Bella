@@ -5,6 +5,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
+import de.kiliantaubmann.bella.core.conventions.NamingRules;
+import de.kiliantaubmann.bella.core.conventions.ProjectConventions;
 
 /**
  * Prompts for Bella's actions. System prompts are kept stable per language
@@ -21,6 +23,7 @@ public final class AbapPrompts {
 
 	private final String answerLanguage;
 	private final String commentLanguage;
+	private final ProjectConventions conventions;
 
 	/**
 	 * @param answerLanguage  language for explanations, e.g. {@code German};
@@ -28,8 +31,14 @@ public final class AbapPrompts {
 	 * @param commentLanguage language for ABAP comments in generated code
 	 */
 	public AbapPrompts(String answerLanguage, String commentLanguage) {
+		this(answerLanguage, commentLanguage, ProjectConventions.NONE);
+	}
+
+	/** @param conventions the project's conventions, added to every system prompt */
+	public AbapPrompts(String answerLanguage, String commentLanguage, ProjectConventions conventions) {
 		this.answerLanguage = answerLanguage;
 		this.commentLanguage = commentLanguage == null ? "English" : commentLanguage;
+		this.conventions = conventions == null ? ProjectConventions.NONE : conventions;
 	}
 
 	private String languageRule() {
@@ -69,7 +78,7 @@ public final class AbapPrompts {
 				- Be concise and concrete. Put ABAP code in ```abap fenced blocks.
 				- Write ABAP comments in %s.
 				- %s
-				""".formatted(commentLanguage, languageRule());
+				""".formatted(commentLanguage, languageRule()) + conventions.promptSection();
 	}
 
 	public Prompt explain(EditorContext ctx) {
@@ -204,6 +213,36 @@ public final class AbapPrompts {
 				declaration == null ? "(not found in this source)" : declaration,
 				classDefinition == null ? "(not in this source)" : truncate(classDefinition, CONTEXT_CHARS),
 				ctx.source().substring(routine.start(), routine.end()), kind, kind);
+		return new Prompt(chatSystem(), user);
+	}
+
+	/**
+	 * Proposal for a project's conventions, derived from the objects of a
+	 * package. The answer carries a ```markdown block (project information) and
+	 * a ```naming block (rules in the format of {@link NamingRules}).
+	 *
+	 * @param objects names and types of the package's objects, one per line
+	 * @param samples a few sources of the package, each headed by its name
+	 */
+	public Prompt deriveConventions(String packageName, String objects, String samples) {
+		String user = """
+				Derive the development conventions of package %s from its objects and code below, as a starting \
+				point the developer will review.
+
+				1. A ```markdown block with the project information: what the package contains, its structure \
+				(sub-packages, layers, naming of object groups), and the coding conventions you can see (e.g. \
+				ABAP Cloud or classic, exception handling, use of interfaces and factories, test classes). Short, \
+				as bullet points, only what the code supports.
+				2. A ```naming block with naming rules, one per line as kind = pattern, pattern (* any characters, \
+				? one character). Allowed kinds: %s. Only include kinds you can see in the code; patterns as \
+				specific as the code supports (e.g. ZCL_SD_* rather than Z*).
+
+				Objects of the package:
+				%s
+
+				Sample sources:
+				%s
+				""".formatted(packageName, NamingRules.kinds(), objects, samples);
 		return new Prompt(chatSystem(), user);
 	}
 

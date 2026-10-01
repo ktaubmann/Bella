@@ -31,6 +31,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.MenuItem;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.PlatformUI;
@@ -64,6 +65,7 @@ import de.kiliantaubmann.bella.ui.internal.BellaMenuItems;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.editor.OpenEditorRouter;
 import de.kiliantaubmann.bella.ui.prefs.BellaPreferencePage;
+import de.kiliantaubmann.bella.ui.prefs.ConventionsPreferencePage;
 import de.kiliantaubmann.bella.ui.prefs.LogPreferencePage;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
 import de.kiliantaubmann.bella.ui.prefs.ToolsPreferencePage;
@@ -142,13 +144,45 @@ class WorkbenchSmokeTest {
 		Shell shell = new Shell(Display.getCurrent());
 		try {
 			for (PreferencePage p : List.<PreferencePage>of(new BellaPreferencePage(), new ToolsPreferencePage(),
-					new LogPreferencePage())) {
+					new ConventionsPreferencePage(), new LogPreferencePage())) {
 				((org.eclipse.ui.IWorkbenchPreferencePage) p).init(PlatformUI.getWorkbench());
 				p.createControl(shell);
 				assertTrue(p.performOk());
 			}
 		} finally {
 			shell.dispose();
+		}
+	}
+
+	@Test
+	void conventionsAreSavedPerScopeAndCheckedInThePreview() {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		Shell shell = new Shell(Display.getCurrent());
+		try {
+			ConventionsPreferencePage page = new ConventionsPreferencePage();
+			page.init(PlatformUI.getWorkbench());
+			page.createControl(shell);
+			List<Text> areas = find((Composite) page.getControl(), Text.class);
+			areas.get(0).setText("Packages: ZSD_* per process.");
+			areas.get(1).setText("local_data = lv_*");
+			assertTrue(page.performOk());
+			areas.get(1).setText("nonsense = x");
+			assertFalse(page.isValid(), "invalid rules block saving");
+			assertFalse(page.performOk());
+		} finally {
+			shell.dispose();
+		}
+		try {
+			assertEquals("Packages: ZSD_* per process.", plugin.conventions(null).text());
+			assertEquals("local_data = lv_*\n", plugin.conventions("unknown-destination").naming().describe());
+			assertTrue(plugin.prompts().chatSystem().contains("Packages: ZSD_* per process."));
+			List<AbapLint.Finding> f = AbapLint.check("METHOD m.\n  DATA count TYPE i.\nENDMETHOD.",
+					plugin.conventions(null).naming());
+			assertTrue(CodeActions.previewNotes(List.of(), f).contains("naming: local data \"count\" should match lv_*"),
+					CodeActions.previewNotes(List.of(), f));
+		} finally {
+			plugin.prefs().setValue(Prefs.CONVENTIONS_TEXT + Prefs.CONVENTIONS_GLOBAL, "");
+			plugin.prefs().setValue(Prefs.CONVENTIONS_NAMING + Prefs.CONVENTIONS_GLOBAL, "");
 		}
 	}
 
