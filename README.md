@@ -23,6 +23,7 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/method.png"> | **Implement method** Writes the body of the METHOD/FORM/FUNCTION at the cursor | Right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/insert.png"> | **AI completion** as grey ghost text; Tab accepts, Esc dismisses | `Ctrl+↑` (macOS: `Cmd+Option+Enter`), or automatically while typing (not with the Claude subscription or GitHub Copilot) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/atc.png"> | **Check with ATC and fix…** Runs ATC on the object, lists the findings; Bella fixes the ticked ones in the editor (diff preview, not saved) | Right-click → Bella, toolbar |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/transport.png"> | **Review transport request…** Pick one of your requests (or enter a number); Bella reviews it in the chat: what it does, findings per object, security, syntax/ATC/ABAP Unit, completeness, verdict. Read only | Menu *Bella*, right-click → Bella |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Suggest refactoring / unit test** | Right-click → Bella (chat) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** with editor context, streaming and tool calls; insert code blocks, replace the selection or take them over as a method body | `Ctrl+Alt+B`, pink B in the toolbar, menu *Bella* |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read (also DDIC tables, structures, data elements, domains, table types, function modules, message classes), context of used objects, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, style check, write, create, activate | automatically in the chat |
@@ -49,8 +50,9 @@ A model that does not know your system guesses field names and signatures. Bella
 Tables and structures are read as source on newer ABAP releases (7.52 and later). On older releases, and for data elements, domains, table types and message classes, Bella summarizes the object's ADT description.
 
 - **System knowledge**: `adt_list_systems` shows each system's SAP_BASIS release or whether it is an ABAP Cloud system, and the editor actions tell the model the release. `adt_transport_info` asks SAP which transport request a change needs, `adt_short_dumps` lists and reads runtime errors (ST22).
+- **Transport review**: `adt_list_transports` lists requests, `adt_transport_review` collects a review dossier for one: per source the diff between the version in the request and the version before it (version choice as in ARC-1's transport diff), syntax check, ATC and ABAP Unit in one run each, objects not activated, and customer objects the changed code uses that are missing, inactive or held in another open request.
 
-**Compared with ARC-1:** Bella's tools now cover what ARC-1's `SAPRead` (incl. single methods, grep and active/inactive versions), `SAPContext`, read-only `SAPTransport` and the dumps of `SAPDiagnose` offer, plus a package allowlist for writes. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log and rate limits, Git (gCTS/abapGit), or when the tools should run on a server instead of in Eclipse.
+**Compared with ARC-1:** Bella's tools now cover what ARC-1's `SAPRead` (incl. single methods, grep and active/inactive versions), `SAPContext`, read-only `SAPTransport` (incl. the transport diff) and the dumps of `SAPDiagnose` offer, plus a package allowlist for writes. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log and rate limits, Git (gCTS/abapGit), or when the tools should run on a server instead of in Eclipse.
 
 ### Ground rule: open objects are only changed in the editor
 
@@ -81,7 +83,7 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 
 | Tool | Default |
 |---|---|
-| Read and check (`adt_search_objects`, `adt_read_source`, `adt_context`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, `adt_transport_info`, `adt_short_dumps`, `abap_lint`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
+| Read and check (`adt_search_objects`, `adt_read_source`, `adt_context`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, `adt_transport_info`, `adt_short_dumps`, `adt_list_transports`, `adt_transport_review`, `abap_lint`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
 | Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
 | Release transports | always refused |
 

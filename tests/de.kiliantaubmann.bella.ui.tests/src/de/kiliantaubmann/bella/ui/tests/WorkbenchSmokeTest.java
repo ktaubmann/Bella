@@ -121,7 +121,7 @@ class WorkbenchSmokeTest {
 		assertNotNull(BellaPlugin.getDefault());
 		ICommandService commands = PlatformUI.getWorkbench().getService(ICommandService.class);
 		for (String id : List.of("openChat", "explain", "refactor", "unitTest", "generate", "rewrite",
-				"implementMethod", "complete", "atcFix")) {
+				"implementMethod", "complete", "atcFix", "reviewTransport")) {
 			Command c = commands.getCommand("de.kiliantaubmann.bella.ui." + id);
 			assertTrue(c.isDefined(), id);
 		}
@@ -395,8 +395,9 @@ class WorkbenchSmokeTest {
 		IPreferenceStore prefs = BellaPlugin.getDefault().prefs();
 		Shell shell = new Shell(Display.getCurrent());
 		try {
-			for (String[] lang : new String[][] { { "en", "What happens here?", "Bella Chat", "Check with ATC and fix…" },
-					{ "de", "Was passiert hier?", "Bella-Chat", "Mit ATC prüfen und beheben…" } }) {
+			for (String[] lang : new String[][] {
+					{ "en", "What happens here?", "Bella Chat", "Check with ATC and fix…", "Review transport request…" },
+					{ "de", "Was passiert hier?", "Bella-Chat", "Mit ATC prüfen und beheben…", "Transportauftrag reviewen…" } }) {
 				prefs.setValue(Prefs.UI_LANGUAGE, lang[0]);
 				Menu menu = new Menu(shell, SWT.POP_UP);
 				BellaMenuItems items = new BellaMenuItems(BellaMenuItems.POPUP_ID);
@@ -405,8 +406,9 @@ class WorkbenchSmokeTest {
 				List<String> labels = java.util.Arrays.stream(menu.getItems()).map(MenuItem::getText)
 						.filter(t -> !t.isEmpty()).toList();
 				assertTrue(labels.get(0).startsWith(lang[1]), labels.toString());
-				assertEquals(9, labels.size(), labels.toString());
+				assertEquals(10, labels.size(), labels.toString());
 				assertTrue(labels.contains(lang[3]), labels.toString());
+				assertTrue(labels.contains(lang[4]), labels.toString());
 				menu.dispose();
 				ChatView view = ChatView.open().orElseThrow();
 				pump();
