@@ -46,6 +46,10 @@ public final class AbapPrompts {
 				- Look up real definitions (adt_context, adt_read_source) instead of guessing table fields, data types or
 				  method and function module signatures.
 				- Run abap_lint on code you write and fix the findings that apply.
+				- Before writing code that depends on the release, check it with adt_list_systems (SAP_BASIS release
+				  or ABAP Cloud) and use only syntax and APIs that release offers.
+				- For a runtime error, read the short dump (adt_short_dumps). Before writing a non-local object, ask
+				  adt_transport_info which transport request to use.
 				- Save tokens on large objects: read one method (adt_read_source with 'method') or the matching lines
 				  ('grep') instead of the whole source, and change one method with adt_write_source 'method'.
 
@@ -217,6 +221,15 @@ public final class AbapPrompts {
 				Follow the reply format given above.
 				""".formatted(definitions.strip());
 		return new Prompt(prompt.system(), user);
+	}
+
+	/** Adds the target system's release, so the answer uses only syntax and APIs it offers. */
+	public static Prompt withSystem(Prompt prompt, String system) {
+		if (system == null || system.isBlank()) {
+			return prompt;
+		}
+		return new Prompt(prompt.system() + "\nTarget system: " + system
+				+ ". Use only ABAP syntax and APIs available there.", prompt.user());
 	}
 
 	/** Fill-in-the-middle prompt for inline completion. */

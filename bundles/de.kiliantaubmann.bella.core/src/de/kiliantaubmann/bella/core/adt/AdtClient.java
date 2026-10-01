@@ -12,6 +12,7 @@ import java.util.regex.Pattern;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Log;
@@ -198,7 +199,11 @@ public final class AdtClient {
 		if (xml == null || xml.isBlank()) {
 			return out;
 		}
-		for (Element e : AdtXml.elements(AdtXml.parse(xml), "ref")) {
+		Document doc = AdtXml.parse(xml);
+		// ioc:ref on newer releases, a flat list of objectReference on 7.50
+		List<Element> refs = new ArrayList<>(AdtXml.elements(doc, "ref"));
+		refs.addAll(AdtXml.elements(doc, "objectReference"));
+		for (Element e : refs) {
 			String name = AdtXml.attr(e, "name").toUpperCase(Locale.ROOT);
 			if (AdtXml.attr(e, "uri").contains("/cts/")) {
 				continue; // the transport request an object is recorded in
@@ -280,6 +285,159 @@ public final class AdtClient {
 			}
 		}
 		return "";
+	}
+
+	// ---- system, transports, dumps -------------------------------------------
+
+	/** Release and kind of a system, from its installed software components. */
+	public record SystemInfo(String basisRelease, boolean cloud) {
+
+		/** e.g. "SAP_BASIS 758, on-premise" or "SAP BTP ABAP Environment (ABAP Cloud only)". */
+		public String describe() {
+			if (cloud) {
+				return "SAP BTP ABAP Environment (ABAP Cloud only, released APIs)";
+			}
+			return basisRelease.isEmpty() ? "on-premise, release unknown" : "SAP_BASIS " + basisRelease + ", on-premise";
+		}
+	}
+
+	public SystemInfo systemInfo(CancelToken cancel) throws IOException {
+		return parseComponents(send(AdtRequest.get("/sap/bc/adt/system/components", "application/atom+xml;type=feed"),
+				cancel).body());
+	}
+
+	static SystemInfo parseComponents(String xml) throws IOException {
+		String basis = "";
+		boolean cloud = false;
+		for (Element entry : AdtXml.elements(AdtXml.parse(xml), "entry")) {
+			List<Element> ids = AdtXml.elements(entry, "id");
+			List<Element> titles = AdtXml.elements(entry, "title");
+			String id = ids.isEmpty() ? "" : AdtXml.text(ids.get(0)).trim().toUpperCase(Locale.ROOT);
+			String title = titles.isEmpty() ? "" : AdtXml.text(titles.get(0));
+			if (id.equals("SAP_BASIS")) {
+				basis = title.split(";")[0].trim();
+			} else if (id.equals("SAP_CLOUD")) {
+				cloud = true;
+			}
+		}
+		return new SystemInfo(basis, cloud);
+	}
+
+	/** Result of SAP's transport check for changing an object. */
+	public record TransportCheck(String packageName, boolean local, boolean recordingRequired, String lockedIn,
+			List<String> candidates, List<String> errors) {
+	}
+
+	/**
+	 * Asks SAP which transport request a change of the object needs: whether it
+	 * is recorded at all, the request it is already locked in and the
+	 * developer's open requests that fit.
+	 *
+	 * @param operation {@code I} for creating the object, empty for changing it
+	 */
+	public TransportCheck transportCheck(String objectUri, String packageName, String operation, CancelToken cancel)
+			throws IOException {
+		String body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\">"
+				+ "<asx:values><DATA><DEVCLASS>" + AdtXml.escape(packageName) + "</DEVCLASS><URI>"
+				+ AdtXml.escape(AdtObjectRef.objectUri(objectUri)) + "</URI><OPERATION>" + AdtXml.escape(operation)
+				+ "</OPERATION></DATA></asx:values></asx:abap>";
+		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/cts/transportchecks", "application/vnd.sap.as+xml", body,
+				"application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.transport.service.checkData"), cancel);
+		return parseTransportCheck(r.body());
+	}
+
+	static TransportCheck parseTransportCheck(String xml) throws IOException {
+		Document doc = AdtXml.parse(xml);
+		String pkg = first(doc, "DEVCLASS");
+		boolean local = first(doc, "DLVUNIT").equals("LOCAL") || pkg.startsWith("$");
+		boolean recording = first(doc, "RECORDING").equals("X") || first(doc, "KORRFLAG").equals("X");
+		String locked = "";
+		for (Element locks : AdtXml.elements(doc, "LOCKS")) {
+			for (Element h : AdtXml.elements(locks, "TRKORR")) {
+				locked = AdtXml.text(h).trim();
+				break;
+			}
+		}
+		List<String> candidates = new ArrayList<>();
+		for (Element requests : AdtXml.elements(doc, "REQUESTS")) {
+			for (Element header : AdtXml.elements(requests, "REQ_HEADER")) {
+				String id = first(header, "TRKORR");
+				if (!id.isEmpty() && !candidates.stream().anyMatch(c -> c.startsWith(id + " "))) {
+					candidates.add(id + " " + first(header, "AS4TEXT") + " (" + first(header, "AS4USER") + ")");
+				}
+			}
+		}
+		List<String> errors = new ArrayList<>();
+		for (Element m : AdtXml.elements(doc, "CTS_MESSAGE")) {
+			String sev = first(m, "SEVERITY").toUpperCase(Locale.ROOT);
+			if (sev.equals("E") || sev.equals("A") || sev.equals("X")) {
+				errors.add(first(m, "TEXT"));
+			}
+		}
+		return new TransportCheck(pkg, local, recording, locked, candidates, errors);
+	}
+
+	private static String first(Node root, String localName) {
+		List<Element> e = AdtXml.elements(root, localName);
+		return e.isEmpty() ? "" : AdtXml.text(e.get(0)).trim();
+	}
+
+	/** One short dump (ST22). */
+	public record Dump(String id, String time, String user, String error, String program) {
+	}
+
+	/** Newest short dumps, optionally only those of one user. */
+	public List<Dump> dumps(String user, int max, CancelToken cancel) throws IOException {
+		StringBuilder path = new StringBuilder("/sap/bc/adt/runtime/dumps?$top=").append(max);
+		if (user != null && !user.isBlank()) {
+			path.append("&$query=").append(enc("and(equals(user," + user.trim().toUpperCase(Locale.ROOT) + "))"));
+		}
+		return parseDumps(send(AdtRequest.get(path.toString(), "application/atom+xml;type=feed"), cancel).body());
+	}
+
+	static List<Dump> parseDumps(String xml) throws IOException {
+		List<Dump> out = new ArrayList<>();
+		for (Element entry : AdtXml.elements(AdtXml.parse(xml), "entry")) {
+			String id = dumpId(entry);
+			if (id.isEmpty()) {
+				continue;
+			}
+			String error = "";
+			String program = "";
+			for (Element c : AdtXml.elements(entry, "category")) {
+				String label = AdtXml.attr(c, "label").toLowerCase(Locale.ROOT);
+				String term = AdtXml.attr(c, "term");
+				if (label.contains("program")) {
+					program = term;
+				} else if (error.isEmpty()) {
+					error = term;
+				}
+			}
+			List<Element> names = AdtXml.elements(entry, "name");
+			String published = first(entry, "published");
+			out.add(new Dump(id, published.isEmpty() ? first(entry, "updated") : published,
+					names.isEmpty() ? "" : AdtXml.text(names.get(0)).trim(), error, program));
+		}
+		return out;
+	}
+
+	private static String dumpId(Element entry) {
+		for (Element link : AdtXml.elements(entry, "link")) {
+			String href = AdtXml.attr(link, "href");
+			int i = href.indexOf("/runtime/dump/");
+			if (i >= 0 && "self".equals(AdtXml.attr(link, "rel"))) {
+				return href.substring(i + "/runtime/dump/".length());
+			}
+		}
+		String id = first(entry, "id");
+		int i = id.indexOf("/runtime/dumps/");
+		return i >= 0 ? id.substring(i + "/runtime/dumps/".length()) : "";
+	}
+
+	/** Formatted text of a short dump, as ST22 shows it. */
+	public String dumpText(String id, CancelToken cancel) throws IOException {
+		String segment = id.trim().contains("%") ? id.trim() : enc(id.trim()).replace("+", "%20");
+		return send(AdtRequest.get("/sap/bc/adt/runtime/dump/" + segment + "/formatted", "text/plain"), cancel).body();
 	}
 
 	/** Lock result: handle plus the transport the object is already assigned to (if any). */

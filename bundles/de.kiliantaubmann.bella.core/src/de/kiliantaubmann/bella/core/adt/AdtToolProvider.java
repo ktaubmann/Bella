@@ -121,7 +121,9 @@ public final class AdtToolProvider implements ToolProvider {
 	@Override
 	public List<ToolSpec> listTools() {
 		List<ToolSpec> t = new ArrayList<>();
-		t.add(ToolSpec.of("adt_list_systems", "List the ABAP projects (SAP systems) in the workspace and whether they are logged on.",
+		t.add(ToolSpec.of("adt_list_systems",
+				"List the ABAP projects (SAP systems) in the workspace, whether they are logged on, and their release "
+						+ "(SAP_BASIS) or whether they are ABAP Cloud systems. Check it before writing code that depends on the release.",
 				schema(new String[0]), null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_search_objects",
 				"Search repository objects by name pattern (wildcard *), e.g. ZCL_SALES*. Returns name, type, package and description.",
@@ -170,6 +172,21 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[] { "name" }, objectProps("check_variant", "string",
 						"ATC check variant; omit for the system default.")),
 				Capability.ATC, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_transport_info",
+				"Which transport request a change needs: whether the object's package records changes, the request the object "
+						+ "is already locked in, and the developer's open requests that fit. Use it before writing a non-local object. "
+						+ "Releasing transports is not possible.",
+				schema(new String[] { "name" }, objectProps("package", "string",
+						"Package, needed when the object does not exist yet.", "create", "boolean",
+						"true if the object is about to be created; default false (change).")),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_short_dumps",
+				"Runtime errors (short dumps, ST22): without 'id' a list of the newest dumps (by default the developer's own), "
+						+ "with 'id' the full dump text including the source position.",
+				schema(new String[0], "id", "string", "Dump id from the list, to read one dump.", "user", "string",
+						"Only dumps of this user; default the logged-on user, '*' for all users.", "max_results", "integer",
+						"Default 10, at most 50.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_write_source",
 				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system.",
 				schema(new String[] { "name", "source" }, objectProps("source", "string",
@@ -252,7 +269,7 @@ public final class AdtToolProvider implements ToolProvider {
 	public ToolResult call(String name, JsonObject in, CancelToken cancel) {
 		try {
 			return switch (name) {
-			case "adt_list_systems" -> listSystems();
+			case "adt_list_systems" -> listSystems(cancel);
 			case "adt_search_objects" -> searchObjects(in, cancel);
 			case "adt_read_source" -> readSource(in, cancel);
 			case "adt_context" -> context(in, cancel);
@@ -260,6 +277,8 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_syntax_check" -> syntaxCheck(in, cancel);
 			case "adt_run_unit_tests" -> unitTests(in, cancel);
 			case "adt_atc_check" -> atc(in, cancel);
+			case "adt_transport_info" -> transportInfo(in, cancel);
+			case "adt_short_dumps" -> shortDumps(in, cancel);
 			case "adt_write_source" -> writeSource(in, cancel);
 			case "adt_create_object" -> create(in, cancel);
 			case "adt_activate" -> activate(in, cancel);
@@ -270,14 +289,19 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 	}
 
-	private ToolResult listSystems() {
+	private ToolResult listSystems(CancelToken cancel) {
 		StringBuilder sb = new StringBuilder();
 		for (AdtSystem s : backend.systems()) {
 			sb.append("- ").append(s.label()).append(" [destination ").append(s.destinationId()).append("]")
-					.append(s.loggedOn() ? " logged on" : " NOT logged on").append('\n');
+					.append(s.loggedOn() ? " logged on" : " NOT logged on");
+			if (s.loggedOn()) {
+				AdtSystemInfo.of(s.destinationId(), client(s), cancel).ifPresent(i -> sb.append(", ").append(i.describe()));
+			}
+			sb.append('\n');
 		}
 		return ToolResult.ok(sb.isEmpty() ? "No ABAP projects in the workspace." : sb.toString());
 	}
+
 
 	/** Picks the system: explicit argument (project, SID or destination), else the active editor's. */
 	AdtSystem system(JsonObject in) throws IOException {
@@ -465,6 +489,78 @@ public final class AdtToolProvider implements ToolProvider {
 		List<AdtClient.Message> msgs = c.atcCheck(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "check_variant"),
 				cancel);
 		return ToolResult.ok(msgs.isEmpty() ? "No ATC findings." : format(msgs));
+	}
+
+	private ToolResult transportInfo(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		boolean create = in.has("create") && in.get("create").isJsonPrimitive() && in.get("create").getAsBoolean();
+		String name = Json.str(in, "name").trim();
+		String pkg = Json.str(in, "package");
+		String uri;
+		if (create) {
+			String direct = AdtObjectRef.uriFor(name, AdtClient.searchType(Json.str(in, "type")));
+			if (direct == null) {
+				return ToolResult.error("Give 'type' (CLAS, INTF, PROG, …) for an object that does not exist yet.");
+			}
+			uri = direct;
+		} else {
+			AdtObjectRef ref = resolve(c, in, cancel);
+			uri = ref.uri();
+			if (pkg == null || pkg.isBlank()) {
+				pkg = ref.packageName().isEmpty() ? c.packageOf(uri, cancel) : ref.packageName();
+			}
+		}
+		if (pkg == null || pkg.isBlank()) {
+			return ToolResult.error("Give 'package': the package of " + name.toUpperCase(Locale.ROOT) + " is unknown.");
+		}
+		AdtClient.TransportCheck t = c.transportCheck(uri, pkg.trim().toUpperCase(Locale.ROOT), create ? "I" : "", cancel);
+		if (!t.errors().isEmpty()) {
+			return ToolResult.error("SAP's transport check failed: " + String.join("; ", t.errors()));
+		}
+		StringBuilder sb = new StringBuilder(name.toUpperCase(Locale.ROOT)).append(" in package ")
+				.append(t.packageName().isEmpty() ? pkg.toUpperCase(Locale.ROOT) : t.packageName()).append(": ");
+		if (t.local() || !t.recordingRequired()) {
+			return ToolResult.ok(sb.append("local, no transport request needed.").toString());
+		}
+		sb.append("changes are recorded in a transport request.\n");
+		if (!t.lockedIn().isEmpty()) {
+			sb.append("Already locked in request ").append(t.lockedIn()).append("; use it.\n");
+		}
+		if (t.candidates().isEmpty()) {
+			sb.append("No open request of the developer fits; ask them for one (Bella cannot create or release requests).");
+		} else {
+			sb.append("Open requests that fit:\n");
+			t.candidates().forEach(r -> sb.append("- ").append(r).append('\n'));
+		}
+		return ToolResult.ok(sb.toString());
+	}
+
+	/** Characters of a dump text a tool result carries at most. */
+	static final int DUMP_TEXT_CHARS = 12_000;
+
+	private ToolResult shortDumps(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String id = Json.str(in, "id");
+		if (id != null && !id.isBlank()) {
+			String text = c.dumpText(id, cancel);
+			return ToolResult.ok(text.length() > DUMP_TEXT_CHARS
+					? text.substring(0, DUMP_TEXT_CHARS) + "\n… (cut after " + DUMP_TEXT_CHARS + " characters)"
+					: text);
+		}
+		String user = Json.str(in, "user");
+		user = user == null || user.isBlank() ? s.user() : user.trim().equals("*") ? null : user;
+		int max = Math.max(1, Math.min(50, Json.integer(in, "max_results", 10)));
+		List<AdtClient.Dump> dumps = c.dumps(user, max, cancel);
+		if (dumps.isEmpty()) {
+			return ToolResult.ok("No short dumps" + (user == null ? "" : " of " + user.toUpperCase(Locale.ROOT)) + ".");
+		}
+		StringBuilder sb = new StringBuilder();
+		for (AdtClient.Dump d : dumps) {
+			sb.append(d.time()).append("  ").append(d.error()).append(" in ").append(d.program()).append(" (")
+					.append(d.user()).append(")  id: ").append(d.id()).append('\n');
+		}
+		return ToolResult.ok(sb.toString());
 	}
 
 	private ToolResult writeSource(JsonObject in, CancelToken cancel) throws IOException {

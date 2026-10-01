@@ -266,4 +266,103 @@ class AdtToolProviderTest {
 				Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\",\"source\":\"x\"}"), CancelToken.NONE).orElseThrow();
 		assertTrue(unknown.startsWith("Could not check the package"), unknown);
 	}
+
+	static final String COMPONENTS = "<atom:feed xmlns:atom=\"http://www.w3.org/2005/Atom\"><atom:entry><atom:id>SAP_BASIS</atom:id>"
+			+ "<atom:title>758;SAPK-75802INSAPBASIS;0002;SAP Basis Component</atom:title></atom:entry>"
+			+ "<atom:entry><atom:id>SAP_ABA</atom:id><atom:title>75I;x;0002;Cross-Application</atom:title></atom:entry></atom:feed>";
+
+	@Test
+	void listsSystemsWithRelease() {
+		AdtSystemInfo.clear();
+		int[] calls = { 0 };
+		FakeAdt adt = twoSystems().route("GET /sap/bc/adt/system/components", r -> {
+			calls[0]++;
+			return FakeAdt.ok(COMPONENTS);
+		});
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		String text = call(p, "adt_list_systems", "{}").content();
+		assertTrue(text.contains("S4H_100 [destination dev] logged on, SAP_BASIS 758, on-premise"), text);
+		assertTrue(text.contains("Q4H_200 [destination qa] NOT logged on\n"), text);
+		call(p, "adt_list_systems", "{}");
+		assertEquals(1, calls[0], "release is read once");
+	}
+
+	@Test
+	void parsesComponentsInactiveListsTransportCheckAndDumps() throws Exception {
+		assertEquals("SAP_BASIS 758, on-premise", AdtClient.parseComponents(COMPONENTS).describe());
+		assertTrue(AdtClient.parseComponents(COMPONENTS.replace("SAP_ABA", "SAP_CLOUD")).cloud());
+		assertEquals(List.of("ZCL_ARC1_TEST", "ZARC1_TEST_REPORT"), AdtClient.parseInactiveObjects(
+				"<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+						+ "<adtcore:objectReference adtcore:uri=\"/sap/bc/adt/oo/classes/zcl_arc1_test\" adtcore:name=\"ZCL_ARC1_TEST\"/>"
+						+ "<adtcore:objectReference adtcore:uri=\"/sap/bc/adt/programs/programs/zarc1_test_report\" adtcore:name=\"ZARC1_TEST_REPORT\"/>"
+						+ "</adtcore:objectReferences>"));
+
+		AdtClient.TransportCheck t = AdtClient.parseTransportCheck(TRANSPORT_CHECK);
+		assertEquals("ZSALES", t.packageName());
+		assertFalse(t.local());
+		assertTrue(t.recordingRequired());
+		assertEquals("DEVK900099", t.lockedIn());
+		assertEquals(List.of("DEVK900101 First candidate (DEVELOPER)", "DEVK900102 Second candidate (DEVELOPER)"),
+				t.candidates());
+
+		List<AdtClient.Dump> dumps = AdtClient.parseDumps(DUMPS);
+		assertEquals(2, dumps.size());
+		assertEquals(new AdtClient.Dump("20260328201914vhcala4hci_A4H_00%20%20%20DEVELOPER%20001%2019",
+				"2026-03-28T20:19:14Z", "DEVELOPER", "STRING_OFFSET_TOO_LARGE", "SAPLSUSR_CERTRULE"), dumps.get(0));
+		assertEquals("20260327150000vhcala4hci_A4H_00%20%20%20ADMIN%20001%2005", dumps.get(1).id());
+		assertEquals("COMPUTE_INT_ZERODIVIDE", dumps.get(1).error());
+		assertEquals("SAPMTEST", dumps.get(1).program());
+	}
+
+	static final String TRANSPORT_CHECK = "<asx:abap version=\"1.0\" xmlns:asx=\"http://www.sap.com/abapxml\"><asx:values><DATA>"
+			+ "<OPERATION/><DEVCLASS>ZSALES</DEVCLASS><KORRFLAG>X</KORRFLAG><DLVUNIT>HOME</DLVUNIT><RECORDING>X</RECORDING><MESSAGES/>"
+			+ "<REQUESTS><CTS_REQUEST><REQ_HEADER><TRKORR>DEVK900101</TRKORR><AS4USER>DEVELOPER</AS4USER><AS4TEXT>First candidate</AS4TEXT></REQ_HEADER></CTS_REQUEST>"
+			+ "<CTS_REQUEST><REQ_HEADER><TRKORR>DEVK900102</TRKORR><AS4USER>DEVELOPER</AS4USER><AS4TEXT>Second candidate</AS4TEXT></REQ_HEADER></CTS_REQUEST></REQUESTS>"
+			+ "<LOCKS><CTS_OBJECT_LOCK><LOCK_HOLDER><REQ_HEADER><TRKORR>DEVK900099</TRKORR><AS4USER>DEVELOPER</AS4USER></REQ_HEADER>"
+			+ "<TASK_HEADERS><CTS_TASK_HEADER><TRKORR>DEVK900100</TRKORR></CTS_TASK_HEADER></TASK_HEADERS></LOCK_HOLDER></CTS_OBJECT_LOCK></LOCKS>"
+			+ "</DATA></asx:values></asx:abap>";
+
+	static final String DUMPS = "<atom:feed xmlns:atom=\"http://www.w3.org/2005/Atom\"><atom:author><atom:name>SAP AG</atom:name></atom:author>"
+			+ "<atom:link href=\"/sap/bc/adt/runtime/dumps\" rel=\"self\"/>"
+			+ "<atom:entry><atom:author><atom:name>DEVELOPER</atom:name></atom:author>"
+			+ "<atom:category term=\"STRING_OFFSET_TOO_LARGE\" label=\"Laufzeitfehler\"/><atom:category term=\"SAPLSUSR_CERTRULE\" label=\"Beendetes ABAP-Programm\"/>"
+			+ "<atom:id>/sap/bc/adt/vit/runtime/dumps/20260328201914vhcala4hci_A4H_00%20%20%20DEVELOPER%20001%2019</atom:id>"
+			+ "<atom:published>2026-03-28T20:19:14Z</atom:published></atom:entry>"
+			+ "<atom:entry><atom:author><atom:name>ADMIN</atom:name></atom:author>"
+			+ "<atom:category term=\"COMPUTE_INT_ZERODIVIDE\" label=\"ABAP runtime error\"/><atom:category term=\"SAPMTEST\" label=\"Terminated ABAP program\"/>"
+			+ "<atom:id>/sap/bc/adt/vit/runtime/dumps/x</atom:id>"
+			+ "<atom:link href=\"adt://A4H/sap/bc/adt/runtime/dump/20260327150000vhcala4hci_A4H_00%20%20%20ADMIN%20001%2005\" rel=\"self\"/>"
+			+ "<atom:published>2026-03-27T15:00:00Z</atom:published></atom:entry></atom:feed>";
+
+	@Test
+	void transportInfoAndShortDumps() {
+		List<String> dumpQueries = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("POST /sap/bc/adt/cts/transportchecks", r -> {
+					assertTrue(r.body().contains("<DEVCLASS>ZSALES</DEVCLASS><URI>/sap/bc/adt/oo/classes/zcl_a</URI><OPERATION></OPERATION>"),
+							r.body());
+					return FakeAdt.ok(TRANSPORT_CHECK);
+				})
+				.route("GET /sap/bc/adt/oo/classes/zcl_a", r -> FakeAdt.ok(
+						"<class:abapClass xmlns:class=\"http://www.sap.com/adt/oo/classes\" xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+								+ "<adtcore:packageRef adtcore:name=\"ZSALES\"/></class:abapClass>"))
+				.route("GET /sap/bc/adt/runtime/dumps", r -> {
+					dumpQueries.add(r.path());
+					return FakeAdt.ok(DUMPS);
+				})
+				.route("GET /sap/bc/adt/runtime/dump/abc%20d/formatted", r -> new AdtResponse(200, "text/plain", "Runtime error x"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		String info = call(p, "adt_transport_info", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}").content();
+		assertTrue(info.startsWith("ZCL_A in package ZSALES: changes are recorded in a transport request.\n"
+				+ "Already locked in request DEVK900099; use it.\nOpen requests that fit:\n- DEVK900101 First candidate (DEVELOPER)"), info);
+		assertTrue(call(p, "adt_transport_info", "{\"name\":\"ZNEW\",\"create\":true,\"package\":\"ZSALES\"}").isError(),
+				"type is needed for a new object");
+
+		String list = call(p, "adt_short_dumps", "{}").content();
+		assertTrue(list.startsWith("2026-03-28T20:19:14Z  STRING_OFFSET_TOO_LARGE in SAPLSUSR_CERTRULE (DEVELOPER)  id: "), list);
+		call(p, "adt_short_dumps", "{\"user\":\"*\",\"max_results\":99}");
+		assertEquals(List.of("/sap/bc/adt/runtime/dumps?$top=10&$query=and%28equals%28user%2CDEV%29%29",
+				"/sap/bc/adt/runtime/dumps?$top=50"), dumpQueries);
+		assertEquals("Runtime error x", call(p, "adt_short_dumps", "{\"id\":\"abc d\"}").content());
+	}
 }

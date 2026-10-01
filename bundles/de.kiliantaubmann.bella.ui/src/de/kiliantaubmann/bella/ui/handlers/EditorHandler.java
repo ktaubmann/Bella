@@ -20,6 +20,7 @@ import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtClient;
 import de.kiliantaubmann.bella.core.adt.AdtContext;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
+import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.llm.ChatRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
@@ -104,6 +105,7 @@ abstract class EditorHandler extends AbstractHandler {
 							p = AbapPrompts.withDefinitions(p, defs.text());
 							used = defs.used();
 						}
+						p = AbapPrompts.withSystem(p, sap.system(cancel));
 						monitor.subTask(Messages.get("generate.jobName"));
 					}
 					ChatRequest request = new ChatRequest(model, p.system(), List.of(Json.userText(p.user())),
@@ -159,6 +161,16 @@ abstract class EditorHandler extends AbstractHandler {
 						.anyMatch(s -> s.destinationId().equals(dest) && s.loggedOn());
 				return loggedOn ? new SapContext(adt, dest, obj.get().name(), code == null ? "" : code, instruction)
 						: null;
+			} catch (RuntimeException | LinkageError e) {
+				return null;
+			}
+		}
+
+		/** Release of the editor's system, e.g. "SAP_BASIS 758, on-premise"; {@code null} if unknown. */
+		String system(CancelToken cancel) {
+			try {
+				return AdtSystemInfo.of(destinationId, new AdtClient(adt.stateless(destinationId)), cancel)
+						.map(AdtClient.SystemInfo::describe).orElse(null);
 			} catch (RuntimeException | LinkageError e) {
 				return null;
 			}

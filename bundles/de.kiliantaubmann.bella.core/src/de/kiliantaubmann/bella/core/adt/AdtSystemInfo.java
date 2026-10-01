@@ -1,0 +1,40 @@
+package de.kiliantaubmann.bella.core.adt;
+
+import java.io.IOException;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+
+import de.kiliantaubmann.bella.core.util.CancelToken;
+
+/**
+ * Release and kind (on-premise or ABAP Cloud) of each system, read once per
+ * Eclipse session from its installed software components and shared by the
+ * chat tools and the editor actions.
+ */
+public final class AdtSystemInfo {
+
+	private static final Map<String, AdtClient.SystemInfo> KNOWN = new ConcurrentHashMap<>();
+
+	private AdtSystemInfo() {
+	}
+
+	/** Empty if the system does not tell (e.g. the endpoint is missing or the call fails). */
+	public static Optional<AdtClient.SystemInfo> of(String destinationId, AdtClient client, CancelToken cancel) {
+		AdtClient.SystemInfo known = KNOWN.get(destinationId);
+		if (known != null) {
+			return Optional.of(known);
+		}
+		try {
+			AdtClient.SystemInfo info = client.systemInfo(cancel);
+			KNOWN.put(destinationId, info);
+			return Optional.of(info);
+		} catch (IOException e) {
+			return Optional.empty();
+		}
+	}
+
+	static void clear() {
+		KNOWN.clear();
+	}
+}
