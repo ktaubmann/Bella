@@ -5,7 +5,6 @@ import java.lang.reflect.Method;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 
 import org.eclipse.core.resources.IFile;
@@ -93,12 +92,12 @@ public final class SdkAdtBackend implements AdtBackend {
 		Object uri = Reflect.call(ref, "getUri");
 		String name = Reflect.string(ref, "getName");
 		String type = Reflect.string(ref, "getType");
-		if (uri == null || name == null) {
+		String path = uri == null ? null : uri instanceof URI u ? u.getPath() : String.valueOf(uri);
+		AdtEditorObject obj = AdtEditorObject.of(abap.getDestinationId(), path, name, type);
+		if (obj == null) {
 			Reflect.once("object reference " + ref.getClass().getName() + " without URI or name");
-			return Optional.empty();
 		}
-		String path = uri instanceof URI u ? u.getPath() : String.valueOf(uri);
-		return Optional.of(new AdtEditorObject(abap.getDestinationId(), path, name.toUpperCase(Locale.ROOT), type));
+		return Optional.ofNullable(obj);
 	}
 
 	/** ADT exposes the repository object of an editor as an IAdtObjectReference adapter. */
