@@ -15,11 +15,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.llm.ChatRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.llm.StreamListener;
+import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
@@ -48,7 +50,10 @@ class CopilotProviderTest {
 		fake.script = (p, id, sid, text) -> {
 			p.update(sid, "agent_message_chunk", "SELECT * FROM vbak");
 			p.update(sid, "agent_message_chunk", " INTO TABLE @rt_orders.");
-			p.reply(id, FakeAcp.stopReason("end_turn"));
+			JsonObject result = FakeAcp.stopReason("end_turn");
+			result.add("usage", Json.parseObject(
+					"{\"inputTokens\":15482,\"outputTokens\":984,\"cachedReadTokens\":7,\"cachedWriteTokens\":15479}"));
+			p.reply(id, result);
 		};
 		StringBuilder streamed = new StringBuilder();
 		ChatResult r = provider.chat(request(ChatRequest.Purpose.COMPLETION, List.of()), new StreamListener() {
@@ -60,6 +65,7 @@ class CopilotProviderTest {
 
 		assertEquals("SELECT * FROM vbak INTO TABLE @rt_orders.", r.text());
 		assertEquals(r.text(), streamed.toString());
+		assertEquals(new Usage(15482, 984, 7, 15479), r.usage());
 		FakeAcp.Proc p = fake.started.get(0);
 		assertEquals("<instructions>\nNur ABAP-Code.\n</instructions>\n\nMETHOD get_orders.", p.prompts.get(0));
 		assertEquals(0, p.newSessionParams.getAsJsonArray("mcpServers").size(), "no tools in single requests");

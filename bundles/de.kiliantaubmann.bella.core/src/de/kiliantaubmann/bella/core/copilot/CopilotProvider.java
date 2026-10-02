@@ -72,7 +72,7 @@ public final class CopilotProvider implements LlmProvider {
 					CopilotSession.promptParams(sessionId.get(), promptText(request)), 0);
 			t.finish();
 			cancel.throwIfCancelled();
-			return t.result(Json.str(result, "stopReason"), request.model());
+			return t.result(result, request.model());
 		} catch (Acp.AcpException e) {
 			throw new LlmException(0, e.isAuthRequired() ? CopilotCli.loginMessage() : e.getMessage());
 		} catch (IOException e) {

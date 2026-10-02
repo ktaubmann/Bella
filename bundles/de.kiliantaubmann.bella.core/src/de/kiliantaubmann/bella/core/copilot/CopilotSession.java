@@ -111,7 +111,7 @@ public final class CopilotSession implements Conversation {
 				throw new CancelledException();
 			}
 			listener.onNotice(Turn.notice(e));
-			listener.onTurnEnd(t.result(null, processModel));
+			listener.onTurnEnd(t.result((String) null, processModel));
 			return;
 		} catch (IOException e) {
 			finish(t);
@@ -129,7 +129,7 @@ public final class CopilotSession implements Conversation {
 		finish(t);
 		String stop = Json.str(result, "stopReason");
 		if (cancel.isCancelled() || "cancelled".equals(stop)) {
-			listener.onTurnEnd(t.result(stop, processModel));
+			listener.onTurnEnd(t.result(result, processModel));
 			throw new CancelledException();
 		}
 		switch (String.valueOf(stop)) {
@@ -139,7 +139,7 @@ public final class CopilotSession implements Conversation {
 		default -> {
 		}
 		}
-		listener.onTurnEnd(t.result(stop, processModel));
+		listener.onTurnEnd(t.result(result, processModel));
 	}
 
 	private void finish(Turn t) {

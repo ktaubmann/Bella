@@ -213,12 +213,30 @@ final class Turn {
 		};
 	}
 
+	/** Token counts of an ACP {@code session/prompt} result; {@link Usage#NONE} when it has none. */
+	static Usage usage(JsonObject promptResult) {
+		JsonObject u = promptResult == null ? null : Json.obj(promptResult, "usage");
+		if (u == null) {
+			return Usage.NONE;
+		}
+		return new Usage(Json.integer(u, "inputTokens", 0), Json.integer(u, "outputTokens", 0),
+				Json.integer(u, "cachedReadTokens", 0), Json.integer(u, "cachedWriteTokens", 0));
+	}
+
+	ChatResult result(JsonObject promptResult, String model) {
+		return result(Json.str(promptResult, "stopReason"), usage(promptResult), model);
+	}
+
 	ChatResult result(String stopReason, String model) {
+		return result(stopReason, Usage.NONE, model);
+	}
+
+	ChatResult result(String stopReason, Usage usage, String model) {
 		JsonArray content = new JsonArray();
 		if (text.length() > 0) {
 			content.add(Json.textBlock(text.toString()));
 		}
 		return new ChatResult(Json.message("assistant", content), text.toString(), List.of(),
-				stopReason(stopReason), null, model == null || model.isBlank() ? "copilot" : model, Usage.NONE);
+				stopReason(stopReason), null, model == null || model.isBlank() ? "copilot" : model, usage);
 	}
 }
