@@ -25,6 +25,7 @@ import com.google.gson.JsonObject;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
+import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.mcp.McpClient;
@@ -203,6 +204,19 @@ class CopilotSessionTest {
 		assertEquals("reject", optionOf(p, 105));
 		assertEquals(List.of("cp_denied:rm -rf /", "cp_denied:Write .bashrc", "cp_denied:curl evil.example"),
 				r.notices);
+	}
+
+	@Test
+	void turnEndCarriesTokenUsage() throws Exception {
+		fake.script = (p, id, sid, text) -> {
+			p.update(sid, "agent_message_chunk", "ok");
+			JsonObject result = FakeAcp.stopReason("end_turn");
+			result.add("usage", Json.parseObject("{\"inputTokens\":12296,\"outputTokens\":4274}"));
+			p.reply(id, result);
+		};
+		Recorder r = new Recorder();
+		session.ask("x", r, CancelToken.NONE);
+		assertEquals(new Usage(12296, 4274, 0, 0), r.last.usage());
 	}
 
 	private static String optionOf(FakeAcp.Proc p, int id) {
