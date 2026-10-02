@@ -365,4 +365,24 @@ class AdtToolProviderTest {
 				"/sap/bc/adt/runtime/dumps?$top=50"), dumpQueries);
 		assertEquals("Runtime error x", call(p, "adt_short_dumps", "{\"id\":\"abc d\"}").content());
 	}
+
+	@Test
+	void contextReportsConnectionErrorsAsError() {
+		FakeAdt adt = new FakeAdt();
+		adt.systems.add(new AdtSystem("dev", "S4H_100", "S4H", "100", "DEV", true));
+		adt.route("GET ", r -> {
+			throw new java.io.UncheckedIOException(new java.io.IOException("connection to partner broken"));
+		});
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolResult r = p.call("adt_context", Json.parseObject("{\"names\":[\"MARA\"]}"), CancelToken.NONE);
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("connection to partner broken"), r.content());
+		assertFalse(r.content().contains("exist"), r.content());
+
+		FakeAdt ok = AdtContextTest.system();
+		ok.systems.add(new AdtSystem("dev", "S4H_100", "S4H", "100", "DEV", true));
+		ToolResult missing = new AdtToolProvider(ok, () -> "dev").call("adt_context",
+				Json.parseObject("{\"names\":[\"ZNOPE\"]}"), CancelToken.NONE);
+		assertEquals("None of these objects exist in the system: ZNOPE", missing.content());
+	}
 }

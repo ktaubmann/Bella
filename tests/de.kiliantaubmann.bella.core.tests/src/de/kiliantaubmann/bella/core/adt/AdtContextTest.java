@@ -142,4 +142,16 @@ class AdtContextTest {
 		List<Reference> c = AdtContext.candidates("DATA x TYPE matnr.", "select mara");
 		assertEquals(List.of("MARA", "MATNR"), c.stream().map(Reference::name).toList());
 	}
+
+	@Test
+	void connectionErrorsAreNotReportedAsMissing() throws Exception {
+		AdtTransport broken = (r, c) -> {
+			throw new java.io.IOException("connection to partner broken");
+		};
+		AdtContext.Result r = AdtContext.build(new AdtClient(broken), List.of(new Reference("MARA", Hint.TABLE)),
+				AdtContext.Limits.DEFAULT, CancelToken.NONE);
+		assertTrue(r.isEmpty());
+		assertEquals(List.of(), r.notFound());
+		assertEquals(List.of("MARA: connection to partner broken"), r.failed());
+	}
 }
