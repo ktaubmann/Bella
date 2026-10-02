@@ -37,10 +37,12 @@ public final class AdtContext {
 	/**
 	 * @param text     Markdown blocks, one per object, empty when nothing was found
 	 * @param used     names of the objects in {@code text}
-	 * @param notFound candidates that do not exist in the system (or could not be read)
+	 * @param notFound candidates that do not exist in the system
 	 * @param skipped  candidates left out because a limit was reached
+	 * @param failed   candidates that could not be read, e.g. because the connection broke; as {@code NAME: error}
 	 */
-	public record Result(String text, List<String> used, List<String> notFound, List<String> skipped) {
+	public record Result(String text, List<String> used, List<String> notFound, List<String> skipped,
+			List<String> failed) {
 
 		public boolean isEmpty() {
 			return used.isEmpty();
@@ -71,6 +73,7 @@ public final class AdtContext {
 		List<String> used = new ArrayList<>();
 		List<String> notFound = new ArrayList<>();
 		List<String> skipped = new ArrayList<>();
+		List<String> failed = new ArrayList<>();
 		for (Reference ref : candidates) {
 			cancel.throwIfCancelled();
 			if (used.size() >= limits.maxObjects() || text.length() >= limits.maxChars()
@@ -99,16 +102,25 @@ public final class AdtContext {
 			} catch (IOException | RuntimeException e) {
 				cancel.throwIfCancelled();
 				Log.info("adt", "context: " + ref.name() + " not readable: " + e.getMessage());
-				notFound.add(ref.name());
+				if (e instanceof AdtException a && a.status() == 404) {
+					notFound.add(ref.name());
+				} else {
+					failed.add(ref.name() + ": " + e.getMessage());
+				}
 			}
 		}
 		if (!notFound.isEmpty() && !used.isEmpty()) {
 			text.append("Not found: ").append(String.join(", ", notFound)).append('\n');
 		}
+		if (!failed.isEmpty() && !used.isEmpty()) {
+			text.append("Could not read: ").append(String.join("; ", failed)).append('\n');
+		}
 		Log.info("adt", "context: " + candidates.size() + " candidates, used " + used + ", not found " + notFound
-				+ (skipped.isEmpty() ? "" : ", skipped " + skipped) + ", " + text.length() + " chars ("
+				+ (skipped.isEmpty() ? "" : ", skipped " + skipped)
+				+ (failed.isEmpty() ? "" : ", failed " + failed.size()) + ", " + text.length() + " chars ("
 				+ Log.millisSince(start) + " ms)");
-		return new Result(text.toString(), List.copyOf(used), List.copyOf(notFound), List.copyOf(skipped));
+		return new Result(text.toString(), List.copyOf(used), List.copyOf(notFound), List.copyOf(skipped),
+				List.copyOf(failed));
 	}
 
 	/** Exact-name search; among several hits the object type the code position suggests wins. */

@@ -295,8 +295,14 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.error("Cancelled.");
 		}
 		if (r.isEmpty()) {
-			return ToolResult.ok("None of these objects exist in the system: "
-					+ String.join(", ", candidates.stream().map(AbapReferences.Reference::name).toList()));
+			if (!r.failed().isEmpty()) {
+				return ToolResult.error("Could not read from the SAP system (this does not mean the objects are "
+						+ "missing): " + String.join("; ", r.failed()));
+			}
+			if (!r.notFound().isEmpty()) {
+				return ToolResult.ok("None of these objects exist in the system: " + String.join(", ", r.notFound()));
+			}
+			return ToolResult.ok("Not loaded (limit reached, use adt_read_source): " + String.join(", ", r.skipped()));
 		}
 		String text = r.text();
 		if (!r.skipped().isEmpty()) {
