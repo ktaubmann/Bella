@@ -430,8 +430,10 @@ class WorkbenchSmokeTest {
 		Shell shell = new Shell(Display.getCurrent());
 		try {
 			for (String[] lang : new String[][] {
-					{ "en", "What happens here?", "Bella Chat", "Check with ATC and fix…", "Review transport request…" },
-					{ "de", "Was passiert hier?", "Bella-Chat", "Mit ATC prüfen und beheben…", "Transportauftrag reviewen…" } }) {
+					{ "en", "What happens here?", "Bella Chat", "Check with ATC and fix…", "Review transport request…",
+							"Review code (chat)" },
+					{ "de", "Was passiert hier?", "Bella-Chat", "Mit ATC prüfen und beheben…", "Transportauftrag reviewen…",
+							"Code prüfen (Chat)" } }) {
 				prefs.setValue(Prefs.UI_LANGUAGE, lang[0]);
 				Menu menu = new Menu(shell, SWT.POP_UP);
 				BellaMenuItems items = new BellaMenuItems(BellaMenuItems.POPUP_ID);
@@ -440,8 +442,9 @@ class WorkbenchSmokeTest {
 				List<String> labels = java.util.Arrays.stream(menu.getItems()).map(MenuItem::getText)
 						.filter(t -> !t.isEmpty()).toList();
 				assertTrue(labels.get(0).startsWith(lang[1]), labels.toString());
-				assertEquals(10, labels.size(), labels.toString());
+				assertEquals(11, labels.size(), labels.toString());
 				assertTrue(labels.contains(lang[3]), labels.toString());
+				assertTrue(labels.contains(lang[5]), labels.toString());
 				assertTrue(labels.contains(lang[4]), labels.toString());
 				menu.dispose();
 				ChatView view = ChatView.open().orElseThrow();
