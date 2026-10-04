@@ -166,4 +166,23 @@ class AdtClientTest {
 			assertTrue(log.lines.get(1).startsWith("INFO [adt] [stateful] GET /sap"), log.all());
 		}
 	}
+
+	private static String atcFinding(String prio, int line, String title) {
+		return "<atcfinding:finding atcfinding:location=\"/sap/bc/adt/programs/programs/zrep/source/main#start=" + line
+				+ ",0\" atcfinding:priority=\"" + prio + "\" atcfinding:checkTitle=\"C\" atcfinding:messageTitle=\""
+				+ title + "\"/>";
+	}
+
+	@Test
+	void atcFindingsAreSortedByPriorityThenLine() throws Exception {
+		String xml = "<atcworklist:worklist xmlns:atcworklist=\"http://www.sap.com/adt/atc/worklist\""
+				+ " xmlns:atcfinding=\"http://www.sap.com/adt/atc/finding\">" + atcFinding("3", 1, "info")
+				+ atcFinding("2", 9, "warn late") + atcFinding("1", 20, "error") + atcFinding("2", 4, "warn early")
+				+ "</atcworklist:worklist>";
+		List<AdtClient.Message> m = AdtClient.parseAtcFindings(xml);
+		assertEquals(List.of("C: error", "C: warn early", "C: warn late", "C: info"),
+				m.stream().map(AdtClient.Message::text).toList());
+		assertEquals(List.of("Error", "Warning", "Warning", "Info"),
+				m.stream().map(AdtClient.Message::severity).toList());
+	}
 }

@@ -5,6 +5,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -766,7 +767,23 @@ public final class AdtClient {
 			String check = AdtXml.attr(f, "checkTitle");
 			out.add(new Message(sev, check.isEmpty() ? title : check + ": " + title, location, lineOf(location)));
 		}
+		// errors first, then warnings, then infos; within a priority by object and line
+		out.sort(Comparator.comparingInt((Message m) -> atcRank(m.severity()))
+				.thenComparing(m -> objectUri(m.uri()))
+				.thenComparingInt(Message::line));
 		return out;
+	}
+
+	private static int atcRank(String severity) {
+		return switch (severity) {
+		case "Error" -> 0;
+		case "Warning" -> 1;
+		default -> 2;
+		};
+	}
+
+	private static String objectUri(String uri) {
+		return uri == null ? "" : AdtObjectRef.objectUri(uri);
 	}
 
 	/** Where-used list. */
