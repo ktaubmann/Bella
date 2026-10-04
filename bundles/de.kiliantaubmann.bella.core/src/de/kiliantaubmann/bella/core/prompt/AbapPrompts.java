@@ -78,8 +78,30 @@ public final class AbapPrompts {
 				- Be concise and concrete. Put ABAP code in ```abap fenced blocks.
 				- Write ABAP comments in %s.
 				- %s
-				""".formatted(commentLanguage, languageRule()) + conventions.promptSection();
+				""".formatted(commentLanguage, languageRule()) + CLEAN_ABAP + conventions.promptSection();
 	}
+
+	/**
+	 * Core rules for code Bella writes or reviews. Based on SAP's Clean ABAP
+	 * cheat sheet (https://github.com/SAP/styleguides, CC BY 3.0).
+	 */
+	static final String CLEAN_ABAP = """
+
+			Clean ABAP (SAP style guide) for code you write, change or review:
+			- Descriptive, pronounceable names; nouns for classes, verbs for methods; no cryptic abbreviations.
+			- Small methods that do one thing; few IMPORTING parameters (at most about 3); prefer RETURNING to
+			  EXPORTING; no boolean input parameters that switch behavior.
+			- Class-based exceptions instead of return codes or sy-subrc passed around; do not catch and ignore.
+			- abap_bool with abap_true/abap_false and xsdbool( ), not 'X' and space.
+			- Modern syntax: inline declarations, NEW instead of CREATE OBJECT, functional calls instead of
+			  CALL METHOD, VALUE/CORRESPONDING/COND/SWITCH, string templates |...| instead of CONCATENATE.
+			- Tables: line_exists( ) or READ TABLE ... TRANSPORTING NO FIELDS to test existence; INSERT INTO
+			  TABLE for sorted/hashed tables; avoid DEFAULT KEY.
+			- Comments explain why, not what; comment with ", not *; no commented-out or dead code.
+			- One statement per line, lines up to 120 characters, consistent formatting (Pretty Printer).
+			- Project naming rules (if configured below) and the style of the existing code take precedence over
+			  Clean ABAP naming advice such as avoiding prefixes.
+			""";
 
 	public Prompt explain(EditorContext ctx) {
 		String user = """
@@ -246,7 +268,11 @@ public final class AbapPrompts {
 		return new Prompt(chatSystem(), user);
 	}
 
-	/** Chat message that starts the review of a transport request. */
+	/**
+	 * Chat message that starts the review of a transport request. The answer
+	 * puts the verdict and the most important points first; the report layout
+	 * follows ARC-1's sap-transport-review skill (MIT).
+	 */
 	public String reviewTransport(String request, String system) {
 		return """
 				Review transport request %s%s before it is released.
@@ -254,11 +280,22 @@ public final class AbapPrompts {
 				1. Call adt_transport_review for it. Read more where you need it: adt_transport_review with 'object' \
 				for a whole diff, adt_read_source for surrounding code, adt_context for used objects. Do not change, \
 				activate or release anything.
-				2. Answer with these sections:
-				   **What the transport does**: the purpose in business terms and the objects involved.
-				   **Findings**: per object, each finding with its severity (blocking / should fix / note) and line: \
-				correctness, error handling, performance (e.g. SELECT in loops, missing WHERE), clean code, \
-				released APIs on ABAP Cloud.
+				2. Rate every finding:
+				   - blocking: syntax or activation errors, ATC priority 1, failing ABAP Unit tests, used objects \
+				that are missing, inactive or held in another request, security risks;
+				   - should fix: ATC priority 2, performance (e.g. SELECT in loops, missing WHERE), error handling, \
+				clear Clean ABAP violations, missing released APIs on ABAP Cloud;
+				   - note: style, naming, comments, ATC priority 3.
+				3. Answer with these sections in this order, most important first:
+				   **Verdict**: one line, "Ready to release: yes", "no" or "only after …".
+				   **Blocking**: at most 5 points across all objects, most important first, each with object, \
+				line, problem and fix. Write "None" when there are none.
+				   **Should fix**: at most 5 points in the same form; when there are more, add "+N more below".
+				   **Overview**: a table Object | Type | Change (new, changed, deleted, metadata only) | +/- lines \
+				| Flags (blocking, should fix, not activated, baseline unavailable).
+				   **What the transport does**: the purpose in business terms.
+				   **Findings per object**: every finding with its rating and line; name the Clean ABAP rule \
+				where one applies.
 				   **Security**: missing AUTHORITY-CHECK where data is read or changed, dynamic SQL or dynamic \
 				WHERE/ORDER BY built from input (injection), CALL 'SYSTEM' or kernel calls, CLIENT SPECIFIED or \
 				cross-client access, hard-coded users, passwords, hosts or keys, debugging leftovers (BREAK-POINT, \
@@ -266,7 +303,8 @@ public final class AbapPrompts {
 				   **Checks**: syntax check, ATC and ABAP Unit results in short.
 				   **Completeness**: objects not activated, objects used but missing or held in other requests, \
 				anything that will fail in the target system.
-				   **Verdict**: ready to release, or what must be done first, as a short list.
+				   **Coverage**: in one or two lines, what could not be checked (diff cut, limit reached, no earlier \
+				version).
 				Base every finding on the dossier or on code you read; say so when something could not be checked.
 				""".formatted(request, system == null || system.isBlank() ? "" : " in system " + system);
 	}

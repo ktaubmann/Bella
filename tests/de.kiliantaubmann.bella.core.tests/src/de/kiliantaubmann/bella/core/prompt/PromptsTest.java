@@ -87,5 +87,24 @@ class PromptsTest {
 			assertTrue(p.contains(part), part);
 		}
 		assertTrue(new AbapPrompts(null, null).chatSystem().contains("adt_transport_review"));
+		int verdict = p.indexOf("**Verdict**");
+		int blocking = p.indexOf("**Blocking**");
+		int shouldFix = p.indexOf("**Should fix**");
+		int overview = p.indexOf("**Overview**");
+		int purpose = p.indexOf("**What the transport does**");
+		assertTrue(verdict >= 0 && verdict < blocking && blocking < shouldFix && shouldFix < overview
+				&& overview < purpose, "verdict and top points come first");
+		assertTrue(p.contains("at most 5 points"), p);
+		assertTrue(p.contains("**Coverage**"), p);
+	}
+
+	@Test
+	void cleanAbapRulesInChatButNotInCompletion() {
+		String system = new AbapPrompts(null, null).chatSystem();
+		assertTrue(system.contains("Clean ABAP"), system);
+		assertTrue(system.contains("NEW instead of CREATE OBJECT"), system);
+		assertTrue(system.contains("Project naming rules (if configured below) and the style of the existing code take"),
+				system);
+		assertFalse(AbapPrompts.completion("DATA lv", "", "ZREP").system().contains("Clean ABAP"));
 	}
 }

@@ -50,7 +50,7 @@ A model that does not know your system guesses field names and signatures. Bella
 Tables and structures are read as source on newer ABAP releases (7.52 and later). On older releases, and for data elements, domains, table types and message classes, Bella summarizes the object's ADT description.
 
 - **System knowledge**: `adt_list_systems` shows each system's SAP_BASIS release or whether it is an ABAP Cloud system, and the editor actions tell the model the release. `adt_transport_info` asks SAP which transport request a change needs, `adt_short_dumps` lists and reads runtime errors (ST22).
-- **Transport review**: `adt_list_transports` lists requests, `adt_transport_review` collects a review dossier for one: per source the diff between the version in the request and the version before it (version choice as in ARC-1's transport diff), syntax check, ATC and ABAP Unit in one run each, objects not activated, and customer objects the changed code uses that are missing, inactive or held in another open request.
+- **Transport review**: `adt_list_transports` lists requests, `adt_transport_review` collects a review dossier for one: per source the diff between the version in the request and the version before it (version choice as in ARC-1's transport diff), syntax check, ATC and ABAP Unit in one run each, objects not activated, and customer objects the changed code uses that are missing, inactive or held in another open request. The review answer starts with the verdict and at most five blocking and five should-fix points, then an overview table per object, then the details.
 
 **Compared with ARC-1:** Bella's tools now cover what ARC-1's `SAPRead` (incl. single methods, grep and active/inactive versions), `SAPContext`, read-only `SAPTransport` (incl. the transport diff) and the dumps of `SAPDiagnose` offer, plus a package allowlist for writes. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log and rate limits, Git (gCTS/abapGit), or when the tools should run on a server instead of in Eclipse.
 
@@ -279,6 +279,8 @@ The Claude integration deliberately uses `java.net.http` instead of the Anthropi
 ## License, disclaimer and trademarks
 
 [MIT](LICENSE) © 2026 Kilian Taubmann
+
+Bella's Clean ABAP rules in the prompts are based on SAP's [Clean ABAP style guide](https://github.com/SAP/styleguides) (CC BY 3.0). The layout of the transport review report draws on ARC-1's [`sap-transport-review`](https://github.com/arc-mcp/arc-1/tree/main/skills/sap-transport-review) skill (MIT).
 
 Bella is free software provided as is, without warranty. It can change ABAP code and, after you confirm, write and activate objects in SAP systems. Review what it generates, use it in development systems, and keep your usual transport and review process. You are responsible for the code you save and activate.
 
