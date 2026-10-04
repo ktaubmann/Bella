@@ -123,7 +123,7 @@ class WorkbenchSmokeTest {
 		assertNotNull(BellaPlugin.getDefault());
 		ICommandService commands = PlatformUI.getWorkbench().getService(ICommandService.class);
 		for (String id : List.of("openChat", "explain", "refactor", "unitTest", "generate", "rewrite",
-				"implementMethod", "complete", "atcFix", "reviewTransport")) {
+				"implementMethod", "complete", "atcFix", "reviewTransport", "reviewCode")) {
 			Command c = commands.getCommand("de.kiliantaubmann.bella.ui." + id);
 			assertTrue(c.isDefined(), id);
 		}

@@ -27,9 +27,9 @@ public class BellaMenuItems extends CompoundContributionItem implements IWorkben
 	private static final String CMD = "de.kiliantaubmann.bella.ui.";
 	/** Command names; {@code null} is a separator. */
 	private static final String[] POPUP = { "explain", null, "generate", "rewrite", "implementMethod", "complete",
-			null, "atcFix", "refactor", "unitTest", "reviewTransport", "openChat" };
+			null, "reviewCode", "atcFix", "refactor", "unitTest", "reviewTransport", "openChat" };
 	private static final String[] MAIN = { "openChat", null, "explain", "generate", "rewrite", "implementMethod",
-			"complete", "atcFix", "refactor", "unitTest", null, "reviewTransport" };
+			"complete", "reviewCode", "atcFix", "refactor", "unitTest", null, "reviewTransport" };
 
 	private IServiceLocator services;
 

@@ -138,6 +138,46 @@ public final class AbapPrompts {
 		return new Prompt(chatSystem(), user);
 	}
 
+	/**
+	 * Code review of the selection (or routine) in the chat: Bella's style
+	 * check, syntax check and ATC first, then a prioritized report.
+	 */
+	public Prompt reviewCode(EditorContext ctx) {
+		String user = """
+				Review the selected ABAP code for correctness, performance, Clean ABAP and security. Read only: do not \
+				change, save or activate anything.
+
+				1. Run abap_lint on the selected code. If the object exists in the SAP system, also run \
+				adt_syntax_check and adt_atc_check on it (they check the saved version), and look up definitions \
+				with adt_context where a finding depends on them.
+				2. Check in particular: database access (SELECT in loops, FOR ALL ENTRIES without an empty check, \
+				SELECT * or without WHERE, missing indexes on WHERE fields, SELECT … ENDSELECT), internal tables \
+				(nested LOOP … WHERE on standard tables, READ TABLE without key, wrong table kind), COMMIT or RFC \
+				in loops, error handling (sy-subrc, exceptions, empty CATCH), authority checks, Clean ABAP.
+				3. Answer with these sections, most important first:
+				   **Verdict**: one line on the overall state.
+				   **Blocking**: bugs, syntax errors, ATC priority 1 and security risks; at most 5, each with \
+				line content, problem and fix. Write "None" when there are none.
+				   **Should fix**: performance and robustness; at most 5, same form.
+				   **Notes**: Clean ABAP and style, short.
+				   **Improved code**: for the most important points, the changed code in ```abap blocks.
+				Refer to line content, not line numbers alone. Say which checks could not run.
+
+				Object: %s
+
+				Selected code:
+				```abap
+				%s
+				```
+
+				Surrounding source (for context only):
+				```abap
+				%s
+				```
+				""".formatted(ctx.describeObject(), ctx.selection(), surrounding(ctx));
+		return new Prompt(chatSystem(), user);
+	}
+
 	public Prompt suggestUnitTest(EditorContext ctx) {
 		String user = """
 				Write an ABAP Unit test class (FOR TESTING, RISK LEVEL HARMLESS, DURATION SHORT) for the selected \

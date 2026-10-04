@@ -107,4 +107,18 @@ class PromptsTest {
 				system);
 		assertFalse(AbapPrompts.completion("DATA lv", "", "ZREP").system().contains("Clean ABAP"));
 	}
+
+	@Test
+	void codeReviewRunsTheChecksAndPutsBlockingPointsFirst() {
+		EditorContext ctx = new EditorContext("ZREP", "PROG/P", "S4H_100", "REPORT zrep.\nSELECT * FROM mara INTO TABLE @DATA(x).",
+				"SELECT * FROM mara INTO TABLE @DATA(x).", 13);
+		Prompt p = new AbapPrompts(null, null).reviewCode(ctx);
+		for (String part : List.of("abap_lint", "adt_syntax_check", "adt_atc_check", "FOR ALL ENTRIES", "Read only")) {
+			assertTrue(p.user().contains(part), part);
+		}
+		assertTrue(p.user().indexOf("**Verdict**") < p.user().indexOf("**Blocking**")
+				&& p.user().indexOf("**Blocking**") < p.user().indexOf("**Should fix**"), p.user());
+		assertTrue(p.user().contains("SELECT * FROM mara INTO TABLE @DATA(x)."));
+		assertTrue(p.system().contains("Clean ABAP"));
+	}
 }

@@ -29,6 +29,8 @@
             name="%cmd.explain" description="%cmd.explain.desc"/>
       <command id="de.kiliantaubmann.bella.ui.refactor" categoryId="de.kiliantaubmann.bella.ui.commands"
             name="%cmd.refactor" description="%cmd.refactor.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.reviewCode" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.reviewCode" description="%cmd.reviewCode.desc"/>
       <command id="de.kiliantaubmann.bella.ui.unitTest" categoryId="de.kiliantaubmann.bella.ui.commands"
             name="%cmd.unitTest" description="%cmd.unitTest.desc"/>
       <command id="de.kiliantaubmann.bella.ui.generate" categoryId="de.kiliantaubmann.bella.ui.commands"
@@ -49,6 +51,7 @@
       <image commandId="de.kiliantaubmann.bella.ui.openChat" icon="icons/bella.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.explain" icon="icons/explain.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.refactor" icon="icons/refactor.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.reviewCode" icon="icons/atc.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.unitTest" icon="icons/test.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.generate" icon="icons/generate.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.rewrite" icon="icons/rewrite.png"/>
@@ -64,6 +67,9 @@
          <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
       </handler>
       <handler commandId="de.kiliantaubmann.bella.ui.refactor" class="de.kiliantaubmann.bella.ui.handlers.RefactorHandler">
+         <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
+      </handler>
+      <handler commandId="de.kiliantaubmann.bella.ui.reviewCode" class="de.kiliantaubmann.bella.ui.handlers.ReviewCodeHandler">
          <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
       </handler>
       <handler commandId="de.kiliantaubmann.bella.ui.unitTest" class="de.kiliantaubmann.bella.ui.handlers.UnitTestHandler">

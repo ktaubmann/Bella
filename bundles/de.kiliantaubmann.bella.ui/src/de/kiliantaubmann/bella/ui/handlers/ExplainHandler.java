@@ -15,7 +15,7 @@ public class ExplainHandler extends EditorHandler {
 
 	/** Chat action a subclass performs on the code. */
 	protected enum Kind {
-		EXPLAIN, REFACTOR, UNIT_TEST
+		EXPLAIN, REFACTOR, UNIT_TEST, REVIEW
 	}
 
 	protected Kind kind() {
@@ -30,6 +30,7 @@ public class ExplainHandler extends EditorHandler {
 		case EXPLAIN -> prompts.explain(c);
 		case REFACTOR -> prompts.suggestRefactoring(c);
 		case UNIT_TEST -> prompts.suggestUnitTest(c);
+		case REVIEW -> prompts.reviewCode(c);
 		};
 		String what = firstLine(c.selection());
 		String display = Messages.fmt("chat.display." + kind().name().toLowerCase(), c.objectName(), what);
