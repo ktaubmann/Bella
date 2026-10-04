@@ -385,4 +385,24 @@ class AdtToolProviderTest {
 				Json.parseObject("{\"names\":[\"ZNOPE\"]}"), CancelToken.NONE);
 		assertEquals("None of these objects exist in the system: ZNOPE", missing.content());
 	}
+
+	@Test
+	void inactiveListIsReusedAcrossReadsAndDroppedAfterAWrite() {
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/oo/classes/zcl_a/source/main", r -> new AdtResponse(200, "text/plain", CLASS_SRC))
+				.route("GET /sap/bc/adt/activation/inactiveobjects", r -> FakeAdt.ok(
+						"<ioc:inactiveObjects xmlns:ioc=\"http://www.sap.com/abapxml/inactiveCtsObjects\"/>"))
+				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/oo/classes/zcl_a/source/main", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=UNLOCK", r -> FakeAdt.ok(""));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		String json = "{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}";
+		call(p, "adt_read_source", json);
+		call(p, "adt_read_source", json);
+		assertEquals(1, adt.log.stream().filter(l -> l.contains("inactiveobjects")).count());
+		call(p, "adt_write_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"source\":\"x\"}");
+		call(p, "adt_read_source", json);
+		assertEquals(2, adt.log.stream().filter(l -> l.contains("inactiveobjects")).count());
+	}
 }

@@ -173,6 +173,14 @@ public final class AdtRevisions {
 	}
 
 	public static Baseline baseline(Pair pair, List<Revision> all) {
+		return baseline(pair, all, Set.of());
+	}
+
+	/**
+	 * How the diff relates to the request. Versions recorded under the request
+	 * itself (e.g. one per task) do not count as older versions.
+	 */
+	public static Baseline baseline(Pair pair, List<Revision> all, Set<String> transportIds) {
 		if (pair.current() == null) {
 			return Baseline.UNAVAILABLE;
 		}
@@ -185,7 +193,7 @@ public final class AdtRevisions {
 		}
 		long current = num(pair.current());
 		boolean older = all.stream().anyMatch(r -> !r.number().isEmpty() && !WORK_STATES.contains(r.number())
-				&& num(r) < current);
+				&& !belongs(r, transportIds) && num(r) < current);
 		return older ? Baseline.AMBIGUOUS : Baseline.CREATED;
 	}
 }

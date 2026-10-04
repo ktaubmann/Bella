@@ -185,4 +185,27 @@ class AdtClientTest {
 		assertEquals(List.of("Error", "Warning", "Warning", "Info"),
 				m.stream().map(AdtClient.Message::severity).toList());
 	}
+
+	@Test
+	void failedUnlockDoesNotHideASuccessfulWrite() throws Exception {
+		AdtTransport.Session session = new AdtTransport.Session() {
+			@Override
+			public AdtResponse send(AdtRequest r, CancelToken c) throws java.io.IOException {
+				if (r.path().contains("_action=LOCK")) {
+					return new AdtResponse(200, "application/xml",
+							"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>");
+				}
+				if (r.path().contains("_action=UNLOCK")) {
+					throw new java.io.IOException("connection broken");
+				}
+				return new AdtResponse(200, "text/plain", "");
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+		assertEquals("", AdtClient.writeSource(session, "/sap/bc/adt/programs/programs/zrep", null, "REPORT zrep.",
+				null, CancelToken.NONE));
+	}
 }

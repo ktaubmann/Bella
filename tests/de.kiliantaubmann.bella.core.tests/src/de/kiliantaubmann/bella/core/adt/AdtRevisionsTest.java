@@ -109,4 +109,12 @@ class AdtRevisionsTest {
 		assertEquals("00002", p.current().number());
 		assertEquals("00001", p.previous().number());
 	}
+
+	@Test
+	void versionsOfTheSameRequestDoNotMakeACreatedObjectAmbiguous() {
+		List<Revision> r = List.of(rev("00002", "2026-04-02T10:00:00Z", "T2"), rev("00001", "2026-04-01T10:00:00Z", "T1"));
+		Pair p = AdtRevisions.select(r, Set.of("R1", "T1", "T2"));
+		assertNull(p.previous());
+		assertEquals(Baseline.CREATED, AdtRevisions.baseline(p, r, Set.of("R1", "T1", "T2")));
+	}
 }

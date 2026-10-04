@@ -13,11 +13,12 @@ final class AdtErrors {
 	static String message(AdtResponse r) {
 		String body = r.body() == null ? "" : r.body();
 		try {
-			List<Element> msgs = AdtXml.elements(AdtXml.parse(body), "message");
+			org.w3c.dom.Document doc = AdtXml.parse(body);
+			List<Element> msgs = AdtXml.elements(doc, "message");
 			if (!msgs.isEmpty() && !AdtXml.text(msgs.get(0)).isEmpty()) {
 				return "HTTP " + r.status() + ": " + AdtXml.text(msgs.get(0));
 			}
-			List<Element> texts = AdtXml.elements(AdtXml.parse(body), "localizedMessage");
+			List<Element> texts = AdtXml.elements(doc, "localizedMessage");
 			if (!texts.isEmpty()) {
 				return "HTTP " + r.status() + ": " + AdtXml.text(texts.get(0));
 			}

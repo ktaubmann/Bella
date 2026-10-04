@@ -113,8 +113,11 @@ final class NamingCheck {
 			case "CLASS" -> {
 				String third = w.size() > 2 ? w.get(2) : "";
 				String upper = text.toUpperCase(Locale.ROOT);
-				if (third.equals("DEFINITION") && !upper.contains(" DEFERRED") && !upper.matches(".*\\sLOAD$")) {
-					NamingRules.Kind kind = upper.contains(" PUBLIC") ? NamingRules.Kind.CLASS
+				if (third.equals("DEFINITION") && !upper.contains(" DEFERRED") && !upper.matches(".*\\sLOAD$")
+						&& !upper.matches("(?s).*\\sLOCAL\\s+FRIENDS\\b.*")) {
+					// PUBLIC as a class option, not CREATE PUBLIC
+					boolean global = upper.replaceAll("CREATE\\s+PUBLIC", "").matches("(?s).*\\sPUBLIC\\b.*");
+					NamingRules.Kind kind = global ? NamingRules.Kind.CLASS
 							: upper.contains("FOR TESTING") ? NamingRules.Kind.TEST_CLASS : NamingRules.Kind.LOCAL_CLASS;
 					out.add(new Name(kind, rawWord(text, 1), at));
 				}

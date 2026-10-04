@@ -563,8 +563,13 @@ public final class AdtClient {
 			}
 			return tr == null ? "" : tr;
 		} finally {
-			exchange(session, AdtRequest.post(objectUri + "?_action=UNLOCK&lockHandle=" + enc(lock.handle()), null, null,
-					null), CancelToken.NONE);
+			// an unlock failure must not hide the outcome of the write; the lock ends with the session anyway
+			try {
+				exchange(session, AdtRequest.post(objectUri + "?_action=UNLOCK&lockHandle=" + enc(lock.handle()), null,
+						null, null), CancelToken.NONE);
+			} catch (IOException e) {
+				Log.warn("adt", "unlock of " + objectUri + " failed: " + e.getMessage());
+			}
 		}
 	}
 

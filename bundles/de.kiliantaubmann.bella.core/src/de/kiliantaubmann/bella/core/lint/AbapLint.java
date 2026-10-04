@@ -57,26 +57,67 @@ public final class AbapLint {
 		int[] lineStarts = lineStarts(source);
 		List<Statement> statements = AbapStructureScanner.statements(source);
 		int loopDepth = 0;
+		int itabLoops = 0;
 		int openSelect = -1;
+		int routineStart = 0;
 		for (int i = 0; i < statements.size(); i++) {
 			Statement st = statements.get(i);
 			String raw = st.text().trim().toUpperCase(Locale.ROOT);
-			String code = LITERAL.matcher(st.text()).replaceAll("''").trim().toUpperCase(Locale.ROOT);
-			if (code.endsWith(".")) {
-				code = code.substring(0, code.length() - 1).trim();
-			}
+			String code = normalized(st);
 			List<String> w = List.of(code.split("\\s+"));
 			String first = w.get(0).replace(":", "");
 			String second = w.size() > 1 ? w.get(1) : "";
 			int line = lineOf(lineStarts, st.start());
 
 			switch (first) {
-			case "METHOD", "FORM", "FUNCTION", "MODULE" -> loopDepth = 0;
+			case "METHOD", "FORM", "FUNCTION", "MODULE" -> {
+				loopDepth = 0;
+				itabLoops = 0;
+				routineStart = i;
+			}
 			case "LOOP", "DO", "WHILE", "PROVIDE" -> loopDepth++;
 			case "ENDLOOP", "ENDDO", "ENDWHILE", "ENDPROVIDE" -> loopDepth = Math.max(0, loopDepth - 1);
 			default -> {
 				// no block change
 			}
+			}
+
+			boolean inLoop = loopDepth > 0 || openSelect >= 0;
+			if (first.equals("LOOP")) {
+				if (itabLoops > 0 && code.contains(" WHERE ") && !code.matches("LOOP\\s+AT\\s+GROUP\\b.*")) {
+					out.add(new Finding(line, "nested_loop_where", Severity.INFO,
+							"LOOP … WHERE inside a LOOP scans the inner table once per outer row unless it is a SORTED "
+									+ "or HASHED table (or has a secondary key) on the WHERE fields."));
+				}
+				itabLoops++;
+			} else if (first.equals("ENDLOOP")) {
+				itabLoops = Math.max(0, itabLoops - 1);
+			}
+			if (first.equals("COMMIT") && inLoop) {
+				out.add(new Finding(line, "commit_in_loop", Severity.WARNING,
+						"COMMIT WORK inside a loop; commit once after the loop (one LUW) unless the loop is a deliberate "
+								+ "package processing."));
+			}
+			if (first.equals("CALL") && second.equals("FUNCTION") && inLoop && code.contains(" DESTINATION ")
+					&& !code.contains("STARTING NEW TASK")) {
+				out.add(new Finding(line, "rfc_in_loop", Severity.WARNING,
+						"Synchronous RFC inside a loop costs one round trip per iteration; collect the data and call once."));
+			}
+
+			// ---- Clean ABAP
+			if (raw.matches("(?s).*(?:=|<>|\\bEQ|\\bNE)\\s*'X'(?:\\s|\\.|\\)|$).*")
+					|| raw.matches("(?s).*(?:=|<>|\\bEQ|\\bNE)\\s*SPACE(?:\\s|\\.|\\)|$).*")
+					&& raw.matches("(?s).*\\b(?:IF|ELSEIF|CHECK|WHILE)\\b.*")) {
+				out.add(new Finding(line, "boolean_literal", Severity.INFO,
+						"Use abap_true / abap_false (and xsdbool( )) instead of 'X' and space for booleans (Clean ABAP)."));
+			}
+			if (first.equals("CONCATENATE")) {
+				out.add(new Finding(line, "concatenate", Severity.INFO,
+						"Use a string template |…{ x }…| or && instead of CONCATENATE (Clean ABAP)."));
+			}
+			if ((first.equals("METHODS") || first.equals("CLASS-METHODS")) && importingCount(code) > 3) {
+				out.add(new Finding(line, "too_many_importing", Severity.INFO, "Method has " + importingCount(code)
+						+ " IMPORTING parameters; aim for at most 3 (Clean ABAP), e.g. pass a structure or split the method."));
 			}
 
 			// ---- obsolete statements
@@ -132,6 +173,19 @@ public final class AbapLint {
 					out.add(new Finding(line, "select_star", Severity.WARNING,
 							"SELECT * reads all columns; select only the fields you need."));
 				}
+				if (code.contains("FOR ALL ENTRIES")) {
+					Matcher fae = FAE_TABLE.matcher(code);
+					if (fae.find() && !emptyChecked(statements, routineStart, i, fae.group(1))) {
+						out.add(new Finding(line, "fae_empty_check", Severity.WARNING,
+								"FOR ALL ENTRIES IN " + fae.group(1).toLowerCase(Locale.ROOT) + " without checking that the "
+										+ "table is not empty; an empty table makes the WHERE condition void and reads "
+										+ "the whole table."));
+					}
+				} else if (!code.contains(" WHERE ") && !code.matches(".*\\bUP\\s+TO\\b.*") && !aggregateOnly(code)) {
+					out.add(new Finding(line, "select_no_where", Severity.INFO,
+							"SELECT without WHERE reads the whole table; fine for small buffered customizing tables, "
+									+ "otherwise restrict it or add UP TO n ROWS."));
+				}
 				if (loopDepth > 0 || openSelect >= 0) {
 					out.add(new Finding(line, "select_in_loop", Severity.WARNING,
 							"SELECT inside a loop hits the database once per iteration; read all rows before the loop (JOIN, FOR ALL ENTRIES or a range)."));
@@ -144,8 +198,7 @@ public final class AbapLint {
 					out.add(new Finding(line, "select_single_subrc", Severity.WARNING,
 							"The result of SELECT SINGLE is not checked (sy-subrc or IS INITIAL)."));
 				}
-				if (!single && !code.matches(".*\\b(?:INTO|APPENDING)\\s+(?:CORRESPONDING\\s+FIELDS\\s+OF\\s+)?TABLE\\b.*")
-						&& !code.contains("COUNT(") && isLoopSelect(statements, i)) {
+				if (opensLoop(code) && isLoopSelect(statements, i)) {
 					openSelect = line;
 					out.add(new Finding(line, "select_endselect", Severity.WARNING,
 							"SELECT … ENDSELECT fetches row by row; read INTO TABLE and loop over the table."));
@@ -191,7 +244,11 @@ public final class AbapLint {
 		for (int j = index + 1; j < statements.size(); j++) {
 			String f = firstWord(statements.get(j));
 			switch (f) {
-			case "SELECT" -> depth++;
+			case "SELECT" -> {
+				if (opensLoop(normalized(statements.get(j)))) {
+					depth++;
+				}
+			}
 			case "ENDSELECT" -> {
 				if (depth == 0) {
 					return true;
@@ -207,6 +264,81 @@ public final class AbapLint {
 			}
 		}
 		return false;
+	}
+
+	/** Statement text upper-cased, literals blanked, without the final period. */
+	private static String normalized(Statement st) {
+		String code = LITERAL.matcher(st.text()).replaceAll("''").trim().toUpperCase(Locale.ROOT);
+		return code.endsWith(".") ? code.substring(0, code.length() - 1).trim() : code;
+	}
+
+	/**
+	 * Whether a SELECT needs an ENDSELECT: not SINGLE, not INTO/APPENDING TABLE,
+	 * and not an aggregate-only select without GROUP BY (one result row).
+	 */
+	static boolean opensLoop(String selectCode) {
+		String c = selectCode.trim();
+		if (c.matches("SELECT\\s+SINGLE\\b.*")
+				|| c.matches(".*\\b(?:INTO|APPENDING)\\s+(?:CORRESPONDING\\s+FIELDS\\s+OF\\s+)?TABLE\\b.*")) {
+			return false;
+		}
+		return !aggregateOnly(c);
+	}
+
+	private static final Pattern AGGREGATE = Pattern.compile("\\b(?:COUNT|MAX|MIN|SUM|AVG)\\s*\\(");
+
+	/** Only aggregate columns and no GROUP BY: exactly one result row. */
+	static boolean aggregateOnly(String selectCode) {
+		if (selectCode.contains("GROUP BY")) {
+			return false;
+		}
+		Matcher m = Pattern.compile("^(?:WITH\\b.*?\\b)?SELECT\\s+(?:SINGLE\\s+)?(?:DISTINCT\\s+)?(.*?)\\s+(?:FROM|INTO)\\b")
+				.matcher(selectCode);
+		String fields = m.find() ? m.group(1) : "";
+		if (selectCode.matches(".*\\bFIELDS\\b.*")) {
+			Matcher f = Pattern.compile("\\bFIELDS\\s+(.*?)\\s+(?:WHERE|INTO|GROUP|ORDER|UP)\\b").matcher(selectCode);
+			fields = f.find() ? f.group(1) : fields;
+		}
+		if (!AGGREGATE.matcher(fields).find()) {
+			return false;
+		}
+		// every comma-separated column is an aggregate
+		for (String col : fields.split(",(?![^(]*\\))")) {
+			if (!AGGREGATE.matcher(col).find()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static final Pattern FAE_TABLE = Pattern.compile("FOR\\s+ALL\\s+ENTRIES\\s+IN\\s+@?([A-Z0-9_<>~-]+)");
+
+	/** Whether the driver table of FOR ALL ENTRIES is checked for emptiness earlier in the routine. */
+	static boolean emptyChecked(List<Statement> statements, int from, int select, String table) {
+		String t = Pattern.quote(table.replaceAll("\\[\\]$", ""));
+		Pattern check = Pattern.compile("(?s).*(?:\\b" + t + "(?:\\[\\])?\\s+IS\\s+(?:NOT\\s+)?INITIAL"
+				+ "|\\bLINES\\s*\\(\\s*" + t + "(?:\\[\\])?\\s*\\)).*");
+		for (int j = Math.max(0, from); j < select; j++) {
+			if (check.matcher(normalized(statements.get(j))).matches()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Number of IMPORTING parameters in a METHODS declaration. */
+	static int importingCount(String methodsCode) {
+		Matcher m = Pattern.compile("\\bIMPORTING\\b(.*?)(?:\\b(?:EXPORTING|CHANGING|RETURNING|RAISING|EXCEPTIONS)\\b|$)")
+				.matcher(methodsCode);
+		if (!m.find()) {
+			return 0;
+		}
+		Matcher typed = Pattern.compile("\\b(?:TYPE|LIKE)\\b").matcher(m.group(1));
+		int n = 0;
+		while (typed.find()) {
+			n++;
+		}
+		return n;
 	}
 
 	/** sy-subrc, IS INITIAL or the target variable is checked within the next three statements. */

@@ -2,9 +2,11 @@ package de.kiliantaubmann.bella.core.adt;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import org.w3c.dom.Element;
@@ -33,22 +35,26 @@ public record AdtTransportRequest(String id, String description, String owner, S
 	}
 
 	/**
-	 * The repository object entries: those of the tasks, or those on the
-	 * request itself when the tasks list none. Release comments ({@code CORR})
-	 * are left out.
+	 * The repository object entries of the tasks and of the request itself
+	 * (released tasks hand their objects up to the request), each once.
+	 * Release comments ({@code CORR}) are left out.
 	 */
 	public List<Entry> entries() {
-		List<Entry> out = new ArrayList<>();
-		tasks.forEach(t -> out.addAll(t.objects()));
-		if (out.isEmpty()) {
-			out.addAll(requestObjects);
+		Map<String, Entry> out = new LinkedHashMap<>();
+		List<Entry> all = new ArrayList<>();
+		tasks.forEach(t -> all.addAll(t.objects()));
+		all.addAll(requestObjects);
+		for (Entry e : all) {
+			if (!e.pgmid().equalsIgnoreCase("CORR")) {
+				out.putIfAbsent((e.pgmid() + " " + e.type() + " " + e.name()).toUpperCase(Locale.ROOT), e);
+			}
 		}
-		out.removeIf(e -> e.pgmid().equalsIgnoreCase("CORR"));
-		return out;
+		return new ArrayList<>(out.values());
 	}
 
+	/** R released, N released with import protection, O release started. */
 	public boolean released() {
-		return status.equalsIgnoreCase("R") || status.equalsIgnoreCase("O");
+		return status.equalsIgnoreCase("R") || status.equalsIgnoreCase("N") || status.equalsIgnoreCase("O");
 	}
 
 	/** Parses a transport organizer document (one request or a list). */

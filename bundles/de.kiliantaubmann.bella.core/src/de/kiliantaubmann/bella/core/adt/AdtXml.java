@@ -24,16 +24,26 @@ public final class AdtXml {
 	private AdtXml() {
 	}
 
-	public static Document parse(String xml) throws IOException {
+	/** One configured builder per thread; creating the factory looks up the XML provider each time. */
+	private static final ThreadLocal<DocumentBuilder> BUILDER = ThreadLocal.withInitial(() -> {
 		try {
 			DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
 			f.setNamespaceAware(true);
 			f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
 			f.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
 			f.setExpandEntityReferences(false);
-			DocumentBuilder b = f.newDocumentBuilder();
+			return f.newDocumentBuilder();
+		} catch (ParserConfigurationException e) {
+			throw new IllegalStateException("XML parser not available: " + e.getMessage(), e);
+		}
+	});
+
+	public static Document parse(String xml) throws IOException {
+		try {
+			DocumentBuilder b = BUILDER.get();
+			b.reset();
 			return b.parse(new InputSource(new StringReader(xml)));
-		} catch (ParserConfigurationException | SAXException e) {
+		} catch (IllegalStateException | SAXException e) {
 			throw new IOException("Unexpected ADT response: " + e.getMessage(), e);
 		}
 	}

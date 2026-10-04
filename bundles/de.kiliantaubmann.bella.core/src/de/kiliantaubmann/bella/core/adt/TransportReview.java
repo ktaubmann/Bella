@@ -292,14 +292,21 @@ public final class TransportReview {
 			return;
 		}
 		AdtRevisions.Pair pair = AdtRevisions.select(revisions, ids);
-		AdtRevisions.Baseline baseline = AdtRevisions.baseline(pair, revisions);
+		AdtRevisions.Baseline baseline = AdtRevisions.baseline(pair, revisions, ids);
 		if (pair.current() == null) {
 			sb.append(": no version history in the system\n");
 			return;
 		}
-		String after = c.revisionText(pair.current().uri(), cancel);
+		String after;
+		String before;
+		try {
+			after = c.revisionText(pair.current().uri(), cancel);
+			before = pair.previous() == null ? "" : c.revisionText(pair.previous().uri(), cancel);
+		} catch (AdtException e) {
+			sb.append(": version source not readable (").append(e.getMessage()).append(")\n");
+			return;
+		}
 		newSources.add(after);
-		String before = pair.previous() == null ? "" : c.revisionText(pair.previous().uri(), cancel);
 		LineDiff.Result d = LineDiff.unified(before, after,
 				pair.previous() == null ? "(none)" : "version " + pair.previous().number(),
 				"version " + pair.current().number(), 3);
@@ -373,15 +380,30 @@ public final class TransportReview {
 		StringBuilder sb = new StringBuilder();
 		for (AdtClient.Message m : msgs) {
 			String object = "";
+			int best = -1;
 			String uri = m.uri() == null ? "" : m.uri().toLowerCase(Locale.ROOT);
 			for (Map.Entry<String, String> e : uriToName.entrySet()) {
-				if (uri.startsWith(e.getKey().toLowerCase(Locale.ROOT))) {
+				String key = e.getKey().toLowerCase(Locale.ROOT);
+				if (key.length() > best && belongsTo(uri, key)) {
 					object = e.getValue() + " ";
+					best = key.length();
 				}
 			}
 			sb.append("- ").append(object).append(m.format()).append('\n');
 		}
 		return sb.toString();
+	}
+
+	/** Whether {@code uri} is {@code objectUri} or below it ({@code /source/main#start=…}). */
+	static boolean belongsTo(String uri, String objectUri) {
+		if (!uri.startsWith(objectUri)) {
+			return false;
+		}
+		if (uri.length() == objectUri.length()) {
+			return true;
+		}
+		char next = uri.charAt(objectUri.length());
+		return next == '/' || next == '#' || next == '?';
 	}
 
 	/** Customer objects: Z*, Y* or a namespace /…/. */
@@ -404,7 +426,14 @@ public final class TransportReview {
 		int problems = 0;
 		for (AbapReferences.Reference r : candidates) {
 			cancel.throwIfCancelled();
-			AdtObjectRef obj = AdtContext.find(c, r, cancel);
+			AdtObjectRef obj;
+			try {
+				obj = AdtContext.find(c, r, cancel);
+			} catch (AdtException e) {
+				sb.append("- ").append(r.name()).append(": not checked (").append(e.getMessage()).append(")\n");
+				problems++;
+				continue;
+			}
 			if (obj == null) {
 				sb.append("- ").append(r.name()).append(" is used but does not exist in this system.\n");
 				problems++;
@@ -415,7 +444,15 @@ public final class TransportReview {
 						.append(") is used but not activated, and it is not in this request.\n");
 				problems++;
 			}
-			String lock = c.lockedIn(obj.uri(), cancel);
+			String lock;
+			try {
+				lock = c.lockedIn(obj.uri(), cancel);
+			} catch (AdtException e) {
+				sb.append("- ").append(obj.name()).append(": transport lock not checked (").append(e.getMessage())
+						.append(")\n");
+				problems++;
+				continue;
+			}
 			if (!lock.isEmpty() && !ids.contains(lock.toUpperCase(Locale.ROOT))) {
 				sb.append("- ").append(obj.name()).append(" (").append(obj.type())
 						.append(") is used and has unreleased changes in request ").append(lock)

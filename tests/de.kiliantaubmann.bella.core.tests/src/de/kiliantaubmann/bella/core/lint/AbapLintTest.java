@@ -69,18 +69,60 @@ class AbapLintTest {
 
 	@Test
 	void databaseAccess() {
-		assertEquals(List.of("select_star"), rules("SELECT * FROM mara INTO TABLE @DATA(lt)."));
-		assertEquals(List.of("select_star"), rules("SELECT FROM mara FIELDS * INTO TABLE @DATA(lt)."));
+		assertEquals(List.of("select_star"), rules("SELECT * FROM mara WHERE matnr IN @r INTO TABLE @DATA(lt)."));
+		assertEquals(List.of("select_star"), rules("SELECT FROM mara FIELDS * WHERE matnr IN @r INTO TABLE @DATA(lt)."));
 		assertEquals(List.of("select_endselect"),
-				rules("SELECT matnr FROM mara INTO @DATA(lv).\n  WRITE lv.\nENDSELECT."));
+				rules("SELECT matnr FROM mara WHERE matnr IN @r INTO @DATA(lv).\n  WRITE lv.\nENDSELECT."));
 		assertEquals(List.of("select_in_loop"),
 				rules("LOOP AT lt INTO DATA(ls).\n  SELECT matnr FROM mara WHERE matnr = @ls-matnr INTO TABLE @DATA(x).\nENDLOOP."));
-		assertEquals(List.of(), rules("LOOP AT lt INTO DATA(ls).\nENDLOOP.\nSELECT matnr FROM mara INTO TABLE @DATA(x)."));
+		assertEquals(List.of(), rules("LOOP AT lt INTO DATA(ls).\nENDLOOP.\nSELECT matnr FROM mara WHERE matnr IN @r INTO TABLE @DATA(x)."));
 		assertEquals(List.of("select_up_to_order"), rules("SELECT matnr FROM mara INTO TABLE @DATA(x) UP TO 5 ROWS."));
 		assertEquals(List.of("select_single_subrc"),
 				rules("SELECT SINGLE matnr FROM mara WHERE matnr = @lv INTO @DATA(ls).\nWRITE ls."));
 		assertEquals(List.of(), rules("SELECT SINGLE @abap_true FROM mara WHERE matnr = @lv INTO @DATA(exists).\nIF exists = abap_true.\nENDIF."));
 		assertEquals(List.of(), rules("SELECT SINGLE matnr FROM mara WHERE matnr = @lv INTO @DATA(ls).\nCHECK ls IS NOT INITIAL."));
+	}
+
+	@Test
+	void selectLoopNestingIgnoresSingleAndAggregateSelects() {
+		assertEquals(List.of("select_endselect", "select_in_loop"),
+				rules("SELECT f FROM t WHERE a = @x INTO @DATA(lv).\n"
+						+ "  SELECT SINGLE y FROM u WHERE b = @lv INTO @DATA(lv2).\n  IF sy-subrc = 0.\n  ENDIF.\nENDSELECT."));
+		assertEquals(List.of("select_endselect", "select_in_loop"),
+				rules("SELECT f FROM t WHERE a = @x INTO @DATA(lv).\n"
+						+ "  SELECT MAX( y ) FROM u WHERE b = @lv INTO @DATA(lv2).\nENDSELECT."));
+		assertTrue(AbapLint.aggregateOnly("SELECT COUNT( * ) FROM MARA INTO @DATA(N)"));
+		assertFalse(AbapLint.aggregateOnly("SELECT MATKL, COUNT( * ) FROM MARA GROUP BY MATKL INTO TABLE @DATA(N)"));
+	}
+
+	@Test
+	void performanceRules() {
+		assertEquals(List.of("fae_empty_check"),
+				rules("SELECT matnr FROM marc FOR ALL ENTRIES IN @lt WHERE matnr = @lt-matnr INTO TABLE @DATA(x)."));
+		assertEquals(List.of(), rules("IF lt IS NOT INITIAL.\n"
+				+ "SELECT matnr FROM marc FOR ALL ENTRIES IN @lt WHERE matnr = @lt-matnr INTO TABLE @DATA(x).\nENDIF."));
+		assertEquals(List.of(), rules("CHECK lines( lt ) > 0.\n"
+				+ "SELECT matnr FROM marc FOR ALL ENTRIES IN @lt WHERE matnr = @lt-matnr INTO TABLE @DATA(x)."));
+		assertEquals(List.of("select_no_where"), rules("SELECT matnr FROM mara INTO TABLE @DATA(x)."));
+		assertEquals(List.of(), rules("SELECT COUNT( * ) FROM mara INTO @DATA(n)."));
+		assertEquals(List.of("commit_in_loop"), rules("LOOP AT lt INTO DATA(ls).\n  COMMIT WORK.\nENDLOOP."));
+		assertEquals(List.of("rfc_in_loop"),
+				rules("LOOP AT lt INTO DATA(ls).\n  CALL FUNCTION 'Z_X' DESTINATION lv_dest.\nENDLOOP."));
+		assertEquals(List.of("nested_loop_where"),
+				rules("LOOP AT lt INTO DATA(ls).\n  LOOP AT lt2 INTO DATA(ls2) WHERE k = ls-k.\n  ENDLOOP.\nENDLOOP."));
+		assertEquals(List.of(), rules("LOOP AT lt INTO DATA(ls).\nENDLOOP.\nLOOP AT lt2 INTO DATA(ls2) WHERE k = 1.\nENDLOOP."));
+	}
+
+	@Test
+	void cleanAbapRules() {
+		assertEquals(List.of("boolean_literal"), rules("lv_flag = 'X'."));
+		assertEquals(List.of("boolean_literal"), rules("IF lv_flag = space.\nENDIF."));
+		assertEquals(List.of(), rules("lv_flag = abap_true."));
+		assertEquals(List.of(), rules("lv_name = space."));
+		assertEquals(List.of("concatenate"), rules("CONCATENATE a b INTO c."));
+		assertEquals(List.of("too_many_importing"), rules("METHODS m IMPORTING a TYPE i b TYPE i c TYPE string d TYPE REF TO zcl_x."));
+		assertEquals(List.of(), rules("METHODS m IMPORTING a TYPE i b TYPE i RETURNING VALUE(r) TYPE i."));
+		assertEquals(4, AbapLint.importingCount("METHODS M IMPORTING A TYPE I B TYPE I C TYPE STRING D TYPE REF TO ZCL_X"));
 	}
 
 	@Test

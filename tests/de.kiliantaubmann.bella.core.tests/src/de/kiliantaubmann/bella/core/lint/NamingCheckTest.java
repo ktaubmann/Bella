@@ -87,4 +87,12 @@ class NamingCheckTest {
 		assertTrue(AbapLint.check("METHOD m. DATA x TYPE i. ENDMETHOD.").stream().noneMatch(f -> f.rule().equals("naming")));
 		assertEquals(1, naming("METHOD m.\nDATA(x) = 1.\nx = 2.\nDATA(x) = 3.\nENDMETHOD.").size());
 	}
+
+	@Test
+	void localFriendsAndCreatePublicAreNoClassDeclarations() {
+		assertEquals(List.of(), naming("CLASS zcl_order DEFINITION LOCAL FRIENDS ltc_order."));
+		assertEquals(List.of(), naming("CLASS lcl_x DEFINITION CREATE PUBLIC.\nENDCLASS."));
+		assertEquals(1, naming("CLASS zcl_x DEFINITION CREATE PUBLIC FINAL.\nENDCLASS.").size(),
+				"a local class named like a global one");
+	}
 }

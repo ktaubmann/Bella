@@ -223,7 +223,7 @@ class WorkbenchSmokeTest {
 		assertEquals(ToolSpec.Kind.READ, lint.kind());
 		assertTrue(plugin.prefs().getDefaultBoolean(Prefs.EDITOR_SAP_CONTEXT));
 		String notes = CodeActions.previewNotes(List.of("MARA", "ZCL_LOG"),
-				AbapLint.check("SELECT * FROM mara INTO TABLE @DATA(lt).\nBREAK-POINT."));
+				AbapLint.check("SELECT * FROM mara WHERE matnr IN @r INTO TABLE @DATA(lt).\nBREAK-POINT."));
 		assertTrue(notes.contains(Messages.fmt("diff.definitions", "MARA, ZCL_LOG")), notes);
 		assertTrue(notes.contains(Messages.fmt("diff.lint", 2)), notes);
 		assertTrue(notes.contains("Line 1 [warning] select_star"), notes);

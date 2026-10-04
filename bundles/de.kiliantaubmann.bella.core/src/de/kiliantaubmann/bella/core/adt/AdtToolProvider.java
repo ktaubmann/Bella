@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -33,6 +35,14 @@ public final class AdtToolProvider implements ToolProvider {
 	private final Supplier<String> defaultDestination;
 	private final Supplier<String> writePackages;
 	private final SourceCache cache = new SourceCache();
+	/** Inactive objects per destination, kept briefly so a turn with many reads asks once. */
+	private final Map<String, Inactive> inactive = new ConcurrentHashMap<>();
+
+	private record Inactive(long readAt, List<String> names) {
+	}
+
+	/** How long the inactive-objects list is reused; writes and activations clear it at once. */
+	static final long INACTIVE_TTL_MILLIS = 30_000;
 
 	/**
 	 * @param defaultDestination destination of the active editor, used when the
@@ -386,8 +396,20 @@ public final class AdtToolProvider implements ToolProvider {
 		return ToolResult.ok(sb.toString());
 	}
 
+	private List<String> inactiveObjects(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
+		Inactive cached = inactive.get(s.destinationId());
+		long now = System.currentTimeMillis();
+		if (cached != null && now - cached.readAt() < INACTIVE_TTL_MILLIS) {
+			return cached.names();
+		}
+		List<String> names = c.inactiveObjects(cancel);
+		inactive.put(s.destinationId(), new Inactive(now, names));
+		return names;
+	}
+
 	private ToolResult readSource(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
 		AdtObjectRef ref = resolve(c, in, cancel);
 		String include = Json.str(in, "include");
 		boolean main = include == null || include.isBlank() || include.equalsIgnoreCase("main");
@@ -404,7 +426,8 @@ public final class AdtToolProvider implements ToolProvider {
 			src = main ? c.readDefinition(ref, cancel) : c.readSource(uri, include, cancel);
 		}
 		String note = "";
-		if (version.equals("auto") && !AdtClient.xmlOnly(ref.type()) && c.inactiveObjects(cancel).contains(ref.name())) {
+		if (version.equals("auto") && !AdtClient.xmlOnly(ref.type())
+				&& inactiveObjects(sys, c, cancel).contains(ref.name())) {
 			note = "Note: " + ref.name() + " has saved changes that are not activated yet; this is that inactive version. "
 					+ "Use version=active for the active one.\n\n";
 		}
@@ -651,6 +674,7 @@ public final class AdtToolProvider implements ToolProvider {
 					+ ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
 		} finally {
 			c.invalidate(uri);
+			inactive.remove(s.destinationId());
 		}
 	}
 
@@ -665,6 +689,7 @@ public final class AdtToolProvider implements ToolProvider {
 				AdtClient.writeSource(session, ref.uri(), null, source, Json.str(in, "transport"), cancel);
 			} finally {
 				c.invalidate(ref.uri());
+				inactive.remove(s.destinationId());
 			}
 		}
 		return ToolResult.ok("Created " + ref.name() + " (" + ref.type() + ") in package "
@@ -690,6 +715,7 @@ public final class AdtToolProvider implements ToolProvider {
 			msgs = c.activate(refs, cancel);
 		} finally {
 			refs.forEach(r -> c.invalidate(AdtObjectRef.objectUri(r.uri())));
+			inactive.remove(s.destinationId());
 		}
 		boolean errors = msgs.stream().anyMatch(m -> m.severity().equals("Error"));
 		String names = String.join(", ", refs.stream().map(AdtObjectRef::name).toList());

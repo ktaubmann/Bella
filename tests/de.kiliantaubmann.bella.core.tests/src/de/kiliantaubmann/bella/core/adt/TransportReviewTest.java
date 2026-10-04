@@ -173,4 +173,26 @@ class TransportReviewTest {
 		assertTrue(d.contains("… (diff cut; adt_transport_review with object=ZCL_CALC shows all of it)"), d);
 		assertTrue(d.contains("Not shown (limit reached; call adt_transport_review with 'object' for one of them): ZREP, ZTAB"), d);
 	}
+
+	@Test
+	void messagesGoToTheObjectWithTheLongestMatchingUri() {
+		java.util.Map<String, String> names = new java.util.LinkedHashMap<>();
+		names.put("/sap/bc/adt/oo/classes/zcl_ab", "ZCL_AB");
+		names.put("/sap/bc/adt/oo/classes/zcl_a", "ZCL_A");
+		String out = TransportReview.messages(List.of(
+				new AdtClient.Message("Error", "x", "/sap/bc/adt/oo/classes/zcl_ab/source/main#start=5,0", 5),
+				new AdtClient.Message("Error", "y", "/sap/bc/adt/oo/classes/zcl_a/source/main#start=2,0", 2)), names);
+		assertEquals("- ZCL_AB Error line 5: x\n- ZCL_A Error line 2: y\n", out);
+	}
+
+	@Test
+	void entriesMergeTasksAndRequestAndStatusN() {
+		AdtTransportRequest.Entry a = new AdtTransportRequest.Entry("R3TR", "CLAS", "ZCL_A", "", "", "T1");
+		AdtTransportRequest.Entry b = new AdtTransportRequest.Entry("R3TR", "PROG", "ZREP", "", "", "");
+		AdtTransportRequest.Entry aAgain = new AdtTransportRequest.Entry("R3TR", "CLAS", "ZCL_A", "", "", "");
+		AdtTransportRequest tr = new AdtTransportRequest("R1", "", "", "N", "K", "",
+				List.of(new AdtTransportRequest.Task("T1", "", "", "D", List.of(a))), List.of(b, aAgain));
+		assertEquals(List.of("ZCL_A", "ZREP"), tr.entries().stream().map(AdtTransportRequest.Entry::name).toList());
+		assertTrue(tr.released(), "N = released with import protection");
+	}
 }
