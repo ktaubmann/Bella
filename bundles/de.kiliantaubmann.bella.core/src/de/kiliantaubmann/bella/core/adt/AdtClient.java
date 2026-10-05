@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -595,11 +596,22 @@ public final class AdtClient {
 	 * checked instead of the saved version.
 	 */
 	public List<Message> syntaxCheck(String objectUri, String source, CancelToken cancel) throws IOException {
+		return syntaxCheck(objectUri, source, true, cancel);
+	}
+
+	/**
+	 * Syntax check. Without {@code source}, {@code inactive} picks the saved
+	 * version to check: the inactive one only exists after a save without
+	 * activation; checking it for an active-only object reports an empty
+	 * source ("REPORT/PROGRAM statement is missing").
+	 */
+	public List<Message> syntaxCheck(String objectUri, String source, boolean inactive, CancelToken cancel)
+			throws IOException {
 		StringBuilder body = new StringBuilder()
 				.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
 				.append("<chkrun:checkObjectList xmlns:chkrun=\"http://www.sap.com/adt/checkrun\" xmlns:adtcore=\"http://www.sap.com/adt/core\">")
 				.append("<chkrun:checkObject adtcore:uri=\"").append(AdtXml.escape(objectUri))
-				.append("\" chkrun:version=\"inactive\">");
+				.append("\" chkrun:version=\"").append(source != null || inactive ? "inactive" : "active").append("\">");
 		if (source != null) {
 			body.append("<chkrun:artifacts><chkrun:artifact chkrun:contentType=\"text/plain; charset=utf-8\" chkrun:uri=\"")
 					.append(AdtXml.escape(AdtObjectRef.sourceUri(objectUri, null))).append("\"><chkrun:content>")
@@ -610,14 +622,19 @@ public final class AdtClient {
 		return runCheck(body.toString(), cancel);
 	}
 
-	/** Syntax check of several saved objects in one run. */
-	public List<Message> syntaxCheck(List<String> objectUris, CancelToken cancel) throws IOException {
+	/**
+	 * Syntax check of several saved objects in one run; objects matching
+	 * {@code inactive} are checked in their inactive version, the others in
+	 * the active one.
+	 */
+	public List<Message> syntaxCheck(List<String> objectUris, Predicate<String> inactive, CancelToken cancel)
+			throws IOException {
 		StringBuilder body = new StringBuilder()
 				.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
 				.append("<chkrun:checkObjectList xmlns:chkrun=\"http://www.sap.com/adt/checkrun\" xmlns:adtcore=\"http://www.sap.com/adt/core\">");
 		for (String uri : objectUris) {
 			body.append("<chkrun:checkObject adtcore:uri=\"").append(AdtXml.escape(uri))
-					.append("\" chkrun:version=\"inactive\"/>");
+					.append("\" chkrun:version=\"").append(inactive.test(uri) ? "inactive" : "active").append("\"/>");
 		}
 		body.append("</chkrun:checkObjectList>");
 		return runCheck(body.toString(), cancel);
@@ -647,6 +664,10 @@ public final class AdtClient {
 		};
 	}
 
+	/** Newer systems reject a plain application/xml Accept header with HTTP 406. */
+	static final String UNIT_RESULT_TYPES = "application/vnd.sap.adt.abapunit.testruns.result.v2+xml, "
+			+ "application/vnd.sap.adt.abapunit.testruns.result.v1+xml;q=0.9, application/xml;q=0.8";
+
 	/** ABAP Unit run; returns a readable summary. */
 	public String runUnitTests(String objectUri, CancelToken cancel) throws IOException {
 		return runUnitTests(List.of(objectUri), cancel);
@@ -669,7 +690,7 @@ public final class AdtClient {
 				+ "<adtcore:objectSets xmlns:adtcore=\"http://www.sap.com/adt/core\"><objectSet kind=\"inclusive\">"
 				+ "<adtcore:objectReferences>" + refs
 				+ "</adtcore:objectReferences></objectSet></adtcore:objectSets></aunit:runConfiguration>";
-		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/abapunit/testruns", "application/xml", body,
+		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/abapunit/testruns", UNIT_RESULT_TYPES, body,
 				"application/vnd.sap.adt.abapunit.testruns.config.v4+xml"), cancel);
 		return summarizeUnitResult(r.body());
 	}

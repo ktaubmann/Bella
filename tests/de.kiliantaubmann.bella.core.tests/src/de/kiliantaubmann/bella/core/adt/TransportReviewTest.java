@@ -144,6 +144,40 @@ class TransportReviewTest {
 	}
 
 	@Test
+	void checksPickTheVersionAndAcceptTheUnitResultType() {
+		FakeAdt adt = system();
+		List<String> bodies = new java.util.ArrayList<>();
+		List<String> accepts = new java.util.ArrayList<>();
+		adt.route("POST /sap/bc/adt/checkruns", r -> {
+			bodies.add(r.body());
+			return FakeAdt.ok("<chkrun:checkRunReports xmlns:chkrun=\"http://www.sap.com/adt/checkrun\"/>");
+		});
+		adt.route("POST /sap/bc/adt/abapunit/testruns", r -> {
+			accepts.add(r.headers().get("Accept"));
+			return FakeAdt.ok("<aunit:runResult xmlns:aunit=\"http://www.sap.com/adt/aunit\"/>");
+		});
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		assertFalse(p.call("adt_transport_review", Json.parseObject("{\"request\":\"devk900100\"}"), CancelToken.NONE).isError());
+		assertEquals(1, bodies.size());
+		assertTrue(bodies.get(0).contains("adtcore:uri=\"" + CALC + "\" chkrun:version=\"active\""),
+				"only saved, not activated objects have an inactive version: " + bodies.get(0));
+		assertTrue(bodies.get(0).contains("adtcore:uri=\"/sap/bc/adt/programs/programs/zrep\" chkrun:version=\"inactive\""),
+				bodies.get(0));
+		assertTrue(accepts.get(0).startsWith("application/vnd.sap.adt.abapunit.testruns.result.v2+xml"), accepts.get(0));
+	}
+
+	@Test
+	void failedUnitRunHasOneHeading() {
+		FakeAdt adt = system();
+		adt.route("POST /sap/bc/adt/abapunit/testruns", r -> new AdtResponse(406, "text/plain", "not acceptable"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		String d = p.call("adt_transport_review", Json.parseObject("{\"request\":\"devk900100\"}"), CancelToken.NONE)
+				.content();
+		assertTrue(d.contains("### ABAP Unit\nNot possible: "), d);
+		assertEquals(d.indexOf("### ABAP Unit"), d.lastIndexOf("### ABAP Unit"), d);
+	}
+
+	@Test
 	void oneObjectLimitsAndErrors() {
 		FakeAdt adt = system();
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");

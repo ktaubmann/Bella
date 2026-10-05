@@ -242,7 +242,7 @@ public final class TransportReview {
 		List<String> inactive = c.inactiveObjects(cancel);
 		if (checks) {
 			sb.append("\n## Checks\n");
-			checks(sb, c, checkUris, unitUris, uriToName, cancel);
+			checks(sb, c, checkUris, unitUris, uriToName, inactive, cancel);
 		}
 		List<String> inactiveHere = items.stream().map(Item::name).filter(inactive::contains).toList();
 		sb.append("\n## Completeness\n");
@@ -350,13 +350,15 @@ public final class TransportReview {
 	}
 
 	private static void checks(StringBuilder sb, AdtClient c, List<String> checkUris, List<String> unitUris,
-			Map<String, String> uriToName, CancelToken cancel) {
+			Map<String, String> uriToName, List<String> inactive, CancelToken cancel) {
 		if (checkUris.isEmpty()) {
 			sb.append("No source objects to check.\n");
 			return;
 		}
 		try {
-			List<AdtClient.Message> syntax = c.syntaxCheck(checkUris, cancel);
+			// only objects with saved, not activated changes have an inactive version
+			List<AdtClient.Message> syntax = c.syntaxCheck(checkUris,
+					uri -> inactive.contains(uriToName.getOrDefault(uri, "")), cancel);
 			sb.append("### Syntax check\n").append(syntax.isEmpty() ? "No messages.\n" : messages(syntax, uriToName));
 		} catch (IOException e) {
 			sb.append("### Syntax check\nNot possible: ").append(e.getMessage()).append('\n');
@@ -369,7 +371,8 @@ public final class TransportReview {
 		}
 		if (!unitUris.isEmpty()) {
 			try {
-				sb.append("### ABAP Unit\n").append(c.runUnitTests(unitUris, cancel));
+				String unit = c.runUnitTests(unitUris, cancel);
+				sb.append("### ABAP Unit\n").append(unit);
 			} catch (IOException e) {
 				sb.append("### ABAP Unit\nNot possible: ").append(e.getMessage()).append('\n');
 			}

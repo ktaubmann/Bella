@@ -405,4 +405,21 @@ class AdtToolProviderTest {
 		call(p, "adt_read_source", json);
 		assertEquals(2, adt.log.stream().filter(l -> l.contains("inactiveobjects")).count());
 	}
+
+	@Test
+	void syntaxCheckUsesTheActiveVersionWhenNothingIsPending() {
+		List<String> bodies = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/activation/inactiveobjects", r -> FakeAdt.ok(
+						"<ioc:inactiveObjects xmlns:ioc=\"http://www.sap.com/abapxml/inactiveCtsObjects\"/>"))
+				.route("POST /sap/bc/adt/checkruns", r -> {
+					bodies.add(r.body());
+					return FakeAdt.ok("<chkrun:checkRunReports xmlns:chkrun=\"http://www.sap.com/adt/checkrun\"/>");
+				});
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		assertEquals("No syntax errors.", call(p, "adt_syntax_check", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}").content());
+		assertTrue(bodies.get(0).contains("chkrun:version=\"active\""), bodies.get(0));
+		call(p, "adt_syntax_check", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"source\":\"CLASS zcl_a.\"}");
+		assertTrue(bodies.get(1).contains("chkrun:version=\"inactive\"><chkrun:artifacts>"), bodies.get(1));
+	}
 }

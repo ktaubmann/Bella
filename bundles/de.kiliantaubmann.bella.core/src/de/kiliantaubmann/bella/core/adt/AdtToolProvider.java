@@ -517,9 +517,12 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private ToolResult syntaxCheck(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
 		AdtObjectRef ref = resolve(c, in, cancel);
-		List<AdtClient.Message> msgs = c.syntaxCheck(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "source"), cancel);
+		String source = Json.str(in, "source");
+		boolean inactive = source == null && inactiveObjects(sys, c, cancel).contains(ref.name());
+		List<AdtClient.Message> msgs = c.syntaxCheck(AdtObjectRef.objectUri(ref.uri()), source, inactive, cancel);
 		return ToolResult.ok(msgs.isEmpty() ? "No syntax errors." : format(msgs));
 	}
 
