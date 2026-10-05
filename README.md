@@ -38,6 +38,9 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 <td width="50%"><img src="docs/screenshots/generate-dialog.png" alt="Dialog 'Generate code at the cursor' with suggestions"><br><sub><b>Generate code at the cursor.</b> Describe what you need or pick a suggestion.</sub></td>
 <td width="50%"><img src="docs/screenshots/explain-findings.png" alt="Bella explains a report and lists side effects and suspicious points"><br><sub><b>What happens here?</b> The explanation also lists side effects and suspicious points, here a missing authority check.</sub></td>
 </tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/screenshots/atc-findings.png" width="560" alt="Dialog 'ATC check' with the findings of a report, sorted by priority, each with a tick box"><br><sub><b>Check with ATC and fix.</b> The findings, most important first; Bella fixes the ticked ones in the editor after the diff preview.</sub></td>
+</tr>
 </table>
 
 ### How Bella gets SAP context
