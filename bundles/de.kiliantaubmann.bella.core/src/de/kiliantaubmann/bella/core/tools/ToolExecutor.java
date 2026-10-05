@@ -37,6 +37,8 @@ public final class ToolExecutor {
 	}
 
 	private static final String AREA = "tool";
+	/** Input of {@code adt_activate} that runs ABAP Unit after a successful activation. */
+	static final String AUTO_TEST = "run_unit_tests";
 
 	private final ToolRegistry tools;
 	private final Supplier<ToolPolicy> policy;
@@ -88,10 +90,12 @@ public final class ToolExecutor {
 	}
 
 	private ToolResult decideAndRun(ToolSpec tool, JsonObject input, CancelToken cancel) {
-		ToolPolicy.Decision decision = policy.get().decide(tool, input);
-		Log.info(AREA, tool.name() + " (" + tool.providerId() + "): policy " + decision);
+		ToolPolicy rules = policy.get();
+		ToolPolicy.Decision decision = rules.decide(tool, input);
+		Log.info(AREA, tool.name() + " (" + tool.providerId() + "): policy " + decision
+				+ (rules.mode() == ChatMode.NORMAL ? "" : ", mode " + rules.mode()));
 		if (decision == ToolPolicy.Decision.DENY) {
-			return ToolResult.error("Refused by Bella's tool policy. Do not retry this call; tell the developer.");
+			return ToolResult.error(rules.refusal(tool));
 		}
 		// The write guard runs before confirmation: writing into an open editor
 		// is harmless (nothing is saved) and the developer sees the diff there.
@@ -113,8 +117,15 @@ public final class ToolExecutor {
 			Log.info(AREA, tool.name() + ": declined by the developer");
 			return ToolResult.error("The developer declined this tool call.");
 		}
+		JsonObject effective = input;
+		if (rules.mode() == ChatMode.GOD && ToolRegistry.ADT_PROVIDER_ID.equals(tool.providerId())
+				&& "adt_activate".equals(tool.remoteName()) && !input.has(AUTO_TEST)) {
+			// Godmode tests every activation without relying on the model to ask for it.
+			effective = input.deepCopy();
+			effective.addProperty(AUTO_TEST, true);
+		}
 		try {
-			return owner.get().call(tool.remoteName(), input, cancel);
+			return owner.get().call(tool.remoteName(), effective, cancel);
 		} catch (Exception e) {
 			Log.error(AREA, tool.name() + " threw an exception", e);
 			return ToolResult.error(e.getClass().getSimpleName() + ": " + e.getMessage());

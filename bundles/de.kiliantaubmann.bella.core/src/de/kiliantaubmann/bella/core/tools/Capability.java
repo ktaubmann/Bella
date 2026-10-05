@@ -16,6 +16,7 @@ public final class Capability {
 	public static final String WRITE_SOURCE = "write_source";
 	public static final String CREATE_OBJECT = "create_object";
 	public static final String ACTIVATE = "activate";
+	public static final String TABLE_CONTENTS = "table_contents";
 
 	private Capability() {
 	}

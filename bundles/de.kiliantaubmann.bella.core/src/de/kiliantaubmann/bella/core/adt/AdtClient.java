@@ -849,6 +849,73 @@ public final class AdtClient {
 		return out;
 	}
 
+	/**
+	 * Rows of a table or view read through ADT's data preview (the SQL console
+	 * of ADT). Only SELECT statements are sent; SAP checks the developer's
+	 * authorization for the data.
+	 *
+	 * @param sql     ABAP SQL SELECT, e.g. {@code SELECT matnr, mtart FROM mara WHERE mtart = 'FERT'}
+	 * @param maxRows rows SAP returns at most
+	 */
+	public TableData tableContents(String sql, int maxRows, CancelToken cancel) throws IOException {
+		String statement = sql == null ? "" : sql.strip();
+		while (statement.endsWith(".") || statement.endsWith(";")) {
+			statement = statement.substring(0, statement.length() - 1).strip();
+		}
+		String head = statement.toUpperCase(Locale.ROOT);
+		if (!(head.startsWith("SELECT ") || head.startsWith("WITH ")) || statement.contains(";")) {
+			throw new AdtException(400, "Only a single SELECT statement can be run.");
+		}
+		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/datapreview/freestyle?rowNumber=" + maxRows,
+				"application/xml, application/vnd.sap.adt.datapreview.table.v1+xml", statement, "text/plain"), cancel);
+		return parseTableData(r.body());
+	}
+
+	/**
+	 * Result of the data preview.
+	 *
+	 * @param columns   column names in order
+	 * @param rows      cell values per row
+	 * @param totalRows rows the statement found in total; may exceed {@code rows.size()}
+	 */
+	public record TableData(List<String> columns, List<List<String>> rows, int totalRows) {
+	}
+
+	/** The data preview sends the values column by column; this turns them into rows. */
+	static TableData parseTableData(String xml) throws IOException {
+		Document doc = AdtXml.parse(xml);
+		List<String> columns = new ArrayList<>();
+		List<List<String>> values = new ArrayList<>();
+		for (Element col : AdtXml.elements(doc, "columns")) {
+			List<Element> meta = AdtXml.elements(col, "metadata");
+			columns.add(meta.isEmpty() ? "COL" + (columns.size() + 1) : AdtXml.attr(meta.get(0), "name"));
+			List<String> cells = new ArrayList<>();
+			for (Element d : AdtXml.elements(col, "data")) {
+				cells.add(d.getTextContent() == null ? "" : d.getTextContent());
+			}
+			values.add(cells);
+		}
+		int rowCount = values.stream().mapToInt(List::size).max().orElse(0);
+		List<List<String>> rows = new ArrayList<>();
+		for (int i = 0; i < rowCount; i++) {
+			List<String> row = new ArrayList<>();
+			for (List<String> cells : values) {
+				row.add(i < cells.size() ? cells.get(i) : "");
+			}
+			rows.add(row);
+		}
+		int total = rowCount;
+		List<Element> totals = AdtXml.elements(doc, "totalRows");
+		if (!totals.isEmpty()) {
+			try {
+				total = Math.max(rowCount, Integer.parseInt(AdtXml.text(totals.get(0))));
+			} catch (NumberFormatException e) {
+				// keep the number of rows read
+			}
+		}
+		return new TableData(columns, rows, total);
+	}
+
 	/** Activates objects; returns the activation messages (empty on success). */
 	public List<Message> activate(List<AdtObjectRef> objects, CancelToken cancel) throws IOException {
 		StringBuilder body = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")

@@ -1,6 +1,7 @@
 package de.kiliantaubmann.bella.core.tools;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -41,5 +42,36 @@ class ToolPolicyTest {
 		ToolPolicy p = new ToolPolicy(ToolPolicy.parseRules("# comment\nadt_activate = auto\nadt_read* = DENY\nbroken line"));
 		assertEquals(Decision.AUTO, p.decide(tool("adt_activate", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(Decision.DENY, p.decide(tool("adt_read_source", ToolSpec.Kind.READ), new JsonObject()));
+	}
+
+	@Test
+	void tableContentsAskFirst() {
+		ToolPolicy p = ToolPolicy.defaults();
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_table_contents", ToolSpec.Kind.READ), new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.decide(tool("mcp_arc1_SAPQuery", ToolSpec.Kind.READ), new JsonObject()));
+	}
+
+	@Test
+	void planModeRefusesEverythingThatIsNotReadOnly() {
+		ToolPolicy p = new ToolPolicy(ToolPolicy.parseRules("adt_write_source=AUTO")).withMode(ChatMode.PLAN);
+		ToolSpec write = tool("adt_write_source", ToolSpec.Kind.WRITE);
+		assertEquals(Decision.DENY, p.decide(write, new JsonObject()));
+		assertTrue(p.refusal(write).startsWith("Refused in plan mode"));
+		assertEquals(Decision.DENY, p.decide(tool("mcp_other_thing", ToolSpec.Kind.UNKNOWN), new JsonObject()));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_read_source", ToolSpec.Kind.READ), new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_table_contents", ToolSpec.Kind.READ), new JsonObject()));
+	}
+
+	@Test
+	void godModeRunsWhatWouldAskButKeepsRefusals() {
+		ToolPolicy p = new ToolPolicy(ToolPolicy.parseRules("adt_create_object=DENY")).withMode(ChatMode.GOD);
+		assertEquals(ChatMode.GOD, p.mode());
+		assertEquals(Decision.AUTO, p.decide(tool("adt_write_source", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_activate", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_table_contents", ToolSpec.Kind.READ), new JsonObject()));
+		assertEquals(Decision.DENY, p.decide(tool("adt_create_object", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.DENY, p.decide(tool("mcp_arc1_SAPTransport", ToolSpec.Kind.WRITE),
+				Json.parseObject("{\"action\":\"release\"}")));
+		assertTrue(p.refusal(tool("adt_create_object", ToolSpec.Kind.WRITE)).startsWith("Refused by Bella"));
 	}
 }

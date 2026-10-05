@@ -208,4 +208,42 @@ class AdtClientTest {
 		assertEquals("", AdtClient.writeSource(session, "/sap/bc/adt/programs/programs/zrep", null, "REPORT zrep.",
 				null, CancelToken.NONE));
 	}
+
+	static final String TABLE_XML = """
+			<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+			 <dataPreview:totalRows>3</dataPreview:totalRows>
+			 <dataPreview:isHanaAnalyticalView>false</dataPreview:isHanaAnalyticalView>
+			 <dataPreview:columns>
+			  <dataPreview:metadata dataPreview:name="MANDT" dataPreview:type="C" dataPreview:description="Client"/>
+			  <dataPreview:dataSet><dataPreview:data>000</dataPreview:data><dataPreview:data>100</dataPreview:data></dataPreview:dataSet>
+			 </dataPreview:columns>
+			 <dataPreview:columns>
+			  <dataPreview:metadata dataPreview:name="MTEXT" dataPreview:type="C" dataPreview:description="Name"/>
+			  <dataPreview:dataSet><dataPreview:data>SAP AG</dataPreview:data><dataPreview:data>Dev | Test</dataPreview:data></dataPreview:dataSet>
+			 </dataPreview:columns>
+			</dataPreview:tableData>""";
+
+	@Test
+	void parsesTableContentsColumnByColumn() throws Exception {
+		AdtClient.TableData d = AdtClient.parseTableData(TABLE_XML);
+		assertEquals(List.of("MANDT", "MTEXT"), d.columns());
+		assertEquals(List.of(List.of("000", "SAP AG"), List.of("100", "Dev | Test")), d.rows());
+		assertEquals(3, d.totalRows());
+	}
+
+	@Test
+	void tableContentsSendOnlyOneSelect() throws Exception {
+		List<String> bodies = new java.util.ArrayList<>();
+		FakeAdt adt = new FakeAdt().route("POST /sap/bc/adt/datapreview/freestyle?rowNumber=5", r -> {
+			bodies.add(r.body());
+			return FakeAdt.ok(TABLE_XML);
+		});
+		AdtClient c = new AdtClient(adt.stateless("D"));
+		assertEquals(2, c.tableContents("SELECT * FROM t000.", 5, CancelToken.NONE).rows().size());
+		assertEquals(List.of("SELECT * FROM t000"), bodies);
+		assertThrows(AdtException.class, () -> c.tableContents("DELETE FROM t000", 5, CancelToken.NONE));
+		assertThrows(AdtException.class,
+				() -> c.tableContents("SELECT * FROM t000; DELETE FROM t000", 5, CancelToken.NONE));
+		assertEquals(1, bodies.size());
+	}
 }

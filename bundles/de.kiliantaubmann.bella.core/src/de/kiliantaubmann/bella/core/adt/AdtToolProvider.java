@@ -224,6 +224,16 @@ public final class AdtToolProvider implements ToolProvider {
 						"Only dumps of this user; default the logged-on user, '*' for all users.", "max_results", "integer",
 						"Default 10, at most 50.", "system", "string", SYSTEM_DESC),
 				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_table_contents",
+				"Read rows of a database table or CDS view (data preview, like SE16 or ADT's SQL console). Give 'table' with "
+						+ "optional 'columns' and 'where', or a complete ABAP SQL SELECT in 'sql' (joins, aggregates). "
+						+ "Read only. Use it to understand data or to check what a program wrote.",
+				schema(new String[0], "table", "string", "Table or CDS view, e.g. MARA or T000.", "columns", "string",
+						"Comma separated columns, default all, e.g. matnr, mtart.", "where", "string",
+						"ABAP SQL condition without WHERE, e.g. mtart = 'FERT' AND ersda >= '20240101'.", "sql",
+						"string", "Instead of table/columns/where: a complete ABAP SQL SELECT statement.", "max_rows",
+						"integer", "Default 100, at most " + TABLE_MAX_ROWS + ".", "system", "string", SYSTEM_DESC),
+				Capability.TABLE_CONTENTS, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_write_source",
 				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system.",
 				schema(new String[] { "name", "source" }, objectProps("source", "string",
@@ -239,7 +249,9 @@ public final class AdtToolProvider implements ToolProvider {
 						"transport", "string", "Transport request for non-local packages.", "source", "string",
 						"Optional initial source code.")),
 				Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
-		JsonObject activateSchema = schema(new String[] { "objects" }, "system", "string", SYSTEM_DESC);
+		JsonObject activateSchema = schema(new String[] { "objects" }, "system", "string", SYSTEM_DESC,
+				"run_unit_tests", "boolean", "After a successful activation run the ABAP Unit tests of the activated "
+						+ "classes, programs and function groups and add the result (default false).");
 		JsonObject objects = new JsonObject();
 		objects.addProperty("type", "array");
 		objects.addProperty("description", "Objects to activate together.");
@@ -318,6 +330,7 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_short_dumps" -> shortDumps(in, cancel);
 			case "adt_list_transports" -> listTransports(in, cancel);
 			case "adt_transport_review" -> transportReview(in, cancel);
+			case "adt_table_contents" -> tableContents(in, cancel);
 			case "adt_write_source" -> writeSource(in, cancel);
 			case "adt_create_object" -> create(in, cancel);
 			case "adt_activate" -> activate(in, cancel);
@@ -738,7 +751,88 @@ public final class AdtToolProvider implements ToolProvider {
 		if (errors) {
 			return ToolResult.error("Activation failed for " + names + ":\n" + format(msgs));
 		}
-		return ToolResult.ok("Activated " + names + " on " + s.label() + (msgs.isEmpty() ? "." : ":\n" + format(msgs)));
+		String done = "Activated " + names + " on " + s.label() + (msgs.isEmpty() ? "." : ":\n" + format(msgs));
+		boolean test = in.has("run_unit_tests") && in.get("run_unit_tests").isJsonPrimitive()
+				&& in.get("run_unit_tests").getAsBoolean();
+		return ToolResult.ok(test ? done + "\n\n" + unitTestsAfterActivation(c, refs, cancel) : done);
+	}
+
+	/** Object types that can hold ABAP Unit tests. */
+	private static final List<String> TESTABLE = List.of("CLAS", "PROG", "FUGR");
+
+	private static String unitTestsAfterActivation(AdtClient c, List<AdtObjectRef> refs, CancelToken cancel) {
+		List<String> uris = new ArrayList<>();
+		for (AdtObjectRef r : refs) {
+			String type = r.type() == null ? "" : r.type().toUpperCase(Locale.ROOT);
+			if (TESTABLE.stream().anyMatch(type::startsWith)) {
+				uris.add(AdtObjectRef.objectUri(r.uri()));
+			}
+		}
+		if (uris.isEmpty()) {
+			return "ABAP Unit: none of the activated objects can hold tests.";
+		}
+		try {
+			return "ABAP Unit:\n" + c.runUnitTests(uris, cancel);
+		} catch (IOException e) {
+			return "ABAP Unit could not run: " + e.getMessage();
+		}
+	}
+
+	/** Rows {@code adt_table_contents} returns at most. */
+	static final int TABLE_MAX_ROWS = 1000;
+	/** Characters a cell is cut to. */
+	static final int TABLE_CELL_CHARS = 80;
+	/** Characters a table result carries at most. */
+	static final int TABLE_RESULT_CHARS = 40_000;
+
+	private static final Pattern SQL_NAME = Pattern.compile("[A-Za-z/][A-Za-z0-9_/]*");
+
+	private ToolResult tableContents(JsonObject in, CancelToken cancel) throws IOException {
+		String sql = Json.str(in, "sql");
+		if (sql == null || sql.isBlank()) {
+			String table = Json.str(in, "table");
+			if (table == null || !SQL_NAME.matcher(table.trim()).matches()) {
+				return ToolResult.error("Give 'table' (a table or CDS view name) or a SELECT statement in 'sql'.");
+			}
+			String columns = Json.str(in, "columns");
+			String where = Json.str(in, "where");
+			sql = "SELECT " + (columns == null || columns.isBlank() ? "*" : columns.trim()) + " FROM "
+					+ table.trim().toUpperCase(Locale.ROOT)
+					+ (where == null || where.isBlank() ? "" : " WHERE " + where.trim());
+		}
+		int max = Math.max(1, Math.min(TABLE_MAX_ROWS, Json.integer(in, "max_rows", 100)));
+		AdtSystem s = system(in);
+		AdtClient.TableData data = client(s).tableContents(sql, max, cancel);
+		return ToolResult.ok(formatTable(data, s.label()));
+	}
+
+	/** Markdown table with cells cut and pipes escaped, and how many rows the statement found. */
+	static String formatTable(AdtClient.TableData data, String system) {
+		if (data.rows().isEmpty()) {
+			return "No rows found on " + system + "."
+					+ (data.columns().isEmpty() ? "" : " Columns: " + String.join(", ", data.columns()));
+		}
+		StringBuilder sb = new StringBuilder();
+		sb.append(data.rows().size()).append(data.totalRows() > data.rows().size() ? " of " + data.totalRows() : "")
+				.append(" rows from ").append(system).append(":\n\n| ").append(String.join(" | ", data.columns()))
+				.append(" |\n|").append("---|".repeat(data.columns().size())).append('\n');
+		int shown = 0;
+		for (List<String> row : data.rows()) {
+			StringBuilder line = new StringBuilder("|");
+			for (String cell : row) {
+				String v = cell.replace("|", "\\|").replace('\n', ' ').strip();
+				line.append(' ').append(v.length() > TABLE_CELL_CHARS ? v.substring(0, TABLE_CELL_CHARS) + "…" : v)
+						.append(" |");
+			}
+			if (sb.length() + line.length() > TABLE_RESULT_CHARS) {
+				sb.append("… ").append(data.rows().size() - shown)
+						.append(" more rows not shown; select fewer columns or rows.\n");
+				break;
+			}
+			sb.append(line).append('\n');
+			shown++;
+		}
+		return sb.toString();
 	}
 
 	private static String format(List<AdtClient.Message> msgs) {

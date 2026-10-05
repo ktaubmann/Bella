@@ -26,10 +26,11 @@ public final class McpToolProvider implements ToolProvider {
 			"SAPSearch", Capability.SEARCH,
 			"SAPRead", Capability.READ_SOURCE,
 			"SAPWrite", Capability.WRITE_SOURCE,
-			"SAPActivate", Capability.ACTIVATE);
+			"SAPActivate", Capability.ACTIVATE,
+			"SAPQuery", Capability.TABLE_CONTENTS);
 
 	private static final List<String> ARC1_READ_ONLY = List.of("SAPRead", "SAPSearch", "SAPNavigate", "SAPContext",
-			"SAPLint", "SAPDiagnose");
+			"SAPLint", "SAPDiagnose", "SAPQuery");
 
 	private final String serverId;
 	private final String displayName;

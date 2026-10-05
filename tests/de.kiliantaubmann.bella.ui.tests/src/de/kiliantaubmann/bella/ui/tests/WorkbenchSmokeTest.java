@@ -54,6 +54,7 @@ import de.kiliantaubmann.bella.core.copilot.CopilotSession;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.tools.Capability;
+import de.kiliantaubmann.bella.core.tools.ChatMode;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.Log;
@@ -136,6 +137,26 @@ class WorkbenchSmokeTest {
 		ChatView view = ChatView.open().orElseThrow();
 		pump();
 		assertNotNull(view);
+		page().hideView(view);
+	}
+
+	@Test
+	void chatHasPlanModeAndGodmode() {
+		ChatView view = ChatView.open().orElseThrow();
+		pump();
+		List<Button> buttons = find(view.getSite().getShell(), Button.class);
+		Button plan = buttons.stream().filter(b -> b.getText().equals(Messages.get("chat.planMode"))).findFirst()
+				.orElseThrow();
+		Button god = buttons.stream().filter(b -> b.getText().equals(Messages.get("chat.godMode"))).findFirst()
+				.orElseThrow();
+		assertEquals(ChatMode.NORMAL, view.mode());
+		assertFalse(god.getSelection(), "Godmode is never on when the chat opens");
+		plan.setSelection(true);
+		plan.notifyListeners(SWT.Selection, new Event());
+		assertEquals(ChatMode.PLAN, view.mode());
+		plan.setSelection(false);
+		plan.notifyListeners(SWT.Selection, new Event());
+		assertEquals(ChatMode.NORMAL, view.mode());
 		page().hideView(view);
 	}
 

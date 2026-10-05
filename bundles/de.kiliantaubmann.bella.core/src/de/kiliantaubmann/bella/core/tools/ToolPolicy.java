@@ -13,7 +13,8 @@ import com.google.gson.JsonObject;
  * Decides per tool call whether it runs automatically, needs the user's
  * confirmation, or is refused. User rules are evaluated first, then the
  * built-in defaults: reading runs automatically, writing and activating asks,
- * releasing transports is refused.
+ * releasing transports is refused. The {@link ChatMode} applies last: plan
+ * mode refuses everything that is not read only, Godmode runs what would ask.
  */
 public final class ToolPolicy {
 
@@ -48,6 +49,9 @@ public final class ToolPolicy {
 			new Rule("adt_write_source", Decision.CONFIRM),
 			new Rule("adt_create_object", Decision.CONFIRM),
 			new Rule("adt_activate", Decision.CONFIRM),
+			// table contents leave the system for the model provider: ask first
+			new Rule("adt_table_contents", Decision.CONFIRM),
+			new Rule("mcp_*SAPQuery", Decision.CONFIRM),
 			new Rule("adt_*", Decision.AUTO),
 			new Rule("mcp_*SAPRead", Decision.AUTO),
 			new Rule("mcp_*SAPSearch", Decision.AUTO),
@@ -59,9 +63,24 @@ public final class ToolPolicy {
 	private static final List<String> ACTION_KEYS = List.of("action", "operation", "op", "type", "mode");
 
 	private final List<Rule> userRules;
+	private final ChatMode mode;
 
 	public ToolPolicy(List<Rule> userRules) {
+		this(userRules, ChatMode.NORMAL);
+	}
+
+	public ToolPolicy(List<Rule> userRules, ChatMode mode) {
 		this.userRules = List.copyOf(userRules);
+		this.mode = mode == null ? ChatMode.NORMAL : mode;
+	}
+
+	/** The same rules in another chat mode. */
+	public ToolPolicy withMode(ChatMode newMode) {
+		return new ToolPolicy(userRules, newMode);
+	}
+
+	public ChatMode mode() {
+		return mode;
 	}
 
 	public static ToolPolicy defaults() {
@@ -97,6 +116,14 @@ public final class ToolPolicy {
 	}
 
 	public Decision decide(ToolSpec tool, JsonObject input) {
+		Decision configured = configured(tool, input);
+		if (configured == Decision.DENY || blockedByPlan(tool)) {
+			return Decision.DENY;
+		}
+		return mode == ChatMode.GOD ? Decision.AUTO : configured;
+	}
+
+	private Decision configured(ToolSpec tool, JsonObject input) {
 		if (releasesTransport(tool, input)) {
 			return Decision.DENY;
 		}
@@ -111,6 +138,20 @@ public final class ToolPolicy {
 			}
 		}
 		return tool.kind() == ToolSpec.Kind.READ ? Decision.AUTO : Decision.CONFIRM;
+	}
+
+	/** Plan mode lets only tools through that are known to be read only. */
+	private boolean blockedByPlan(ToolSpec tool) {
+		return mode == ChatMode.PLAN && tool.kind() != ToolSpec.Kind.READ;
+	}
+
+	/** What the model is told when {@link #decide} refused a call. */
+	public String refusal(ToolSpec tool) {
+		if (blockedByPlan(tool)) {
+			return "Refused in plan mode: Bella does not change anything in this mode. Do not retry; describe the change in "
+					+ "your plan instead.";
+		}
+		return "Refused by Bella's tool policy. Do not retry this call; tell the developer.";
 	}
 
 	/**

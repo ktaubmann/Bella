@@ -422,4 +422,55 @@ class AdtToolProviderTest {
 		call(p, "adt_syntax_check", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"source\":\"CLASS zcl_a.\"}");
 		assertTrue(bodies.get(1).contains("chkrun:version=\"inactive\"><chkrun:artifacts>"), bodies.get(1));
 	}
+
+	@Test
+	void tableContentsBuildTheSelectAndFormatATable() {
+		List<String> bodies = new ArrayList<>();
+		FakeAdt adt = twoSystems().route("POST /sap/bc/adt/datapreview/freestyle?rowNumber=10", r -> {
+			bodies.add(r.body());
+			return FakeAdt.ok(AdtClientTest.TABLE_XML);
+		});
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").call("adt_table_contents", Json.parseObject(
+				"{\"table\":\"t000\",\"columns\":\"mandt, mtext\",\"where\":\"mandt <> '999'\",\"max_rows\":10}"),
+				CancelToken.NONE);
+		assertFalse(r.isError(), r.content());
+		assertEquals(List.of("SELECT mandt, mtext FROM T000 WHERE mandt <> '999'"), bodies);
+		assertTrue(r.content().startsWith("2 of 3 rows from"), r.content());
+		assertTrue(r.content().contains("| MANDT | MTEXT |"), r.content());
+		assertTrue(r.content().contains("| 100 | Dev \\| Test |"), r.content());
+	}
+
+	@Test
+	void tableContentsNeedATableName() {
+		ToolResult r = new AdtToolProvider(twoSystems(), () -> "dev").call("adt_table_contents",
+				Json.parseObject("{\"table\":\"t000 WHERE 1 = 1\"}"), CancelToken.NONE);
+		assertTrue(r.isError());
+	}
+
+	@Test
+	void activationRunsUnitTestsWhenAsked() {
+		List<String> testBodies = new ArrayList<>();
+		FakeAdt adt = twoSystems().route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/abapunit/testruns", r -> {
+					testBodies.add(r.body());
+					return FakeAdt.ok("""
+							<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit" xmlns:adtcore="http://www.sap.com/adt/core">
+							 <program adtcore:name="ZCL_A"><testClasses><testClass adtcore:name="LTC_A"><testMethods>
+							  <testMethod adtcore:name="OK"/></testMethods></testClass></testClasses></program>
+							</aunit:runResult>""");
+				});
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolResult plain = p.call("adt_activate",
+				Json.parseObject("{\"objects\":[{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}]}"), CancelToken.NONE);
+		assertFalse(plain.content().contains("ABAP Unit"), plain.content());
+		assertTrue(testBodies.isEmpty());
+		ToolResult tested = p.call("adt_activate", Json.parseObject(
+				"{\"objects\":[{\"name\":\"ZCL_A\",\"type\":\"CLAS\"},{\"name\":\"ZIF_A\",\"type\":\"INTF\"}],\"run_unit_tests\":true}"),
+				CancelToken.NONE);
+		assertFalse(tested.isError(), tested.content());
+		assertTrue(tested.content().contains("ABAP Unit:\n1 of 1 test methods passed."), tested.content());
+		assertEquals(1, testBodies.size());
+		assertTrue(testBodies.get(0).contains("/sap/bc/adt/oo/classes/zcl_a"), testBodies.get(0));
+		assertFalse(testBodies.get(0).contains("zif_a"), testBodies.get(0));
+	}
 }

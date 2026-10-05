@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IStatus;
@@ -39,6 +40,7 @@ import de.kiliantaubmann.bella.core.mcp.McpToolProvider;
 import de.kiliantaubmann.bella.core.mcp.StdioTransport;
 import de.kiliantaubmann.bella.core.mcp.StreamableHttpTransport;
 import de.kiliantaubmann.bella.core.prompt.AbapPrompts;
+import de.kiliantaubmann.bella.core.tools.ChatMode;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
 import de.kiliantaubmann.bella.core.conventions.ProjectConventions;
 import de.kiliantaubmann.bella.core.tools.ToolPolicy;
@@ -318,19 +320,29 @@ public class BellaPlugin extends AbstractUIPlugin {
 	 * confirmation and the open-editor router apply either way.
 	 */
 	public Conversation newConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard) {
-		return LoggingConversation.wrap(plainConversation(confirmer, writeGuard));
+		return newConversation(confirmer, writeGuard, () -> ChatMode.NORMAL);
 	}
 
-	private Conversation plainConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard) {
+	/**
+	 * @param mode the chat's mode at the time of each tool call (plan mode,
+	 *             normal, Godmode)
+	 */
+	public Conversation newConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard,
+			Supplier<ChatMode> mode) {
+		return LoggingConversation.wrap(plainConversation(confirmer, writeGuard, () -> policy().withMode(mode.get())));
+	}
+
+	private Conversation plainConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard,
+			Supplier<ToolPolicy> policy) {
 		if (usesClaudeCode()) {
 			return new ClaudeCodeSession(claudeCli(), this::chatSettings, prompts().chatSystem(),
-					new ToolExecutor(tools(), this::policy, confirmer, writeGuard), VERSION);
+					new ToolExecutor(tools(), policy, confirmer, writeGuard), VERSION);
 		}
 		if (usesCopilot()) {
 			return new CopilotSession(copilotCli(), this::chatSettings, prompts().chatSystem(),
-					new ToolExecutor(tools(), this::policy, confirmer, writeGuard), VERSION);
+					new ToolExecutor(tools(), policy, confirmer, writeGuard), VERSION);
 		}
-		return new ChatSession(this::provider, this::chatSettings, prompts().chatSystem(), tools(), this::policy,
+		return new ChatSession(this::provider, this::chatSettings, prompts().chatSystem(), tools(), policy,
 				confirmer::confirm, writeGuard);
 	}
 

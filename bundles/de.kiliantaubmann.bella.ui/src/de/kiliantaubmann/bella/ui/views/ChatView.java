@@ -16,6 +16,7 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IToolBarManager;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.layout.GridDataFactory;
 import org.eclipse.jface.layout.GridLayoutFactory;
 import org.eclipse.jface.preference.PreferenceDialog;
@@ -48,6 +49,7 @@ import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.prompt.EditorContext;
+import de.kiliantaubmann.bella.core.tools.ChatMode;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
@@ -71,6 +73,10 @@ public class ChatView extends ViewPart {
 	private Button send;
 	private Button stop;
 	private Button withContext;
+	private Button planMode;
+	private Button godMode;
+	/** Read on the job thread at every tool call, so unticking takes effect at once. */
+	private volatile ChatMode mode = ChatMode.NORMAL;
 	private Label status;
 	private Conversation session;
 	private volatile CancelToken running;
@@ -191,10 +197,27 @@ public class ChatView extends ViewPart {
 		stop.setEnabled(false);
 		stop.addListener(SWT.Selection, e -> cancel());
 		GridDataFactory.fillDefaults().span(2, 1).applyTo(new Label(bottom, SWT.NONE));
-		withContext = new Button(bottom, SWT.CHECK);
+		Composite options = new Composite(bottom, SWT.NONE);
+		GridLayoutFactory.fillDefaults().numColumns(3).spacing(12, 0).applyTo(options);
+		withContext = new Button(options, SWT.CHECK);
 		withContext.setText(Messages.get("chat.withContext"));
 		withContext.setToolTipText(Messages.get("chat.withContextTip"));
 		withContext.setSelection(true);
+		planMode = new Button(options, SWT.CHECK);
+		planMode.setText(Messages.get("chat.planMode"));
+		planMode.setToolTipText(Messages.get("chat.planModeTip"));
+		planMode.addListener(SWT.Selection, e -> setMode(planMode.getSelection() ? ChatMode.PLAN : ChatMode.NORMAL));
+		godMode = new Button(options, SWT.CHECK);
+		godMode.setText(Messages.get("chat.godMode"));
+		godMode.setToolTipText(Messages.get("chat.godModeTip"));
+		godMode.addListener(SWT.Selection, e -> {
+			if (godMode.getSelection() && !MessageDialog.openConfirm(getSite().getShell(),
+					Messages.get("chat.godModeConfirmTitle"), Messages.get("chat.godModeConfirm"))) {
+				godMode.setSelection(false);
+				return;
+			}
+			setMode(godMode.getSelection() ? ChatMode.GOD : ChatMode.NORMAL);
+		});
 		status = new Label(bottom, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).span(2, 1).applyTo(status);
 
@@ -234,6 +257,19 @@ public class ChatView extends ViewPart {
 		updateStatus();
 	}
 
+	/** Plan mode and Godmode exclude each other. UI thread. */
+	private void setMode(ChatMode newMode) {
+		mode = newMode;
+		planMode.setSelection(newMode == ChatMode.PLAN);
+		godMode.setSelection(newMode == ChatMode.GOD);
+		updateStatus();
+	}
+
+	/** The chat's current mode. */
+	public ChatMode mode() {
+		return mode;
+	}
+
 	private static boolean isDark(Composite c) {
 		RGB bg = c.getBackground().getRGB();
 		return (bg.red * 299 + bg.green * 587 + bg.blue * 114) / 1000 < 128;
@@ -263,7 +299,7 @@ public class ChatView extends ViewPart {
 		if (session != null) {
 			session.close();
 		}
-		session = plugin.newConversation(this::confirmTool, new OpenEditorRouter());
+		session = plugin.newConversation(this::confirmTool, new OpenEditorRouter(), () -> mode);
 	}
 
 	private void newChat() {
@@ -282,7 +318,11 @@ public class ChatView extends ViewPart {
 		String system = EditorBridge.activeTextEditor().isPresent()
 				? Optional.ofNullable(EditorBridge.systemLabel(activeEditor())).orElse("")
 				: "";
-		status.setText(Messages.fmt("chat.status", plugin.chatModelLabel(), system.isEmpty() ? "–" : system));
+		String text = Messages.fmt("chat.status", plugin.chatModelLabel(), system.isEmpty() ? "–" : system);
+		if (mode != ChatMode.NORMAL) {
+			text += " · " + Messages.get(mode == ChatMode.PLAN ? "chat.planMode" : "chat.godMode");
+		}
+		status.setText(text);
 		status.getParent().layout();
 	}
 
@@ -361,13 +401,14 @@ public class ChatView extends ViewPart {
 		js("addUser(" + userId + "," + str(display) + ")");
 		js("startAssistant(" + botId + ")");
 		CancelToken cancel = new CancelToken();
+		ChatMode turnMode = mode;
 		running = cancel;
 		setBusy(true);
 		Renderer renderer = new Renderer(botId);
 		Job job = Job.create(Messages.get("chat.jobName"), (IProgressMonitor monitor) -> {
 			try {
 				BellaPlugin.getDefault().tools().refresh(err -> renderer.notice("warn", Markdown.escape(err)));
-				session.ask(prompt, renderer, cancel);
+				session.ask(turnMode.apply(prompt), renderer, cancel);
 			} catch (CancelToken.CancelledException e) {
 				renderer.notice("warn", Messages.get("chat.cancelled"));
 			} catch (Exception e) {
