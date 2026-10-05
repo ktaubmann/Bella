@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Bella UI Tests
 Bundle-SymbolicName: de.kiliantaubmann.bella.ui.tests
-Bundle-Version: 0.4.6.qualifier
+Bundle-Version: 0.5.0.qualifier
 Bundle-Vendor: Kilian Taubmann
 Bundle-RequiredExecutionEnvironment: JavaSE-21
 Automatic-Module-Name: de.kiliantaubmann.bella.ui.tests
