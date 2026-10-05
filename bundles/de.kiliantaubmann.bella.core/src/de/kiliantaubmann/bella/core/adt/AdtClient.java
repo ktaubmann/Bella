@@ -863,7 +863,8 @@ public final class AdtClient {
 			statement = statement.substring(0, statement.length() - 1).strip();
 		}
 		String head = statement.toUpperCase(Locale.ROOT);
-		if (!(head.startsWith("SELECT ") || head.startsWith("WITH ")) || statement.contains(";")) {
+		String outsideLiterals = SQL_LITERAL.matcher(statement).replaceAll("''");
+		if (!(head.startsWith("SELECT ") || head.startsWith("WITH ")) || outsideLiterals.contains(";")) {
 			throw new AdtException(400, "Only a single SELECT statement can be run.");
 		}
 		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/datapreview/freestyle?rowNumber=" + maxRows,
@@ -878,6 +879,9 @@ public final class AdtClient {
 	 * @param rows      cell values per row
 	 * @param totalRows rows the statement found in total; may exceed {@code rows.size()}
 	 */
+	/** ABAP SQL string literals ('…' with '' as escape, and `…`), so a ';' inside one is allowed. */
+	private static final Pattern SQL_LITERAL = Pattern.compile("'(?:[^']|'')*'|`(?:[^`]|``)*`");
+
 	public record TableData(List<String> columns, List<List<String>> rows, int totalRows) {
 	}
 

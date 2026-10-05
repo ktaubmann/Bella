@@ -245,5 +245,7 @@ class AdtClientTest {
 		assertThrows(AdtException.class,
 				() -> c.tableContents("SELECT * FROM t000; DELETE FROM t000", 5, CancelToken.NONE));
 		assertEquals(1, bodies.size());
+		c.tableContents("SELECT * FROM t000 WHERE mtext LIKE '%;%'", 5, CancelToken.NONE);
+		assertEquals(2, bodies.size(), "a ';' inside a literal is fine");
 	}
 }

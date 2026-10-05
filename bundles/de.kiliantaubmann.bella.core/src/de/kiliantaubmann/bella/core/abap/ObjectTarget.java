@@ -2,6 +2,7 @@ package de.kiliantaubmann.bella.core.abap;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -116,6 +117,29 @@ public record ObjectTarget(String name, String type) {
 			return sourceFromToolInput(input) != null;
 		}
 		return false;
+	}
+
+	/**
+	 * The objects an activation call names: Bella's {@code adt_activate}
+	 * ({@code objects} array) or another activation tool with a single object
+	 * (ARC-1's SAPActivate). Empty for any other tool.
+	 */
+	public static List<ObjectTarget> activationTargets(ToolSpec tool, JsonObject input) {
+		if (!Capability.ACTIVATE.equals(tool.capability()) || input == null) {
+			return List.of();
+		}
+		List<ObjectTarget> out = new ArrayList<>();
+		JsonElement objects = input.get("objects");
+		if (objects != null && objects.isJsonArray()) {
+			for (JsonElement e : objects.getAsJsonArray()) {
+				if (e.isJsonObject()) {
+					fromToolInput(e.getAsJsonObject()).ifPresent(out::add);
+				}
+			}
+			return out;
+		}
+		fromToolInput(input).ifPresent(out::add);
+		return out;
 	}
 
 	/** Whether this target denotes the given object (name compare, type compare only if both known). */

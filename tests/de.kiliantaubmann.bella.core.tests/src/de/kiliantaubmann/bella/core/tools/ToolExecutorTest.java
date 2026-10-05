@@ -124,6 +124,12 @@ class ToolExecutorTest {
 		assertEquals("done", r.content());
 		assertTrue(confirmations.isEmpty());
 		assertTrue(provider.inputs.get(0).get(ToolExecutor.AUTO_TEST).getAsBoolean());
+
+		JsonObject optOut = new JsonObject();
+		optOut.addProperty(ToolExecutor.AUTO_TEST, false);
+		executor(provider, ChatMode.GOD, confirmations).run(new ToolCall("2", "adt_activate", optOut, "{}", null),
+				ToolExecutor.Observer.NONE, CancelToken.NONE);
+		assertTrue(provider.inputs.get(1).get(ToolExecutor.AUTO_TEST).getAsBoolean(), "Godmode always tests");
 	}
 
 	@Test

@@ -1,5 +1,7 @@
 package de.kiliantaubmann.bella.ui.editor;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +36,12 @@ public final class OpenEditorRouter implements WriteGuard {
 
 	@Override
 	public Optional<ToolResult> intercept(ToolSpec tool, JsonObject input) {
+		List<ObjectTarget> activated = ObjectTarget.activationTargets(tool, input);
+		if (!activated.isEmpty()) {
+			AtomicReference<Optional<ToolResult>> result = new AtomicReference<>(Optional.empty());
+			Display.getDefault().syncExec(() -> result.set(unsavedBeforeActivation(activated)));
+			return result.get();
+		}
 		if (!ObjectTarget.isSourceWrite(tool, input)) {
 			return Optional.empty();
 		}
@@ -90,6 +98,27 @@ public final class OpenEditorRouter implements WriteGuard {
 		return Optional.of(ToolResult.ok(target.name()
 				+ " is open in the developer's editor, so the new source was written into the editor buffer. "
 				+ "It is NOT saved and NOT activated; the developer reviews it and saves/activates in ADT."));
+	}
+
+	/**
+	 * Activation works on the saved version. If an object is open with unsaved
+	 * changes (e.g. code Bella just wrote into the editor), activating would
+	 * activate and test the old code, so the call is stopped.
+	 */
+	private static Optional<ToolResult> unsavedBeforeActivation(List<ObjectTarget> targets) {
+		List<String> unsaved = new ArrayList<>();
+		for (ObjectTarget t : targets) {
+			IEditorPart part = findOpenEditor(t);
+			if (part != null && part.isDirty()) {
+				unsaved.add(t.name());
+			}
+		}
+		if (unsaved.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(ToolResult.error(String.join(", ", unsaved) + " is open in the developer's editor with "
+				+ "unsaved changes; activating now would activate (and test) the last saved version. Not activated. "
+				+ "Ask the developer to save (Ctrl+S) and activate (Ctrl+F3) in the editor."));
 	}
 
 	/** An open editor showing the target object, searching all windows and pages. */

@@ -119,8 +119,8 @@ public final class ToolExecutor {
 		}
 		JsonObject effective = input;
 		if (rules.mode() == ChatMode.GOD && ToolRegistry.ADT_PROVIDER_ID.equals(tool.providerId())
-				&& "adt_activate".equals(tool.remoteName()) && !input.has(AUTO_TEST)) {
-			// Godmode tests every activation without relying on the model to ask for it.
+				&& "adt_activate".equals(tool.remoteName())) {
+			// Godmode tests every activation; the model can neither forget nor switch it off.
 			effective = input.deepCopy();
 			effective.addProperty(AUTO_TEST, true);
 		}

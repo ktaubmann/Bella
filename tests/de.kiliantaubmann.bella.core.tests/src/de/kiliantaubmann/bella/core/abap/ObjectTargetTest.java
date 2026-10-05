@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 import com.google.gson.JsonObject;
@@ -47,5 +49,18 @@ class ObjectTargetTest {
 		assertTrue(ObjectTarget.isSourceWrite(write, Json.parseObject("{\"name\":\"ZX\",\"source\":\"x\"}")));
 		assertFalse(ObjectTarget.isSourceWrite(write, Json.parseObject("{\"action\":\"delete\",\"name\":\"ZX\",\"source\":\"\"}")));
 		assertFalse(ObjectTarget.isSourceWrite(write, Json.parseObject("{\"name\":\"ZX\"}")));
+	}
+
+	@Test
+	void activationTargetsFromObjectsArrayOrSingleObject() {
+		ToolSpec adt = ToolSpec.of("adt_activate", "", new JsonObject(), Capability.ACTIVATE, ToolSpec.Kind.WRITE);
+		assertEquals(List.of(new ObjectTarget("ZCL_A", "CLAS"), new ObjectTarget("ZREP", null)),
+				ObjectTarget.activationTargets(adt, Json.parseObject(
+						"{\"objects\":[{\"name\":\"zcl_a\",\"type\":\"CLAS/OC\"},{\"name\":\"zrep\"}]}")));
+		ToolSpec arc1 = ToolSpec.of("SAPActivate", "", new JsonObject(), Capability.ACTIVATE, ToolSpec.Kind.WRITE);
+		assertEquals(List.of(new ObjectTarget("ZCL_B", null)),
+				ObjectTarget.activationTargets(arc1, Json.parseObject("{\"name\":\"ZCL_B\"}")));
+		ToolSpec read = ToolSpec.of("adt_read_source", "", new JsonObject(), null, ToolSpec.Kind.READ);
+		assertTrue(ObjectTarget.activationTargets(read, Json.parseObject("{\"name\":\"ZCL_B\"}")).isEmpty());
 	}
 }
