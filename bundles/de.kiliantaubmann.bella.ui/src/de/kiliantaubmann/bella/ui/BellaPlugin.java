@@ -55,7 +55,7 @@ import de.kiliantaubmann.bella.ui.prefs.SecureStore;
 public class BellaPlugin extends AbstractUIPlugin {
 
 	public static final String ID = "de.kiliantaubmann.bella.ui";
-	public static final String VERSION = "0.4.5";
+	public static final String VERSION = "0.4.6";
 
 	private static BellaPlugin plugin;
 

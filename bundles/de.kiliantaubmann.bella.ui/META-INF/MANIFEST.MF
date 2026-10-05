@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: %Bundle-Name
 Bundle-SymbolicName: de.kiliantaubmann.bella.ui;singleton:=true
-Bundle-Version: 0.4.5.qualifier
+Bundle-Version: 0.4.6.qualifier
 Bundle-Vendor: %Bundle-Vendor
 Bundle-Localization: plugin
 Bundle-RequiredExecutionEnvironment: JavaSE-21
