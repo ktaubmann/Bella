@@ -80,7 +80,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 				AdtBackend backend = super.addingService(reference);
 				Log.info("bella", "ADT integration available");
 				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination,
-						() -> prefs().getString(Prefs.WRITE_PACKAGES)));
+						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant));
 				return backend;
 			}
 
@@ -393,6 +393,16 @@ public class BellaPlugin extends AbstractUIPlugin {
 		return ProjectConventions.merge(general, ProjectConventions.of(
 				prefs().getString(Prefs.CONVENTIONS_TEXT + destinationId),
 				prefs().getString(Prefs.CONVENTIONS_NAMING + destinationId)));
+	}
+
+	/**
+	 * The ATC check variant for a system: its own, else the one for all
+	 * systems, else empty for the system default.
+	 */
+	public String atcVariant(String destinationId) {
+		String own = destinationId == null || destinationId.isBlank() ? ""
+				: prefs().getString(Prefs.ATC_VARIANT + destinationId).trim();
+		return own.isEmpty() ? prefs().getString(Prefs.ATC_VARIANT + Prefs.CONVENTIONS_GLOBAL).trim() : own;
 	}
 
 	public AbapPrompts prompts() {

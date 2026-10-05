@@ -45,20 +45,22 @@ import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
 
 /**
- * Project information and naming rules, for all systems and per ABAP project.
- * Bella gives them to the model and checks the naming rules in its style check.
+ * Project information, naming rules and ATC check variant, for all systems and
+ * per ABAP project. Bella gives the first two to the model and checks the
+ * naming rules in its style check.
  */
 public class ConventionsPreferencePage extends PreferencePage implements IWorkbenchPreferencePage {
 
 	/** Scope key: {@link Prefs#CONVENTIONS_GLOBAL} or a destination id. */
 	private final List<String> scopes = new ArrayList<>();
 	private final List<AdtSystem> systems = new ArrayList<>();
-	/** Edited texts per scope: [project information, naming rules]. */
+	/** Edited texts per scope: [project information, naming rules, ATC check variant]. */
 	private final Map<String, String[]> edits = new LinkedHashMap<>();
 	private Combo scope;
 	private String current;
 	private Text text;
 	private Text naming;
+	private Text atcVariant;
 	private Label status;
 	private Button derive;
 
@@ -112,6 +114,15 @@ public class ConventionsPreferencePage extends PreferencePage implements IWorkbe
 		status = new Label(rules, SWT.WRAP);
 		GridDataFactory.fillDefaults().grab(true, false).span(2, 1).hint(500, SWT.DEFAULT).applyTo(status);
 
+		Group atc = Form.group(c, Messages.get("conv.atc"));
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(atc);
+		new Label(atc, SWT.NONE).setText(Messages.get("conv.atc.variant"));
+		atcVariant = new Text(atc, SWT.SINGLE | SWT.BORDER);
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(atcVariant);
+		Label atcHint = new Label(atc, SWT.WRAP);
+		atcHint.setText(Messages.get("conv.atc.hint"));
+		GridDataFactory.fillDefaults().grab(true, false).span(2, 1).hint(500, SWT.DEFAULT).applyTo(atcHint);
+
 		Composite buttons = new Composite(c, SWT.NONE);
 		GridLayoutFactory.fillDefaults().numColumns(2).applyTo(buttons);
 		Button template = new Button(buttons, SWT.PUSH);
@@ -136,7 +147,7 @@ public class ConventionsPreferencePage extends PreferencePage implements IWorkbe
 			scope.select(scopes.indexOf(current)); // fix the rules of this scope first
 			return;
 		}
-		edits.put(current, new String[] { text.getText(), naming.getText() });
+		edits.put(current, new String[] { text.getText(), naming.getText(), atcVariant.getText() });
 		current = scopes.get(Math.max(0, scope.getSelectionIndex()));
 		load(current);
 	}
@@ -145,6 +156,7 @@ public class ConventionsPreferencePage extends PreferencePage implements IWorkbe
 		String[] e = edits.get(key);
 		text.setText(e != null ? e[0] : getPreferenceStore().getString(Prefs.CONVENTIONS_TEXT + key));
 		naming.setText(e != null ? e[1] : getPreferenceStore().getString(Prefs.CONVENTIONS_NAMING + key));
+		atcVariant.setText(e != null ? e[2] : getPreferenceStore().getString(Prefs.ATC_VARIANT + key));
 		validate();
 	}
 
@@ -245,6 +257,7 @@ public class ConventionsPreferencePage extends PreferencePage implements IWorkbe
 	protected void performDefaults() {
 		text.setText("");
 		naming.setText("");
+		atcVariant.setText("");
 		super.performDefaults();
 	}
 
@@ -253,10 +266,12 @@ public class ConventionsPreferencePage extends PreferencePage implements IWorkbe
 		if (!validate()) {
 			return false;
 		}
-		edits.put(current, new String[] { text.getText(), naming.getText() });
+		edits.put(current, new String[] { text.getText(), naming.getText(), atcVariant.getText() });
 		for (Map.Entry<String, String[]> e : edits.entrySet()) {
 			getPreferenceStore().setValue(Prefs.CONVENTIONS_TEXT + e.getKey(), e.getValue()[0]);
 			getPreferenceStore().setValue(Prefs.CONVENTIONS_NAMING + e.getKey(), e.getValue()[1]);
+			getPreferenceStore().setValue(Prefs.ATC_VARIANT + e.getKey(),
+					e.getValue()[2].trim().toUpperCase(Locale.ROOT));
 		}
 		return super.performOk();
 	}

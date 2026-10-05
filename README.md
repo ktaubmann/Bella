@@ -205,6 +205,7 @@ Under *Preferences → Bella → Project conventions* you describe your project 
   ```
   *Insert standard rules* fills in common SAP conventions. The model follows the rules, and the style check (`abap_lint`, diff preview) reports names that break them: data by where it is declared (local, global, attribute), constants, field symbols, types, methods and their parameters, local and test classes, and the names of programs, global classes and interfaces.
 - **Derive from package…** reads the objects and a few sources of a package and lets the model propose both parts; review them before you apply.
+- **ATC check variant** for *Check with ATC and fix…*, the transport review, *Review code* and `adt_atc_check`. A system's own variant wins over the one for all systems; left empty, Bella uses the system's default variant. Useful when the default variant runs remote checks through a central check system that cannot be reached (RFC destination errors).
 
 The parameters of ATC check variants (e.g. a naming check) cannot be read through ADT, so they cannot be imported; findings of such a check are fixed with *Check with ATC and fix…*.
 

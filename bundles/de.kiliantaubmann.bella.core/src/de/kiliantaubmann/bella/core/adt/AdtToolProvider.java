@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -34,6 +35,7 @@ public final class AdtToolProvider implements ToolProvider {
 	private final AdtBackend backend;
 	private final Supplier<String> defaultDestination;
 	private final Supplier<String> writePackages;
+	private final Function<String, String> atcVariants;
 	private final SourceCache cache = new SourceCache();
 	/** Inactive objects per destination, kept briefly so a turn with many reads asks once. */
 	private final Map<String, Inactive> inactive = new ConcurrentHashMap<>();
@@ -57,9 +59,19 @@ public final class AdtToolProvider implements ToolProvider {
 	 *                      activate in, e.g. {@code $TMP, Z*, Y*}; empty allows all
 	 */
 	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages) {
+		this(backend, defaultDestination, writePackages, d -> "");
+	}
+
+	/**
+	 * @param atcVariants ATC check variant per destination id; empty for the
+	 *                    system default
+	 */
+	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages,
+			Function<String, String> atcVariants) {
 		this.backend = backend;
 		this.defaultDestination = defaultDestination;
 		this.writePackages = writePackages;
+		this.atcVariants = atcVariants;
 	}
 
 	/** Package patterns from a comma, semicolon or space separated list; {@code *} is a wildcard. */
@@ -180,7 +192,7 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[] { "name" }, objectProps()), Capability.UNIT_TEST, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_atc_check", "Run ATC (ABAP Test Cockpit) checks on an object and list findings.",
 				schema(new String[] { "name" }, objectProps("check_variant", "string",
-						"ATC check variant; omit for the system default.")),
+						"ATC check variant; omit for the one set in Bella's preferences, else the system default.")),
 				Capability.ATC, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_transport_info",
 				"Which transport request a change needs: whether the object's package records changes, the request the object "
@@ -368,7 +380,8 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private AdtClient client(AdtSystem s) {
-		return new AdtClient(backend.stateless(s.destinationId()), cache, s.destinationId());
+		return new AdtClient(backend.stateless(s.destinationId()), cache, s.destinationId())
+				.atcVariant(atcVariants.apply(s.destinationId()));
 	}
 
 	private AdtObjectRef resolve(AdtClient c, JsonObject in, CancelToken cancel) throws IOException {

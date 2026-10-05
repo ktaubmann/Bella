@@ -55,6 +55,8 @@ public final class Prefs {
 	/** Naming rules per ABAP project, same suffixes as {@link #CONVENTIONS_TEXT}. */
 	public static final String CONVENTIONS_NAMING = "conventions.naming.";
 	public static final String CONVENTIONS_GLOBAL = "global";
+	/** ATC check variant, same suffixes as {@link #CONVENTIONS_TEXT}; empty for the system default. */
+	public static final String ATC_VARIANT = "atc.variant.";
 	/** JSON array of MCP server definitions, see {@link McpServerConfig}. */
 	public static final String MCP_SERVERS = "mcp.servers";
 

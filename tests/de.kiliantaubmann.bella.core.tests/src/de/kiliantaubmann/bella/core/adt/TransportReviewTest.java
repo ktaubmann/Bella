@@ -167,6 +167,20 @@ class TransportReviewTest {
 	}
 
 	@Test
+	void atcUsesTheVariantSetForTheSystem() {
+		FakeAdt adt = system();
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev", () -> "", d -> d.equals("dev") ? "z_no_remote" : "");
+		assertFalse(p.call("adt_transport_review", Json.parseObject("{\"request\":\"devk900100\"}"), CancelToken.NONE).isError());
+		assertTrue(adt.log.contains("POST /sap/bc/adt/atc/worklists?checkVariant=Z_NO_REMOTE"), adt.log.toString());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("atc/customizing")), "no need to ask for the system default");
+
+		FakeAdt plain = system();
+		new AdtToolProvider(plain, () -> "dev").call("adt_transport_review",
+				Json.parseObject("{\"request\":\"devk900100\"}"), CancelToken.NONE);
+		assertTrue(plain.log.contains("GET /sap/bc/adt/atc/customizing"), plain.log.toString());
+	}
+
+	@Test
 	void failedUnitRunHasOneHeading() {
 		FakeAdt adt = system();
 		adt.route("POST /sap/bc/adt/abapunit/testruns", r -> new AdtResponse(406, "text/plain", "not acceptable"));

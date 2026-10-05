@@ -30,6 +30,8 @@ public final class AdtClient {
 	private final AdtTransport transport;
 	private final SourceCache cache;
 	private final String cacheScope;
+	/** Check variant for ATC runs without one; empty for the system default. */
+	private String atcVariant = "";
 
 	public AdtClient(AdtTransport transport) {
 		this(transport, null, null);
@@ -43,6 +45,17 @@ public final class AdtClient {
 		this.transport = transport;
 		this.cache = cache;
 		this.cacheScope = cacheScope;
+	}
+
+	/**
+	 * Sets the check variant ATC runs use when the caller names none, e.g. one
+	 * without the remote checks of a central check system.
+	 *
+	 * @param variant check variant; {@code null} or empty for the system default
+	 */
+	public AdtClient atcVariant(String variant) {
+		this.atcVariant = variant == null ? "" : variant.trim().toUpperCase(Locale.ROOT);
+		return this;
 	}
 
 	static String enc(String s) {
@@ -737,15 +750,15 @@ public final class AdtClient {
 		return head + sb;
 	}
 
-	/** ATC check with the given variant (or the system default). */
+	/** ATC check with the given variant (or the configured one, or the system default). */
 	public List<Message> atcCheck(String objectUri, String variant, CancelToken cancel) throws IOException {
 		return atcCheck(List.of(objectUri), variant, cancel);
 	}
 
-	/** One ATC run over several objects with the given variant (or the system default). */
+	/** One ATC run over several objects with the given variant (or the configured one, or the system default). */
 	public List<Message> atcCheck(List<String> objectUris, String variant, CancelToken cancel) throws IOException {
-		String v = variant;
-		if (v == null || v.isBlank()) {
+		String v = variant == null || variant.isBlank() ? atcVariant : variant;
+		if (v.isBlank()) {
 			v = atcDefaultVariant(cancel);
 		}
 		String worklist = send(AdtRequest.post("/sap/bc/adt/atc/worklists?checkVariant=" + enc(v), "text/plain", null,

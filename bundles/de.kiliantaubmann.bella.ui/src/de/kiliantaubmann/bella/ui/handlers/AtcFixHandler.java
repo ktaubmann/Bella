@@ -70,13 +70,15 @@ public class AtcFixHandler extends EditorHandler {
 			protected IStatus run(IProgressMonitor monitor) {
 				try {
 					List<AdtClient.Message> findings = new AdtClient(adt.stateless(obj.destinationId()))
+							.atcVariant(BellaPlugin.getDefault().atcVariant(obj.destinationId()))
 							.atcCheck(AdtObjectRef.objectUri(obj.uri()), null, cancel);
 					Log.info("editor", "ATC on " + obj.name() + ": " + findings.size() + " findings");
 					Display.getDefault().asyncExec(() -> show(part, editor, obj, findings));
 				} catch (Exception e) {
 					Log.warn("editor", "ATC on " + obj.name() + " failed: " + e);
 					Display.getDefault().asyncExec(() -> MessageDialog.openError(part.getSite().getShell(),
-							Messages.get("atc.title"), Messages.fmt("atc.failed", String.valueOf(e.getMessage()))));
+							Messages.get("atc.title"), Messages.fmt("atc.failed", String.valueOf(e.getMessage())) + "\n\n"
+									+ Messages.get("atc.failed.hint")));
 				}
 				return Status.OK_STATUS;
 			}
