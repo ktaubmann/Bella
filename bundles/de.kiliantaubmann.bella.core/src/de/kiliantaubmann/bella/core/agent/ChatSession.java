@@ -13,6 +13,7 @@ import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.llm.LlmProvider;
 import de.kiliantaubmann.bella.core.llm.StopReason;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
+import de.kiliantaubmann.bella.core.mask.Masker;
 import de.kiliantaubmann.bella.core.tools.ToolPolicy;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -55,11 +56,20 @@ public final class ChatSession implements Conversation {
 
 	public ChatSession(Supplier<LlmProvider> provider, Supplier<Settings> settings, String system, ToolRegistry tools,
 			Supplier<ToolPolicy> policy, Confirmer confirmer, WriteGuard writeGuard) {
+		this(provider, settings, system, tools, policy, confirmer, writeGuard, Masker.NONE);
+	}
+
+	/**
+	 * @param masker masks tool results for the model; the history then stays
+	 *               masked, so thinking blocks and the prompt cache stay valid
+	 */
+	public ChatSession(Supplier<LlmProvider> provider, Supplier<Settings> settings, String system, ToolRegistry tools,
+			Supplier<ToolPolicy> policy, Confirmer confirmer, WriteGuard writeGuard, Masker masker) {
 		this.provider = provider;
 		this.settings = settings;
 		this.system = system;
 		this.tools = tools;
-		this.executor = new ToolExecutor(tools, policy, confirmer, writeGuard);
+		this.executor = new ToolExecutor(tools, policy, confirmer, writeGuard, masker);
 	}
 
 	public synchronized List<JsonObject> history() {

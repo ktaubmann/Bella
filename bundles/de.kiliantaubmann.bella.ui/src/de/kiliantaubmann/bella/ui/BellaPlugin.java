@@ -19,11 +19,15 @@ import org.osgi.framework.BundleContext;
 import org.osgi.util.tracker.ServiceTracker;
 
 import de.kiliantaubmann.bella.core.adt.AdtBackend;
+import de.kiliantaubmann.bella.core.adt.AdtSystem;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
 import de.kiliantaubmann.bella.core.lint.LintToolProvider;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.agent.LoggingConversation;
+import de.kiliantaubmann.bella.core.agent.MaskingConversation;
+import de.kiliantaubmann.bella.core.llm.MaskingProvider;
+import de.kiliantaubmann.bella.core.mask.Masker;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCli;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
@@ -67,6 +71,9 @@ public class BellaPlugin extends AbstractUIPlugin {
 	private ServiceTracker<AdtBackend, AdtBackend> adtTracker;
 	private volatile String activeDestination;
 	private LogFile logFile;
+	private final Masker masker = new Masker(this::maskSettings);
+	private volatile List<AdtSystem> maskSystems = List.of();
+	private volatile long maskSystemsAt;
 
 	public static BellaPlugin getDefault() {
 		return plugin;
@@ -82,7 +89,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 				AdtBackend backend = super.addingService(reference);
 				Log.info("bella", "ADT integration available");
 				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination,
-						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant));
+						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant)
+						.hideColumns(() -> masker.active() ? prefs().getString(Prefs.MASK_COLUMNS) : ""));
 				return backend;
 			}
 
@@ -227,6 +235,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 				.append(adtCore == null ? "" : " (com.sap.adt.tools.core " + adtCore.getVersion() + ")")
 				.append("\nPreferred tools: ").append(prefs().getString(Prefs.PREFERRED_TOOLS))
 				.append(", SAP definitions for editor actions: ").append(prefs().getBoolean(Prefs.EDITOR_SAP_CONTEXT))
+				.append("\nMasking: ").append(masker.active() ? "on" : "off")
 				.append("\nMCP servers:");
 		List<McpServerConfig> servers = McpServerConfig.parse(prefs().getString(Prefs.MCP_SERVERS));
 		if (servers.isEmpty()) {
@@ -273,9 +282,71 @@ public class BellaPlugin extends AbstractUIPlugin {
 		return AnthropicProvider.ID.equals(providerId());
 	}
 
-	/** The configured model provider, writing its requests to Bella's log. */
+	/**
+	 * The configured model provider for single requests (editor actions,
+	 * completion): masks the request, unmasks the answer, and logs what is
+	 * actually sent.
+	 */
 	public LlmProvider provider() {
+		return MaskingProvider.wrap(chatProvider(), masker);
+	}
+
+	/** The provider for the chat, whose history stays masked; see {@link MaskingConversation}. */
+	private LlmProvider chatProvider() {
 		return LoggingProvider.wrap(plainProvider());
+	}
+
+	/** Replaces confidential data with placeholders for the model and back; shared by all chats and actions. */
+	public Masker masker() {
+		return masker;
+	}
+
+	/** Masking as set in the preferences, with the system data of the ABAP projects in the workspace. */
+	private Masker.Settings maskSettings() {
+		IPreferenceStore s = prefs();
+		if (!s.getBoolean(Prefs.MASK_ENABLED)) {
+			return Masker.Settings.OFF;
+		}
+		List<String> system = new ArrayList<>();
+		List<String> users = new ArrayList<>();
+		if (s.getBoolean(Prefs.MASK_SYSTEM)) {
+			for (AdtSystem sys : maskSystems()) {
+				system.add(sys.projectName());
+				system.add(sys.destinationId());
+				if (sys.systemId() != null) {
+					system.add(sys.systemId());
+				}
+				if (sys.user() != null) {
+					users.add(sys.user());
+				}
+			}
+		}
+		return new Masker.Settings(true, s.getBoolean(Prefs.MASK_OBJECTS), s.getBoolean(Prefs.MASK_PERSONAL),
+				Masker.Settings.parseTerms(s.getString(Prefs.MASK_TERMS)), system, users);
+	}
+
+	/** The ABAP projects, read at most every ten seconds: masking runs on every message and tool result. */
+	private List<AdtSystem> maskSystems() {
+		AdtBackend backend = adt();
+		if (backend == null) {
+			return List.of();
+		}
+		long now = System.currentTimeMillis();
+		if (now - maskSystemsAt > 10_000) {
+			try {
+				maskSystems = List.copyOf(backend.systems());
+			} catch (RuntimeException e) {
+				Log.warn("mask", "cannot read the ABAP projects: " + e.getMessage());
+			}
+			maskSystemsAt = now;
+		}
+		return maskSystems;
+	}
+
+	/** The chat system prompt, masked and with the note on placeholders while masking is on. */
+	private String chatSystem() {
+		String system = prompts().chatSystem();
+		return masker.active() ? masker.mask(system) + Masker.PROMPT_NOTE : system;
 	}
 
 	private LlmProvider plainProvider() {
@@ -329,21 +400,22 @@ public class BellaPlugin extends AbstractUIPlugin {
 	 */
 	public Conversation newConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard,
 			Supplier<ChatMode> mode) {
-		return LoggingConversation.wrap(plainConversation(confirmer, writeGuard, () -> policy().withMode(mode.get())));
+		return LoggingConversation.wrap(MaskingConversation.wrap(
+				plainConversation(confirmer, writeGuard, () -> policy().withMode(mode.get())), masker));
 	}
 
 	private Conversation plainConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard,
 			Supplier<ToolPolicy> policy) {
 		if (usesClaudeCode()) {
-			return new ClaudeCodeSession(claudeCli(), this::chatSettings, prompts().chatSystem(),
-					new ToolExecutor(tools(), policy, confirmer, writeGuard), VERSION);
+			return new ClaudeCodeSession(claudeCli(), this::chatSettings, chatSystem(),
+					new ToolExecutor(tools(), policy, confirmer, writeGuard, masker), VERSION);
 		}
 		if (usesCopilot()) {
-			return new CopilotSession(copilotCli(), this::chatSettings, prompts().chatSystem(),
-					new ToolExecutor(tools(), policy, confirmer, writeGuard), VERSION);
+			return new CopilotSession(copilotCli(), this::chatSettings, chatSystem(),
+					new ToolExecutor(tools(), policy, confirmer, writeGuard, masker), VERSION);
 		}
-		return new ChatSession(this::provider, this::chatSettings, prompts().chatSystem(), tools(), policy,
-				confirmer::confirm, writeGuard);
+		return new ChatSession(this::chatProvider, this::chatSettings, chatSystem(), tools(), policy,
+				confirmer::confirm, writeGuard, masker);
 	}
 
 	public String chatModel() {

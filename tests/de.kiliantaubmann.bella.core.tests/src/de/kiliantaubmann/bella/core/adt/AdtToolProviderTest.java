@@ -473,4 +473,14 @@ class AdtToolProviderTest {
 		assertTrue(testBodies.get(0).contains("/sap/bc/adt/oo/classes/zcl_a"), testBodies.get(0));
 		assertFalse(testBodies.get(0).contains("zif_a"), testBodies.get(0));
 	}
+
+	@Test
+	void hiddenColumnsShowStars() {
+		FakeAdt adt = twoSystems().route("POST /sap/bc/adt/datapreview/freestyle",
+				r -> FakeAdt.ok(AdtClientTest.TABLE_XML));
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").hideColumns(() -> "MTE*").call("adt_table_contents",
+				Json.parseObject("{\"table\":\"t000\"}"), CancelToken.NONE);
+		assertTrue(r.content().contains("| 100 | *** |"), r.content());
+		assertFalse(r.content().contains("Dev"), r.content());
+	}
 }

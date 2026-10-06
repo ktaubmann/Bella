@@ -322,6 +322,9 @@ public class ChatView extends ViewPart {
 		if (mode != ChatMode.NORMAL) {
 			text += " · " + Messages.get(mode == ChatMode.PLAN ? "chat.planMode" : "chat.godMode");
 		}
+		if (plugin.masker().active()) {
+			text += " · " + Messages.get("chat.masked");
+		}
 		status.setText(text);
 		status.getParent().layout();
 	}

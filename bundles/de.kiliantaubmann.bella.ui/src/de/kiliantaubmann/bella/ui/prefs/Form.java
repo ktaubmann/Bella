@@ -110,6 +110,18 @@ final class Form {
 		});
 	}
 
+	/** Multi-line text over both columns with a label above it. */
+	Text area(Composite parent, String label, String key, int lines) {
+		Label l = new Label(parent, SWT.NONE);
+		l.setText(label);
+		GridDataFactory.fillDefaults().span(2, 1).applyTo(l);
+		Text t = new Text(parent, SWT.MULTI | SWT.BORDER | SWT.WRAP | SWT.V_SCROLL);
+		GridDataFactory.fillDefaults().span(2, 1).grab(true, false)
+				.hint(380, t.getLineHeight() * lines + 6).applyTo(t);
+		bindText(t, key);
+		return t;
+	}
+
 	/** Password field kept in secure storage instead of the preference store. */
 	Text secret(Composite parent, String label, String secureKey) {
 		label(parent, label);
