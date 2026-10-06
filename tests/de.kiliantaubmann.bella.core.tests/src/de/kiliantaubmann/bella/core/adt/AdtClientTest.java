@@ -248,4 +248,12 @@ class AdtClientTest {
 		c.tableContents("SELECT * FROM t000 WHERE mtext LIKE '%;%'", 5, CancelToken.NONE);
 		assertEquals(2, bodies.size(), "a ';' inside a literal is fine");
 	}
+
+	@Test
+	void messagesNameTheClassInclude() {
+		assertEquals("Warning line 7 in include testclasses: x", new AdtClient.Message("Warning", "x",
+				"/sap/bc/adt/oo/classes/zcl_a/includes/testclasses#start=7,1", 7).format());
+		assertEquals("Error line 3: y",
+				new AdtClient.Message("Error", "y", "/sap/bc/adt/oo/classes/zcl_a/source/main#start=3,1", 3).format());
+	}
 }

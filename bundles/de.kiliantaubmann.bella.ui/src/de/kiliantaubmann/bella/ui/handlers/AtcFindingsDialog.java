@@ -73,8 +73,9 @@ final class AtcFindingsDialog extends Dialog {
 		}
 		for (AdtClient.Message m : findings) {
 			TableItem item = new TableItem(table, SWT.NONE);
-			item.setText(new String[] { priority(m.severity()), m.line() > 0 ? String.valueOf(m.line()) : "",
-					m.text() });
+			String line = m.line() > 0 ? String.valueOf(m.line()) : "";
+			item.setText(new String[] { priority(m.severity()),
+					m.include().isEmpty() ? line : line + " (" + m.include() + ")", m.text() });
 			item.setChecked(!m.severity().equals("Info"));
 			item.setData(m);
 		}
@@ -112,7 +113,8 @@ final class AtcFindingsDialog extends Dialog {
 
 	private void reveal(AdtClient.Message m) {
 		IDocument doc = EditorBridge.document(editor);
-		if (doc == null || m.line() <= 0 || m.line() > doc.getNumberOfLines()) {
+		// a line of another include (e.g. the test classes) is not in this editor
+		if (doc == null || !m.include().isEmpty() || m.line() <= 0 || m.line() > doc.getNumberOfLines()) {
 			return;
 		}
 		try {

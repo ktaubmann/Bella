@@ -593,9 +593,23 @@ public final class AdtClient {
 	public record Message(String severity, String text, String uri, int line) {
 
 		public String format() {
-			return severity + (line > 0 ? " line " + line : "") + ": " + text;
+			String include = include();
+			return severity + (line > 0 ? " line " + line : "") + (include.isEmpty() ? "" : " in include " + include)
+					+ ": " + text;
+		}
+
+		/**
+		 * The class include the message is about ({@code testclasses},
+		 * {@code definitions} …); empty for the main source. Line numbers
+		 * count within it.
+		 */
+		public String include() {
+			Matcher m = INCLUDE.matcher(uri == null ? "" : uri);
+			return m.find() ? m.group(1).toLowerCase(Locale.ROOT) : "";
 		}
 	}
+
+	private static final Pattern INCLUDE = Pattern.compile("/includes/([A-Za-z_]+)");
 
 	private static final Pattern START = Pattern.compile("#start=(\\d+)");
 
