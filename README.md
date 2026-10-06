@@ -53,26 +53,6 @@ Two tick boxes below the chat input set how freely Bella may act. They exclude e
   - Still in place: the allowed packages, your `DENY` rules, no release of transports, and objects open in an editor are only changed in the editor (you save and activate those).
   - Use it in development systems only.
 
-### Masking confidential data
-
-Before anything goes to the model, Bella replaces confidential names and data with placeholders, and puts the real values back into what comes from the model. You set it under *Preferences → Bella → Masking*; it is on by default.
-
-| What | Example | Placeholder |
-|---|---|---|
-| Customer objects (Z*, Y*) | `ZCL_ACME_ORDER`, `zcl_acme_order` | `ZCL_MASK1`, `zcl_mask1` |
-| Own terms (company, customer, project) | `Acme GmbH` | `MASKTERM2` |
-| Own namespaces (as a term) | `/ACME/CL_ORDER` | `/MASK3/CL_ORDER` |
-| System data: SID, ABAP project, logon user | `S4H`, `MUELLER` | `MASKSYS4`, `MASKUSER5` |
-| E-mail addresses, IBANs | `anna@acme.de` | `maskmail6@example.invalid` |
-| Table columns with personal data (`adt_table_contents`) | `NAME1`, `STRAS`, `IBAN`, `ERNAM`, … | `***` |
-
-- **Where:** chat (all providers), editor actions, completion, deriving conventions, and every tool result (Bella's ADT tools and ARC-1). Tool inputs from the model get the real names back before they reach the editor or SAP, so code the model writes with `ZCL_MASK1` lands as `ZCL_ACME_ORDER`.
-- **What you see:** real names everywhere in Eclipse: chat, diff preview, confirmation dialogs. The status line of the chat shows *Masked*.
-- **Log file:** Bella's log is masked the same way, with the same placeholders as the model saw, including prompts, tool input and output, ADT requests and error messages.
-- **Stable:** a name keeps its placeholder for the whole Eclipse session. The model is told that the placeholders stand for real names and must be used as written. Names the model introduces itself (e.g. a new class it creates) are not masked.
-- **Table columns:** values of matching columns are replaced by `***` and cannot be restored; the list (with `*` wildcards) covers names, addresses, contact, bank, tax and HR data and user names in common SAP tables.
-- **Limits:** names of people in free text, comments or string literals are recognized only if you add them as terms; a lower-case name without underscore (`zreport`) is masked once Bella has seen it in upper case (e.g. in the object header). Column aliases in a free `SELECT` bypass the column list.
-
 ### How Bella gets SAP context
 
 A model that does not know your system guesses field names and signatures. Bella therefore reads them from the system through your ADT logon:
@@ -267,12 +247,18 @@ When something does not work, switch on the log under *Preferences → Bella →
   - MCP connections.
 - **Details** (a second checkbox) adds the content: prompts, answers, tool input and output, source code and every protocol line of the CLIs. Only switch it on while you reproduce a problem.
 - API keys, tokens, bearer headers and passwords are removed from every entry. Environment variables are logged by name only.
+- **Masking** (same page, on by default): confidential data in the log is replaced with placeholders, so you can attach the file to a bug report. The model still gets the real data.
+  - Customer objects (Z*, Y*): `ZCL_ACME_ORDER` → `ZCL_MASK1`, `zcl_acme_order` → `zcl_mask1`.
+  - System data: SID, ABAP project and logon user → `MASKSYS2`, `MASKUSER3`.
+  - E-mail addresses and IBANs → `maskmail4@example.invalid`, `MASKIBAN5`.
+  - Own terms (company, customer, project, namespace such as `/ACME/`), one per line → `MASKTERM6`, `/MASK7/`.
+  - A value keeps its placeholder for the Eclipse session, so you can follow an object through the log. Names of people in free text, comments or string literals are only masked if you add them as terms.
 - The file is `bella.log` in `<workspace>/.metadata/.plugins/de.kiliantaubmann.bella.ui/`. The preference page opens it, opens its folder or clears it; the chat view menu (▾) has *Open log*. At 5 MB it moves to `bella.log.1`.
 - Please attach the file to a bug report. Errors also still go to Eclipse's *Error Log* view.
 
 ## Security and privacy
 
-- The selected model provider receives your question, source excerpts from the editor and tool results, with customer objects, own terms, system data and personal data masked (see *Masking confidential data*). With Ollama everything stays local.
+- The selected model provider receives your question, source excerpts from the editor and tool results. With Ollama everything stays local.
 - API keys and tokens are kept in Eclipse secure storage, not in plain-text preferences.
 - Bella never opens an SAP logon itself. Tools only use projects that are already logged on.
 - Writing tools ask first, releasing transports is blocked, and open objects are only changed in the editor.

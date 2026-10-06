@@ -3,34 +3,25 @@ package de.kiliantaubmann.bella.core.mask;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
-
 /**
- * Replaces sensitive names and data with placeholders before text goes to the
- * model, and puts the originals back into what comes from the model (answers,
- * code, tool inputs). The mapping is stable for the Eclipse session, so the
- * model sees the same placeholder for an object in every message, and code it
- * writes with placeholders lands in SAP and the editor with the real names.
+ * Replaces confidential names and data in Bella's log with placeholders, so
+ * the log file can be attached to a bug report. What goes to the model is not
+ * changed.
  * <p>
  * Masked are customer objects (names starting with Z or Y, e.g.
  * {@code ZCL_ACME_ORDER} → {@code ZCL_MASK1}), the developer's own terms
  * (company, project, namespace), system data (SID, ABAP project, logon user)
  * and personal data that can be recognized by its shape (e-mail addresses,
- * IBANs). Names the model brings up itself, such as a class it wants to
- * create, are not secret to it and stay as they are.
+ * IBANs). A value keeps its placeholder for the Eclipse session, so entries
+ * about the same object can still be followed through the log.
  */
 public final class Masker {
 
@@ -88,16 +79,6 @@ public final class Masker {
 		}
 	}
 
-	/** Tells the model what the placeholders are; added to the system prompt while masking is on. */
-	public static final String PROMPT_NOTE = """
-
-			Masking: confidential names and data in this conversation are replaced by placeholders such as \
-			ZCL_MASK1, ZMASK2, /MASK3/, MASKTERM4, MASKSYS5, MASKUSER6, maskmail7@example.invalid or MASKIBAN8. \
-			Treat each placeholder as the real name: use it exactly as written in code, tool calls and answers \
-			(Bella puts the real values back before anything reaches the editor or the SAP system). Do not ask for \
-			or guess the real values, and do not invent new names that look like placeholders.
-			""";
-
 	/** A masker that never masks. */
 	public static final Masker NONE = new Masker(() -> Settings.OFF);
 
@@ -115,18 +96,11 @@ public final class Masker {
 	/** Upper-case words starting with Z or Y that are no customer objects. */
 	private static final Set<String> NOT_OBJECTS = Set.of("YES", "YEAR", "YEARS", "YET", "YOU", "YOUR", "YOURS", "YTD",
 			"ZERO", "ZEROS", "ZONE", "ZONES", "ZIP", "ZOOM", "YAML", "YIELD");
-	/** Characters a placeholder can consist of; text ending in them is held back while streaming. */
-	private static final Pattern TRAILING_TOKEN = Pattern.compile("[" + IDENT + "/@.%+-]+$");
-	private static final int MAX_HOLD_BACK = 200;
 
 	private final Supplier<Settings> settings;
 	private final Map<String, Entry> byOriginal = new HashMap<>();
 	private final Map<String, Entry> byPlaceholder = new HashMap<>();
-	/** Customer names the model introduced itself (upper case); they are not masked. */
-	private final Set<String> modelKnown = new HashSet<>();
 	private int counter;
-	private Pattern placeholderPattern;
-	private int placeholderPatternSize = -1;
 
 	public Masker(Supplier<Settings> settings) {
 		this.settings = settings;
@@ -136,14 +110,7 @@ public final class Masker {
 		return settings.get().enabled();
 	}
 
-	/** Number of values masked so far in this session. */
-	public synchronized int size() {
-		return byOriginal.size();
-	}
-
-	// ---- masking ----------------------------------------------------------------
-
-	/** Text for the model: sensitive values replaced by placeholders. */
+	/** Text with confidential values replaced by placeholders. */
 	public synchronized String mask(String text) {
 		Settings s = settings.get();
 		if (!s.enabled() || text == null || text.isEmpty()) {
@@ -157,7 +124,7 @@ public final class Masker {
 			out = replaceLiteral(out, sys, false, Kind.SYSTEM);
 		}
 		for (String user : byLength(s.users())) {
-			// as written: a user called ADMIN must not turn every "admin" in the text into a placeholder
+			// as written: a user called ADMIN must not turn every "admin" into a placeholder
 			out = replaceLiteral(out, user, false, Kind.USER);
 		}
 		if (s.personal()) {
@@ -185,7 +152,7 @@ public final class Masker {
 		if (!m.find()) {
 			return text;
 		}
-		Entry e = entry(kind == Kind.NAMESPACE || kind == Kind.USER ? value.toUpperCase(Locale.ROOT) : value, kind);
+		Entry e = entry(kind == Kind.NAMESPACE ? value.toUpperCase(Locale.ROOT) : value, kind);
 		StringBuilder sb = new StringBuilder();
 		do {
 			m.appendReplacement(sb, Matcher.quoteReplacement(sameCase(m.group(), e)));
@@ -222,7 +189,7 @@ public final class Masker {
 			String replacement = found;
 			if (known != null) {
 				replacement = sameCase(found, known);
-			} else if (isCustomerObject(found) && !isPlaceholder(found) && !modelKnown.contains(upper)) {
+			} else if (isCustomerObject(found) && !isPlaceholder(found)) {
 				replacement = sameCase(found, entry(upper, Kind.OBJECT));
 			}
 			any |= !replacement.equals(found);
@@ -248,7 +215,8 @@ public final class Masker {
 	}
 
 	private Entry entry(String original, Kind kind) {
-		String key = key(original, kind);
+		String key = kind == Kind.SYSTEM || kind == Kind.USER || kind == Kind.IBAN ? original
+				: original.toUpperCase(Locale.ROOT);
 		Entry e = byOriginal.get(key);
 		if (e != null) {
 			return e;
@@ -267,10 +235,6 @@ public final class Masker {
 		byOriginal.put(key, e);
 		byPlaceholder.put(placeholder.toUpperCase(Locale.ROOT), e);
 		return e;
-	}
-
-	private static String key(String original, Kind kind) {
-		return kind == Kind.SYSTEM || kind == Kind.IBAN ? original : original.toUpperCase(Locale.ROOT);
 	}
 
 	/** {@code ZCL_ACME_ORDER} → {@code ZCL_}; {@code ZACME_REPORT} → {@code Z}. */
@@ -298,174 +262,5 @@ public final class Masker {
 	private static String boundaryAfter(String value) {
 		char last = value.charAt(value.length() - 1);
 		return Character.isLetterOrDigit(last) || last == '_' ? "(?![" + IDENT + "])" : "";
-	}
-
-	// ---- unmasking ----------------------------------------------------------------
-
-	/**
-	 * Text from the model with the originals put back. Customer names the model
-	 * wrote itself are remembered and not masked later. Works also after
-	 * masking was switched off, for placeholders still in a running chat.
-	 */
-	public synchronized String unmask(String text) {
-		if (text == null || text.isEmpty()) {
-			return text;
-		}
-		Settings s = settings.get();
-		if (s.enabled() && s.objects()) {
-			Matcher m = CUSTOMER_OBJECT.matcher(text);
-			while (m.find()) {
-				String upper = m.group().toUpperCase(Locale.ROOT);
-				if (!isPlaceholder(upper) && !byOriginal.containsKey(upper) && isCustomerObject(m.group())) {
-					modelKnown.add(upper);
-				}
-			}
-		}
-		if (byPlaceholder.isEmpty()) {
-			return text;
-		}
-		Matcher m = placeholders().matcher(text);
-		StringBuilder sb = new StringBuilder();
-		boolean any = false;
-		while (m.find()) {
-			Entry e = byPlaceholder.get(m.group().toUpperCase(Locale.ROOT));
-			if (e == null) {
-				continue;
-			}
-			any = true;
-			String found = m.group();
-			boolean lower = found.equals(found.toLowerCase(Locale.ROOT))
-					&& (e.kind() == Kind.OBJECT || e.kind() == Kind.NAMESPACE);
-			m.appendReplacement(sb, Matcher.quoteReplacement(lower ? e.original().toLowerCase(Locale.ROOT) : e.original()));
-		}
-		if (!any) {
-			return text;
-		}
-		m.appendTail(sb);
-		return sb.toString();
-	}
-
-	private Pattern placeholders() {
-		if (placeholderPattern == null || placeholderPatternSize != byPlaceholder.size()) {
-			StringBuilder alt = new StringBuilder();
-			byPlaceholder.values().stream().map(Entry::placeholder)
-					.sorted(Comparator.comparingInt(String::length).reversed()).forEach(p -> {
-						if (alt.length() > 0) {
-							alt.append('|');
-						}
-						alt.append(boundaryBefore(p)).append(Pattern.quote(p)).append(boundaryAfter(p));
-					});
-			placeholderPattern = Pattern.compile(alt.toString(), Pattern.CASE_INSENSITIVE);
-			placeholderPatternSize = byPlaceholder.size();
-		}
-		return placeholderPattern;
-	}
-
-	// ---- JSON and streams ------------------------------------------------------------
-
-	/** A copy of {@code json} with every string value masked; keys stay. */
-	public JsonElement mask(JsonElement json) {
-		return map(json, true);
-	}
-
-	/** A copy of {@code json} with every string value unmasked; keys stay. */
-	public JsonElement unmask(JsonElement json) {
-		return map(json, false);
-	}
-
-	public JsonObject mask(JsonObject json) {
-		return json == null ? null : map(json, true).getAsJsonObject();
-	}
-
-	public JsonObject unmask(JsonObject json) {
-		return json == null ? null : map(json, false).getAsJsonObject();
-	}
-
-	/** Keys of a message in Messages format whose values are protocol data, not content. */
-	private static final Set<String> PROTOCOL_KEYS = Set.of("type", "role", "id", "tool_use_id", "signature", "data",
-			"cache_control");
-
-	/** A message in Anthropic Messages format with its content masked; ids and thinking signatures stay. */
-	public JsonObject maskMessage(JsonObject message) {
-		return message == null ? null : map(message, true, PROTOCOL_KEYS).getAsJsonObject();
-	}
-
-	/** A message from the model with its content unmasked; ids and thinking signatures stay. */
-	public JsonObject unmaskMessage(JsonObject message) {
-		return message == null ? null : map(message, false, PROTOCOL_KEYS).getAsJsonObject();
-	}
-
-	private JsonElement map(JsonElement e, boolean mask) {
-		return map(e, mask, Set.of());
-	}
-
-	private JsonElement map(JsonElement e, boolean mask, Set<String> skip) {
-		if (e == null || e.isJsonNull() || (mask && !active())) {
-			return e;
-		}
-		if (e.isJsonPrimitive()) {
-			JsonPrimitive p = e.getAsJsonPrimitive();
-			return p.isString() ? new JsonPrimitive(mask ? mask(p.getAsString()) : unmask(p.getAsString())) : p;
-		}
-		if (e.isJsonArray()) {
-			JsonArray out = new JsonArray();
-			e.getAsJsonArray().forEach(x -> out.add(map(x, mask, skip)));
-			return out;
-		}
-		JsonObject out = new JsonObject();
-		e.getAsJsonObject().entrySet().forEach(x -> out.add(x.getKey(),
-				skip.contains(x.getKey()) ? x.getValue().deepCopy() : map(x.getValue(), mask, skip)));
-		return out;
-	}
-
-	/**
-	 * Unmasks streamed text. A placeholder can be split across two deltas, so
-	 * the trailing word of each delta is held back until the next one (or
-	 * {@link UnmaskStream#flush()}) completes it.
-	 */
-	public UnmaskStream stream(Consumer<String> out) {
-		return new UnmaskStream(out);
-	}
-
-	public final class UnmaskStream {
-		private final Consumer<String> out;
-		private final StringBuilder pending = new StringBuilder();
-
-		private UnmaskStream(Consumer<String> out) {
-			this.out = out;
-		}
-
-		public void accept(String delta) {
-			if (delta == null || delta.isEmpty()) {
-				return;
-			}
-			if (!active() && size() == 0) {
-				flush();
-				out.accept(delta);
-				return;
-			}
-			String ready;
-			synchronized (pending) {
-				pending.append(delta);
-				Matcher m = TRAILING_TOKEN.matcher(pending);
-				int cut = m.find() && pending.length() - m.start() <= MAX_HOLD_BACK ? m.start() : pending.length();
-				ready = pending.substring(0, cut);
-				pending.delete(0, cut);
-			}
-			if (!ready.isEmpty()) {
-				out.accept(unmask(ready));
-			}
-		}
-
-		public void flush() {
-			String rest;
-			synchronized (pending) {
-				rest = pending.toString();
-				pending.setLength(0);
-			}
-			if (!rest.isEmpty()) {
-				out.accept(unmask(rest));
-			}
-		}
 	}
 }

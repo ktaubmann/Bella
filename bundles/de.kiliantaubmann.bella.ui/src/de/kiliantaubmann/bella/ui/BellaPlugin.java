@@ -25,8 +25,6 @@ import de.kiliantaubmann.bella.core.lint.LintToolProvider;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.agent.LoggingConversation;
-import de.kiliantaubmann.bella.core.agent.MaskingConversation;
-import de.kiliantaubmann.bella.core.llm.MaskingProvider;
 import de.kiliantaubmann.bella.core.mask.Masker;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCli;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
@@ -89,8 +87,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 				AdtBackend backend = super.addingService(reference);
 				Log.info("bella", "ADT integration available");
 				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination,
-						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant)
-						.hideColumns(() -> masker.active() ? prefs().getString(Prefs.MASK_COLUMNS) : ""));
+						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant));
 				return backend;
 			}
 
@@ -237,7 +234,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 				.append(adtCore == null ? "" : " (com.sap.adt.tools.core " + adtCore.getVersion() + ")")
 				.append("\nPreferred tools: ").append(prefs().getString(Prefs.PREFERRED_TOOLS))
 				.append(", SAP definitions for editor actions: ").append(prefs().getBoolean(Prefs.EDITOR_SAP_CONTEXT))
-				.append("\nMasking: ").append(masker.active() ? "on" : "off")
+				.append("\nLog masking: ").append(masker.active() ? "on" : "off")
 				.append("\nMCP servers:");
 		List<McpServerConfig> servers = McpServerConfig.parse(prefs().getString(Prefs.MCP_SERVERS));
 		if (servers.isEmpty()) {
@@ -284,21 +281,12 @@ public class BellaPlugin extends AbstractUIPlugin {
 		return AnthropicProvider.ID.equals(providerId());
 	}
 
-	/**
-	 * The configured model provider for single requests (editor actions,
-	 * completion): masks the request, unmasks the answer, and logs what is
-	 * actually sent.
-	 */
+	/** The configured model provider, writing its requests to Bella's log. */
 	public LlmProvider provider() {
-		return MaskingProvider.wrap(chatProvider(), masker);
-	}
-
-	/** The provider for the chat, whose history stays masked; see {@link MaskingConversation}. */
-	private LlmProvider chatProvider() {
 		return LoggingProvider.wrap(plainProvider());
 	}
 
-	/** Replaces confidential data with placeholders for the model and back; shared by all chats and actions. */
+	/** Replaces confidential data in Bella's log with placeholders; the model gets the real data. */
 	public Masker masker() {
 		return masker;
 	}
@@ -327,28 +315,23 @@ public class BellaPlugin extends AbstractUIPlugin {
 				Masker.Settings.parseTerms(s.getString(Prefs.MASK_TERMS)), system, users);
 	}
 
-	/** The ABAP projects, read at most every ten seconds: masking runs on every message and tool result. */
+	/**
+	 * The ABAP projects, read at most every ten seconds: masking runs on every
+	 * log entry. Never logs itself, since it runs while an entry is written.
+	 */
 	private List<AdtSystem> maskSystems() {
 		AdtBackend backend = adt();
-		if (backend == null) {
-			return List.of();
-		}
 		long now = System.currentTimeMillis();
-		if (now - maskSystemsAt > 10_000) {
-			try {
-				maskSystems = List.copyOf(backend.systems());
-			} catch (RuntimeException e) {
-				Log.warn("mask", "cannot read the ABAP projects: " + e.getMessage());
-			}
-			maskSystemsAt = now;
+		if (backend == null || now - maskSystemsAt <= 10_000) {
+			return maskSystems;
+		}
+		maskSystemsAt = now;
+		try {
+			maskSystems = List.copyOf(backend.systems());
+		} catch (RuntimeException e) {
+			// keep the last list
 		}
 		return maskSystems;
-	}
-
-	/** The chat system prompt, masked and with the note on placeholders while masking is on. */
-	private String chatSystem() {
-		String system = prompts().chatSystem();
-		return masker.active() ? masker.mask(system) + Masker.PROMPT_NOTE : system;
 	}
 
 	private LlmProvider plainProvider() {
@@ -402,22 +385,21 @@ public class BellaPlugin extends AbstractUIPlugin {
 	 */
 	public Conversation newConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard,
 			Supplier<ChatMode> mode) {
-		return LoggingConversation.wrap(MaskingConversation.wrap(
-				plainConversation(confirmer, writeGuard, () -> policy().withMode(mode.get())), masker));
+		return LoggingConversation.wrap(plainConversation(confirmer, writeGuard, () -> policy().withMode(mode.get())));
 	}
 
 	private Conversation plainConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard,
 			Supplier<ToolPolicy> policy) {
 		if (usesClaudeCode()) {
-			return new ClaudeCodeSession(claudeCli(), this::chatSettings, chatSystem(),
-					new ToolExecutor(tools(), policy, confirmer, writeGuard, masker), VERSION);
+			return new ClaudeCodeSession(claudeCli(), this::chatSettings, prompts().chatSystem(),
+					new ToolExecutor(tools(), policy, confirmer, writeGuard), VERSION);
 		}
 		if (usesCopilot()) {
-			return new CopilotSession(copilotCli(), this::chatSettings, chatSystem(),
-					new ToolExecutor(tools(), policy, confirmer, writeGuard, masker), VERSION);
+			return new CopilotSession(copilotCli(), this::chatSettings, prompts().chatSystem(),
+					new ToolExecutor(tools(), policy, confirmer, writeGuard), VERSION);
 		}
-		return new ChatSession(this::chatProvider, this::chatSettings, chatSystem(), tools(), policy,
-				confirmer::confirm, writeGuard, masker);
+		return new ChatSession(this::provider, this::chatSettings, prompts().chatSystem(), tools(), policy,
+				confirmer::confirm, writeGuard);
 	}
 
 	public String chatModel() {

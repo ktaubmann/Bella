@@ -158,9 +158,6 @@
       <page id="de.kiliantaubmann.bella.ui.prefs.conventions" name="%prefs.conventions"
             category="de.kiliantaubmann.bella.ui.prefs.main"
             class="de.kiliantaubmann.bella.ui.prefs.ConventionsPreferencePage"/>
-      <page id="de.kiliantaubmann.bella.ui.prefs.masking" name="%prefs.masking"
-            category="de.kiliantaubmann.bella.ui.prefs.main"
-            class="de.kiliantaubmann.bella.ui.prefs.MaskingPreferencePage"/>
       <page id="de.kiliantaubmann.bella.ui.prefs.log" name="%prefs.log"
             category="de.kiliantaubmann.bella.ui.prefs.main"
             class="de.kiliantaubmann.bella.ui.prefs.LogPreferencePage"/>

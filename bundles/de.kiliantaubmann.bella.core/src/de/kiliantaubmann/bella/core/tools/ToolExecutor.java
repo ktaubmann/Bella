@@ -6,7 +6,6 @@ import java.util.function.Supplier;
 import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.llm.ToolCall;
-import de.kiliantaubmann.bella.core.mask.Masker;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
 import de.kiliantaubmann.bella.core.util.Log;
@@ -45,33 +44,19 @@ public final class ToolExecutor {
 	private final Supplier<ToolPolicy> policy;
 	private final Confirmer confirmer;
 	private final WriteGuard writeGuard;
-	private final Masker masker;
 
 	public ToolExecutor(ToolRegistry tools, Supplier<ToolPolicy> policy, Confirmer confirmer, WriteGuard writeGuard) {
-		this(tools, policy, confirmer, writeGuard, Masker.NONE);
-	}
-
-	/**
-	 * @param masker puts the real names back into the model's tool input and
-	 *               masks the result before it goes back to the model; the
-	 *               developer (confirmation, chat) sees the real values
-	 */
-	public ToolExecutor(ToolRegistry tools, Supplier<ToolPolicy> policy, Confirmer confirmer, WriteGuard writeGuard,
-			Masker masker) {
 		this.tools = tools;
 		this.policy = policy;
 		this.confirmer = confirmer;
 		this.writeGuard = writeGuard == null ? WriteGuard.NONE : writeGuard;
-		this.masker = masker == null ? Masker.NONE : masker;
 	}
 
 	public ToolRegistry registry() {
 		return tools;
 	}
 
-	public ToolResult run(ToolCall modelCall, Observer observer, CancelToken cancel) {
-		ToolCall call = new ToolCall(modelCall.id(), modelCall.name(), masker.unmask(modelCall.input()),
-				masker.unmask(modelCall.rawInput()), modelCall.inputError());
+	public ToolResult run(ToolCall call, Observer observer, CancelToken cancel) {
 		Optional<ToolSpec> spec = tools == null ? Optional.empty() : tools.find(call.name());
 		if (spec.isEmpty()) {
 			Log.warn(AREA, "unknown tool " + call.name());
@@ -101,7 +86,7 @@ public final class ToolExecutor {
 		}
 		Log.debug(AREA, () -> tool.name() + " result:\n" + Log.clip(content));
 		observer.onToolResult(tool, call, result);
-		return new ToolResult(masker.mask(result.content()), result.isError());
+		return result;
 	}
 
 	private ToolResult decideAndRun(ToolSpec tool, JsonObject input, CancelToken cancel) {

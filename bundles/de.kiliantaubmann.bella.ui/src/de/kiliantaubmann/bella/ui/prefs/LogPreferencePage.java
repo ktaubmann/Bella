@@ -2,6 +2,7 @@ package de.kiliantaubmann.bella.ui.prefs;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.layout.GridDataFactory;
@@ -28,6 +29,8 @@ public class LogPreferencePage extends PreferencePage implements IWorkbenchPrefe
 	private Form form;
 	private Button enabled;
 	private Button detail;
+	private Button mask;
+	private List<Control> maskOptions;
 
 	@Override
 	public void init(IWorkbench workbench) {
@@ -61,8 +64,19 @@ public class LogPreferencePage extends PreferencePage implements IWorkbenchPrefe
 		button(buttons, Messages.get("log.clear"), this::clearLog);
 		Form.hint(g).setText(Messages.get("log.privacy"));
 
+		Group m = Form.group(c, Messages.get("mask.group"));
+		mask = form.check(m, Messages.get("mask.enabled"), Prefs.MASK_ENABLED);
+		Button objects = indented(form.check(m, Messages.get("mask.objects"), Prefs.MASK_OBJECTS));
+		Button system = indented(form.check(m, Messages.get("mask.system"), Prefs.MASK_SYSTEM));
+		Button personal = indented(form.check(m, Messages.get("mask.personal"), Prefs.MASK_PERSONAL));
+		Text terms = form.area(m, Messages.get("mask.terms"), Prefs.MASK_TERMS, 4);
+		terms.setToolTipText(Messages.get("mask.termsTip"));
+		Form.hint(m).setText(Messages.get("mask.hint"));
+		maskOptions = List.of(objects, system, personal, terms);
+
 		form.load();
 		enabled.addListener(SWT.Selection, e -> updateEnablement());
+		mask.addListener(SWT.Selection, e -> updateEnablement());
 		updateEnablement();
 		return c;
 	}
@@ -71,8 +85,14 @@ public class LogPreferencePage extends PreferencePage implements IWorkbenchPrefe
 		return BellaPlugin.getDefault().logFile();
 	}
 
+	private static Button indented(Button b) {
+		GridDataFactory.fillDefaults().span(2, 1).indent(16, 0).applyTo(b);
+		return b;
+	}
+
 	private void updateEnablement() {
 		detail.setEnabled(enabled.getSelection());
+		maskOptions.forEach(w -> w.setEnabled(mask.getSelection()));
 	}
 
 	private static void button(Composite parent, String label, Runnable action) {

@@ -57,7 +57,7 @@ public final class Prefs {
 	public static final String CONVENTIONS_GLOBAL = "global";
 	/** ATC check variant, same suffixes as {@link #CONVENTIONS_TEXT}; empty for the system default. */
 	public static final String ATC_VARIANT = "atc.variant.";
-	/** Masks confidential data before it goes to the model. */
+	/** Masks confidential data in Bella's log file; the model gets the real data. */
 	public static final String MASK_ENABLED = "mask.enabled";
 	/** Customer objects (Z*, Y*). */
 	public static final String MASK_OBJECTS = "mask.objects";
@@ -67,8 +67,6 @@ public final class Prefs {
 	public static final String MASK_PERSONAL = "mask.personal";
 	/** Own terms, one per line (company, project, namespace). */
 	public static final String MASK_TERMS = "mask.terms";
-	/** Table columns whose values adt_table_contents hides, patterns with *. */
-	public static final String MASK_COLUMNS = "mask.columns";
 	/** JSON array of MCP server definitions, see {@link McpServerConfig}. */
 	public static final String MCP_SERVERS = "mcp.servers";
 

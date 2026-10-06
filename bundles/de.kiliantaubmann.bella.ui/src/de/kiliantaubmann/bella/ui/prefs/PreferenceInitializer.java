@@ -10,12 +10,6 @@ import de.kiliantaubmann.bella.ui.BellaPlugin;
 
 public class PreferenceInitializer extends AbstractPreferenceInitializer {
 
-	/** Personal data in common SAP tables: names, addresses, contact, bank, tax and HR data, user names. */
-	public static final String DEFAULT_MASK_COLUMNS = "NAME1, NAME2, NAME3, NAME4, NAME_FIRST, NAME_LAST, NAME_CO, NAMEV, "
-			+ "MC_NAME*, NAME_TEXT, STRAS, STREET, HOUSE_NUM*, ORT01, ORT02, CITY1, CITY2, PSTLZ, POST_CODE*, PFACH, "
-			+ "PO_BOX, TELF*, TEL_NUMBER, MOB_NUMBER, TELFX, FAX_NUMBER, SMTP_ADDR, *EMAIL*, *E_MAIL*, IBAN, BANKN, "
-			+ "BANKL, SWIFT, KOINH, STCD*, STCEG, *TAXNUM*, GBDAT, BIRTH*, GESCH, PERNR, ERNAM, AENAM, USNAM, UNAME, BNAME";
-
 	@Override
 	public void initializeDefaultPreferences() {
 		IPreferenceStore s = BellaPlugin.getDefault().getPreferenceStore();
@@ -52,7 +46,6 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
 		s.setDefault(Prefs.MASK_SYSTEM, true);
 		s.setDefault(Prefs.MASK_PERSONAL, true);
 		s.setDefault(Prefs.MASK_TERMS, "");
-		s.setDefault(Prefs.MASK_COLUMNS, DEFAULT_MASK_COLUMNS);
 		s.setDefault(Prefs.MCP_SERVERS, McpServerConfig.toJson(List.of(
 				new McpServerConfig("arc1", "ARC-1", true, "http://localhost:3000/mcp", "npx -y arc-1@latest", false))));
 	}

@@ -37,7 +37,6 @@ public final class AdtToolProvider implements ToolProvider {
 	private final Supplier<String> writePackages;
 	private final Function<String, String> atcVariants;
 	private final SourceCache cache = new SourceCache();
-	private volatile Supplier<String> hiddenColumns = () -> "";
 	/** Inactive objects per destination, kept briefly so a turn with many reads asks once. */
 	private final Map<String, Inactive> inactive = new ConcurrentHashMap<>();
 
@@ -74,21 +73,6 @@ public final class AdtToolProvider implements ToolProvider {
 		this.writePackages = writePackages;
 		this.atcVariants = atcVariants;
 	}
-
-	/**
-	 * Columns whose values {@code adt_table_contents} replaces with
-	 * {@link #HIDDEN}, e.g. names, addresses and bank data.
-	 *
-	 * @param patterns comma, semicolon or space separated column names, {@code *}
-	 *                 as wildcard; empty to show all values
-	 */
-	public AdtToolProvider hideColumns(Supplier<String> patterns) {
-		this.hiddenColumns = patterns == null ? () -> "" : patterns;
-		return this;
-	}
-
-	/** What a hidden cell shows. */
-	static final String HIDDEN = "***";
 
 	/** Package patterns from a comma, semicolon or space separated list; {@code *} is a wildcard. */
 	static List<String> packagePatterns(String list) {
@@ -818,35 +802,8 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		int max = Math.max(1, Math.min(TABLE_MAX_ROWS, Json.integer(in, "max_rows", 100)));
 		AdtSystem s = system(in);
-		AdtClient.TableData data = hide(client(s).tableContents(sql, max, cancel), packagePatterns(hiddenColumns.get()));
+		AdtClient.TableData data = client(s).tableContents(sql, max, cancel);
 		return ToolResult.ok(formatTable(data, s.label()));
-	}
-
-	/** The data with the values of the hidden columns replaced; the column names stay. */
-	static AdtClient.TableData hide(AdtClient.TableData data, List<String> patterns) {
-		if (patterns.isEmpty()) {
-			return data;
-		}
-		List<Integer> hidden = new ArrayList<>();
-		for (int i = 0; i < data.columns().size(); i++) {
-			if (packageAllowed(data.columns().get(i), patterns)) {
-				hidden.add(i);
-			}
-		}
-		if (hidden.isEmpty()) {
-			return data;
-		}
-		List<List<String>> rows = new ArrayList<>();
-		for (List<String> row : data.rows()) {
-			List<String> copy = new ArrayList<>(row);
-			for (int i : hidden) {
-				if (i < copy.size() && !copy.get(i).isBlank()) {
-					copy.set(i, HIDDEN);
-				}
-			}
-			rows.add(copy);
-		}
-		return new AdtClient.TableData(data.columns(), rows, data.totalRows());
 	}
 
 	/** Markdown table with cells cut and pipes escaped, and how many rows the statement found. */

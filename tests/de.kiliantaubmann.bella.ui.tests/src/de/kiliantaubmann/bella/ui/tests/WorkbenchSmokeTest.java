@@ -68,7 +68,6 @@ import de.kiliantaubmann.bella.ui.editor.OpenEditorRouter;
 import de.kiliantaubmann.bella.ui.prefs.BellaPreferencePage;
 import de.kiliantaubmann.bella.ui.prefs.ConventionsPreferencePage;
 import de.kiliantaubmann.bella.ui.prefs.LogPreferencePage;
-import de.kiliantaubmann.bella.ui.prefs.MaskingPreferencePage;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
 import de.kiliantaubmann.bella.ui.prefs.ToolsPreferencePage;
 import de.kiliantaubmann.bella.ui.views.ChatView;
@@ -166,7 +165,7 @@ class WorkbenchSmokeTest {
 		Shell shell = new Shell(Display.getCurrent());
 		try {
 			for (PreferencePage p : List.<PreferencePage>of(new BellaPreferencePage(), new ToolsPreferencePage(),
-					new ConventionsPreferencePage(), new MaskingPreferencePage(), new LogPreferencePage())) {
+					new ConventionsPreferencePage(), new LogPreferencePage())) {
 				((org.eclipse.ui.IWorkbenchPreferencePage) p).init(PlatformUI.getWorkbench());
 				p.createControl(shell);
 				assertTrue(p.performOk());
@@ -177,12 +176,11 @@ class WorkbenchSmokeTest {
 	}
 
 	@Test
-	void maskingIsOnByDefaultAndRoundTrips() {
+	void logIsMaskedByDefault() {
 		var masker = BellaPlugin.getDefault().masker();
 		assertTrue(masker.active());
 		String masked = masker.mask("Fix ZCL_SMOKE_SECRET");
 		assertFalse(masked.contains("SMOKE"), masked);
-		assertEquals("Fix ZCL_SMOKE_SECRET", masker.unmask(masked));
 	}
 
 	@Test
