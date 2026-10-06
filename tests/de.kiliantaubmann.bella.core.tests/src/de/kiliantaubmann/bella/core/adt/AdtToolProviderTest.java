@@ -473,4 +473,14 @@ class AdtToolProviderTest {
 		assertTrue(testBodies.get(0).contains("/sap/bc/adt/oo/classes/zcl_a"), testBodies.get(0));
 		assertFalse(testBodies.get(0).contains("zif_a"), testBodies.get(0));
 	}
+
+	@Test
+	void includeMustBeAKnownClassInclude() {
+		FakeAdt adt = twoSystems();
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").call("adt_read_source", Json.parseObject(
+				"{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"include\":\"../../zcl_b/source/main\"}"), CancelToken.NONE);
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("Unknown class include"), r.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("zcl_b")), adt.log.toString());
+	}
 }

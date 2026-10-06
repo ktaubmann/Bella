@@ -136,7 +136,19 @@ public final class McpServer implements AutoCloseable {
 		try (client; InputStream in = new BufferedInputStream(client.getInputStream());
 				OutputStream out = client.getOutputStream()) {
 			client.setSoTimeout(30_000);
-			Request req = read(in);
+			Request req;
+			try {
+				req = read(in, this::authorized);
+			} catch (Unauthorized e) {
+				Log.warn("mcp", "Bella's MCP server refused a request without the right token");
+				write(out, 401, "Unauthorized", null, null);
+				// Read a small body away, so closing the socket does not reset the connection before the
+				// client has read the 401; a large one is not read at all.
+				if (e.length > 0 && e.length <= 64 * 1024) {
+					in.skipNBytes(e.length);
+				}
+				return;
+			}
 			if (req == null) {
 				return;
 			}
@@ -147,7 +159,17 @@ public final class McpServer implements AutoCloseable {
 		}
 	}
 
-	private static Request read(InputStream in) throws IOException {
+	/** Thrown before the body is read, so an unknown caller cannot make Bella buffer a large body. */
+	private static final class Unauthorized extends IOException {
+		private static final long serialVersionUID = 1L;
+		final int length;
+
+		Unauthorized(int length) {
+			this.length = length;
+		}
+	}
+
+	private static Request read(InputStream in, java.util.function.Predicate<String> authorized) throws IOException {
 		String requestLine = line(in);
 		if (requestLine == null || requestLine.isEmpty()) {
 			return null;
@@ -160,13 +182,23 @@ public final class McpServer implements AutoCloseable {
 		String h;
 		while ((h = line(in)) != null && !h.isEmpty()) {
 			int colon = h.indexOf(':');
+			if (headers.size() > 100) {
+				throw new IOException("too many headers");
+			}
 			if (colon > 0) {
 				headers.put(h.substring(0, colon).trim().toLowerCase(Locale.ROOT), h.substring(colon + 1).trim());
 			}
 		}
 		int length = 0;
 		if (headers.containsKey("content-length")) {
-			length = Integer.parseInt(headers.get("content-length"));
+			try {
+				length = Integer.parseInt(headers.get("content-length").trim());
+			} catch (NumberFormatException e) {
+				throw new IOException("bad content-length");
+			}
+		}
+		if (!authorized.test(headers.get("authorization"))) {
+			throw new Unauthorized(length);
 		}
 		if (length < 0 || length > MAX_BODY) {
 			throw new IOException("request too large");
@@ -200,12 +232,6 @@ public final class McpServer implements AutoCloseable {
 	private void respond(Request req, OutputStream out) throws IOException {
 		if (!PATH.equals(req.path())) {
 			write(out, 404, "Not Found", null, null);
-			return;
-		}
-		if (!authorized(req.headers().get("authorization"))) {
-			Log.warn("mcp", "Bella's MCP server refused a request without the right token (" + req.method() + " "
-					+ req.path() + ")");
-			write(out, 401, "Unauthorized", null, null);
 			return;
 		}
 		switch (req.method()) {

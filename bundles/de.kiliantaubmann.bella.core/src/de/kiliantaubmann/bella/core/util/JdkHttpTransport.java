@@ -10,6 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 /** {@link HttpTransport} on top of {@link java.net.http.HttpClient}. */
 final class JdkHttpTransport implements HttpTransport {
@@ -26,7 +29,19 @@ final class JdkHttpTransport implements HttpTransport {
 		headers.forEach(builder::header);
 		long start = System.nanoTime();
 		try {
-			HttpResponse<InputStream> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+			// Asynchronous, so Stop also ends a request that is still waiting for the response headers.
+			CompletableFuture<HttpResponse<InputStream>> pending = client.sendAsync(builder.build(),
+					HttpResponse.BodyHandlers.ofInputStream());
+			cancel.onCancel(() -> pending.cancel(true));
+			HttpResponse<InputStream> response;
+			try {
+				response = pending.get();
+			} catch (CancellationException e) {
+				throw new IOException("cancelled", e);
+			} catch (ExecutionException e) {
+				Throwable cause = e.getCause();
+				throw cause instanceof IOException io ? io : new IOException(String.valueOf(cause), cause);
+			}
 			log("POST", uri, response.statusCode(), start);
 			InputStream in = response.body();
 			cancel.onCancel(in);

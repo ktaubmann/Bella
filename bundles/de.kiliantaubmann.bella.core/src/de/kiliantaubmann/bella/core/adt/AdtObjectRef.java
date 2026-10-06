@@ -85,6 +85,16 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 		if (include == null || include.isBlank() || include.equalsIgnoreCase("main")) {
 			return objectUri + "/source/main";
 		}
-		return objectUri + "/includes/" + include.toLowerCase(Locale.ROOT);
+		String inc = include.trim().toLowerCase(Locale.ROOT);
+		if (!CLASS_INCLUDES.contains(inc)) {
+			// the include comes from the model and becomes part of the URL path
+			throw new IllegalArgumentException("Unknown class include '" + include + "'; use one of main, "
+					+ String.join(", ", CLASS_INCLUDES) + ".");
+		}
+		return objectUri + "/includes/" + inc;
 	}
+
+	/** Class includes ADT offers besides the main source. */
+	static final java.util.List<String> CLASS_INCLUDES = java.util.List.of("definitions", "implementations", "macros",
+			"testclasses");
 }

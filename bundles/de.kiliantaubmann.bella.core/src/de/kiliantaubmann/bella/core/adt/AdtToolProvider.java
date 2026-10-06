@@ -336,7 +336,7 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_activate" -> activate(in, cancel);
 			default -> ToolResult.error("Unknown ADT tool " + name);
 			};
-		} catch (IOException e) {
+		} catch (IOException | IllegalArgumentException e) {
 			return ToolResult.error(e.getMessage());
 		}
 	}
