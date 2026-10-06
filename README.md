@@ -68,9 +68,10 @@ Before anything goes to the model, Bella replaces confidential names and data wi
 
 - **Where:** chat (all providers), editor actions, completion, deriving conventions, and every tool result (Bella's ADT tools and ARC-1). Tool inputs from the model get the real names back before they reach the editor or SAP, so code the model writes with `ZCL_MASK1` lands as `ZCL_ACME_ORDER`.
 - **What you see:** real names everywhere in Eclipse: chat, diff preview, confirmation dialogs. The status line of the chat shows *Masked*.
+- **Log file:** Bella's log is masked the same way, with the same placeholders as the model saw, including prompts, tool input and output, ADT requests and error messages.
 - **Stable:** a name keeps its placeholder for the whole Eclipse session. The model is told that the placeholders stand for real names and must be used as written. Names the model introduces itself (e.g. a new class it creates) are not masked.
 - **Table columns:** values of matching columns are replaced by `***` and cannot be restored; the list (with `*` wildcards) covers names, addresses, contact, bank, tax and HR data and user names in common SAP tables.
-- **Limits:** names of people in free text, comments or string literals are recognized only if you add them as terms; a lower-case name without underscore (`zreport`) is masked once Bella has seen it in upper case (e.g. in the object header). Column aliases in a free `SELECT` bypass the column list. The local log file can contain real values.
+- **Limits:** names of people in free text, comments or string literals are recognized only if you add them as terms; a lower-case name without underscore (`zreport`) is masked once Bella has seen it in upper case (e.g. in the object header). Column aliases in a free `SELECT` bypass the column list.
 
 ### How Bella gets SAP context
 

@@ -52,7 +52,7 @@ MESSAGES = {
  "mask.termsTip": "Gezocht als hele woorden, ongeacht hoofdletters.",
  "mask.columns": "Tabelkolommen waarvan Bella de waarden verbergt bij het lezen van tabelinhoud (* als jokerteken):",
  "mask.columnsTip": "Verborgen waarden worden als *** getoond en kunnen niet worden hersteld.",
- "mask.hint": "Plaatshouders blijven de hele Eclipse-sessie gelijk. In de chat, de diff-voorvertoning en de bevestigingsdialogen zie je de echte namen. Namen van personen in vrije tekst, commentaar of tekstliteralen worden niet herkend; voeg ze toe als termen. Het lokale logbestand kan echte waarden bevatten.",
+ "mask.hint": "Plaatshouders blijven de hele Eclipse-sessie gelijk. In de chat, de diff-voorvertoning en de bevestigingsdialogen zie je de echte namen. Namen van personen in vrije tekst, commentaar of tekstliteralen worden niet herkend; voeg ze toe als termen. Het logbestand van Bella wordt op dezelfde manier gemaskeerd.",
  "chat.new": "Nieuwe chat", "chat.settings": "Instellingen", "chat.status": "Model: {0} · Systeem: {1}",
  "chat.jobName": "Bella denkt na", "chat.cancelled": "Gestopt.",
  "chat.fallback": "{0} heeft dit verzoek geweigerd; {1} heeft in plaats daarvan geantwoord.",

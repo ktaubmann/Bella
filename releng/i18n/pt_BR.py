@@ -52,7 +52,7 @@ MESSAGES = {
  "mask.termsTip": "Procurados como palavras inteiras, sem diferenciar maiúsculas.",
  "mask.columns": "Colunas de tabela cujos valores a Bella oculta ao ler conteúdos de tabelas (* como curinga):",
  "mask.columnsTip": "Valores ocultos aparecem como *** e não podem ser recuperados.",
- "mask.hint": "Os marcadores permanecem iguais durante toda a sessão do Eclipse. No chat, na visualização de diferenças e nos diálogos de confirmação você vê os nomes reais. Nomes de pessoas em texto livre, comentários ou literais não são reconhecidos; adicione-os como termos. O arquivo de log local pode conter valores reais.",
+ "mask.hint": "Os marcadores permanecem iguais durante toda a sessão do Eclipse. No chat, na visualização de diferenças e nos diálogos de confirmação você vê os nomes reais. Nomes de pessoas em texto livre, comentários ou literais não são reconhecidos; adicione-os como termos. O arquivo de log da Bella é mascarado da mesma forma.",
  "chat.new": "Novo chat", "chat.settings": "Configurações", "chat.status": "Modelo: {0} · Sistema: {1}",
  "chat.jobName": "A Bella está pensando", "chat.cancelled": "Interrompido.",
  "chat.fallback": "{0} recusou esta solicitação; {1} respondeu no lugar.",

@@ -103,6 +103,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 		};
 		adtTracker.open();
 		tools.addProvider(new LintToolProvider(() -> conventions(activeDestination).naming()));
+		Log.mask(masker::mask);
 		configureLog();
 		getPreferenceStore().addPropertyChangeListener(e -> {
 			if (Prefs.LOG_ENABLED.equals(e.getProperty()) || Prefs.LOG_DETAIL.equals(e.getProperty())) {
@@ -125,6 +126,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 			adtTracker.close();
 		}
 		Log.configure(null, Log.Level.INFO);
+		Log.mask(null);
 		synchronized (this) {
 			if (logFile != null) {
 				logFile.close();

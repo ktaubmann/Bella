@@ -76,7 +76,7 @@ MESSAGES = {
  "mask.termsTip": "Werden als ganze Wörter gefunden, unabhängig von Groß- und Kleinschreibung.",
  "mask.columns": "Tabellenspalten, deren Werte Bella beim Lesen von Tabelleninhalten ausblendet (* als Platzhalter):",
  "mask.columnsTip": "Ausgeblendete Werte erscheinen als *** und lassen sich nicht wiederherstellen.",
- "mask.hint": "Platzhalter bleiben für die ganze Eclipse-Sitzung gleich. Im Chat, in der Diff-Vorschau und in den Bestätigungsdialogen siehst du die echten Namen. Namen von Personen in Freitext, Kommentaren oder Textliteralen werden nicht erkannt; trage sie als Begriffe ein. Die lokale Protokolldatei kann echte Werte enthalten.",
+ "mask.hint": "Platzhalter bleiben für die ganze Eclipse-Sitzung gleich. Im Chat, in der Diff-Vorschau und in den Bestätigungsdialogen siehst du die echten Namen. Namen von Personen in Freitext, Kommentaren oder Textliteralen werden nicht erkannt; trage sie als Begriffe ein. Die Protokolldatei von Bella wird genauso maskiert.",
  "chat.new": "Neuer Chat",
  "chat.settings": "Einstellungen",
  "chat.status": "Modell: {0} · System: {1}",

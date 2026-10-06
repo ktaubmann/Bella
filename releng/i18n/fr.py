@@ -53,7 +53,7 @@ MESSAGES = {
  "mask.termsTip": "Recherchés comme mots entiers, sans tenir compte de la casse.",
  "mask.columns": "Colonnes de table dont Bella masque les valeurs lors de la lecture du contenu (* comme joker) :",
  "mask.columnsTip": "Les valeurs masquées apparaissent comme *** et ne peuvent pas être restaurées.",
- "mask.hint": "Les espaces réservés restent identiques pendant toute la session Eclipse. Vous voyez les vrais noms dans le chat, l’aperçu des différences et les dialogues de confirmation. Les noms de personnes dans du texte libre, des commentaires ou des littéraux ne sont pas reconnus ; ajoutez-les comme termes. Le fichier journal local peut contenir des valeurs réelles.",
+ "mask.hint": "Les espaces réservés restent identiques pendant toute la session Eclipse. Vous voyez les vrais noms dans le chat, l’aperçu des différences et les dialogues de confirmation. Les noms de personnes dans du texte libre, des commentaires ou des littéraux ne sont pas reconnus ; ajoutez-les comme termes. Le fichier journal de Bella est masqué de la même façon.",
  "chat.new": "Nouveau chat", "chat.settings": "Paramètres", "chat.status": "Modèle : {0} · Système : {1}",
  "chat.jobName": "Bella réfléchit", "chat.cancelled": "Arrêté.",
  "chat.fallback": "{0} a refusé cette requête ; {1} a répondu à la place.",

@@ -32,7 +32,9 @@ import de.kiliantaubmann.bella.core.tools.ToolRegistry;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
+import de.kiliantaubmann.bella.core.testutil.LogRecorder;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /** The model sees only placeholders; the developer, the editor and SAP only real names. */
 class MaskingBoundariesTest {
@@ -168,5 +170,21 @@ class MaskingBoundariesTest {
 		assertTrue(sent.system().contains("placeholders"), "the model is told about placeholders");
 		assertTrue(Json.GSON.toJson(sent.messages()).contains("Implement zcl_mask1"));
 		assertEquals("METHOD run. zcl_secret=>go( ). ENDMETHOD.", r.text());
+	}
+
+	@Test
+	void theLogFileGetsTheSamePlaceholders() {
+		Masker masker = masker();
+		String forModel = masker.mask("ZCL_SECRET");
+		Log.mask(masker::mask);
+		try (LogRecorder r = LogRecorder.start(Log.Level.DEBUG)) {
+			Log.debug("tool", () -> "adt_read_source input: {\"name\":\"ZCL_SECRET\"} owner anna@acme.de");
+			Log.error("adt", "failed for zcl_secret", new IllegalStateException("ZCL_SECRET is locked"));
+			String all = r.all();
+			assertFalse(all.toLowerCase().contains("secret") || all.contains("anna@acme.de"), all);
+			assertTrue(all.contains(forModel) && all.contains(forModel.toLowerCase()), all);
+		} finally {
+			Log.mask(null);
+		}
 	}
 }

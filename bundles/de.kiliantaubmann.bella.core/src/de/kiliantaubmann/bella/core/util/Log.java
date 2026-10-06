@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.List;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -12,7 +13,8 @@ import java.util.regex.Pattern;
  * {@link Level#INFO} records what happened (requests, tool calls, SAP calls,
  * CLI processes, durations, errors) and {@link Level#DEBUG} adds the content
  * (prompts, source code, tool input and output, protocol lines). Secrets such
- * as API keys and bearer tokens are removed from every entry.
+ * as API keys and bearer tokens are removed from every entry, and confidential
+ * names are masked like for the model (see {@link #mask(UnaryOperator)}).
  */
 public final class Log {
 
@@ -30,6 +32,7 @@ public final class Log {
 
 	private static volatile Sink sink;
 	private static volatile Level threshold = Level.INFO;
+	private static volatile UnaryOperator<String> mask = UnaryOperator.identity();
 
 	private Log() {
 	}
@@ -41,6 +44,16 @@ public final class Log {
 	public static void configure(Sink newSink, Level newThreshold) {
 		threshold = newThreshold == null ? Level.INFO : newThreshold;
 		sink = newSink;
+	}
+
+	/**
+	 * Masks every entry before it is written, e.g. with the masker that also
+	 * prepares the model's input, so the file holds the same placeholders.
+	 *
+	 * @param masking {@code null} writes entries unmasked
+	 */
+	public static void mask(UnaryOperator<String> masking) {
+		mask = masking == null ? UnaryOperator.identity() : masking;
 	}
 
 	public static boolean enabled(Level level) {
@@ -77,7 +90,7 @@ public final class Log {
 			return;
 		}
 		try {
-			s.write(level, area, redact(message));
+			s.write(level, area, redact(mask.apply(message)));
 		} catch (RuntimeException e) {
 			// logging must never break Bella
 		}

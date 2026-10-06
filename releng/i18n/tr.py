@@ -52,7 +52,7 @@ MESSAGES = {
  "mask.termsTip": "Büyük/küçük harf fark etmeksizin tam sözcük olarak aranır.",
  "mask.columns": "Bella’nın tablo içeriklerini okurken değerlerini gizlediği tablo sütunları (* joker karakter):",
  "mask.columnsTip": "Gizlenen değerler *** olarak gösterilir ve geri alınamaz.",
- "mask.hint": "Yer tutucular tüm Eclipse oturumu boyunca aynı kalır. Sohbette, fark önizlemesinde ve onay iletişim kutularında gerçek adları görürsünüz. Serbest metin, yorum veya metin sabitlerindeki kişi adları tanınmaz; bunları terim olarak ekleyin. Yerel günlük dosyası gerçek değerler içerebilir.",
+ "mask.hint": "Yer tutucular tüm Eclipse oturumu boyunca aynı kalır. Sohbette, fark önizlemesinde ve onay iletişim kutularında gerçek adları görürsünüz. Serbest metin, yorum veya metin sabitlerindeki kişi adları tanınmaz; bunları terim olarak ekleyin. Bella’nın günlük dosyası da aynı şekilde maskelenir.",
  "chat.new": "Yeni sohbet", "chat.settings": "Ayarlar", "chat.status": "Model: {0} · Sistem: {1}",
  "chat.jobName": "Bella düşünüyor", "chat.cancelled": "Durduruldu.",
  "chat.fallback": "{0} bu isteği reddetti; yerine {1} yanıt verdi.",

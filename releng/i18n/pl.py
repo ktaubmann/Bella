@@ -52,7 +52,7 @@ MESSAGES = {
  "mask.termsTip": "Wyszukiwane jako całe słowa, bez względu na wielkość liter.",
  "mask.columns": "Kolumny tabel, których wartości Bella ukrywa przy odczycie zawartości tabel (* jako symbol wieloznaczny):",
  "mask.columnsTip": "Ukryte wartości są wyświetlane jako *** i nie da się ich odtworzyć.",
- "mask.hint": "Symbole zastępcze pozostają takie same przez całą sesję Eclipse. W czacie, podglądzie różnic i oknach potwierdzenia widzisz prawdziwe nazwy. Nazwiska osób w wolnym tekście, komentarzach lub literałach nie są rozpoznawane; dodaj je jako pojęcia. Lokalny plik dziennika może zawierać prawdziwe wartości.",
+ "mask.hint": "Symbole zastępcze pozostają takie same przez całą sesję Eclipse. W czacie, podglądzie różnic i oknach potwierdzenia widzisz prawdziwe nazwy. Nazwiska osób w wolnym tekście, komentarzach lub literałach nie są rozpoznawane; dodaj je jako pojęcia. Plik dziennika Belli jest maskowany w ten sam sposób.",
  "chat.new": "Nowy czat", "chat.settings": "Ustawienia", "chat.status": "Model: {0} · System: {1}",
  "chat.jobName": "Bella myśli", "chat.cancelled": "Zatrzymano.",
  "chat.fallback": "{0} odrzucił to żądanie; zamiast niego odpowiedział {1}.",

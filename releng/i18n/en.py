@@ -79,7 +79,7 @@ MESSAGES = {
  "mask.termsTip": "Matched as whole words, regardless of case.",
  "mask.columns": "Table columns whose values are hidden when Bella reads table contents (* as wildcard):",
  "mask.columnsTip": "Hidden values are shown as *** and cannot be restored.",
- "mask.hint": "Placeholders stay the same for the whole Eclipse session. You see the real names in the chat, the diff preview and the confirmation dialogs. Names of people in free text, comments or string literals are not recognized; add them as terms. The local log file can contain real values.",
+ "mask.hint": "Placeholders stay the same for the whole Eclipse session. You see the real names in the chat, the diff preview and the confirmation dialogs. Names of people in free text, comments or string literals are not recognized; add them as terms. Bella’s log file is masked the same way.",
  "chat.new": "New chat",
  "chat.settings": "Settings",
  "chat.status": "Model: {0} · System: {1}",

@@ -52,7 +52,7 @@ MESSAGES = {
  "mask.termsTip": "Hledají se jako celá slova bez ohledu na velikost písmen.",
  "mask.columns": "Sloupce tabulek, jejichž hodnoty Bella při čtení obsahu tabulek skryje (* jako zástupný znak):",
  "mask.columnsTip": "Skryté hodnoty se zobrazí jako *** a nelze je obnovit.",
- "mask.hint": "Zástupné symboly zůstávají stejné po celou relaci Eclipse. V chatu, náhledu rozdílů a potvrzovacích dialozích vidíte skutečné názvy. Jména osob ve volném textu, komentářích nebo literálech se nerozpoznají; přidejte je jako pojmy. Místní soubor protokolu může obsahovat skutečné hodnoty.",
+ "mask.hint": "Zástupné symboly zůstávají stejné po celou relaci Eclipse. V chatu, náhledu rozdílů a potvrzovacích dialozích vidíte skutečné názvy. Jména osob ve volném textu, komentářích nebo literálech se nerozpoznají; přidejte je jako pojmy. Soubor protokolu Belly se maskuje stejným způsobem.",
  "chat.new": "Nový chat", "chat.settings": "Nastavení", "chat.status": "Model: {0} · Systém: {1}",
  "chat.jobName": "Bella přemýšlí", "chat.cancelled": "Zastaveno.",
  "chat.fallback": "{0} tento požadavek odmítl; místo něj odpověděl {1}.",
