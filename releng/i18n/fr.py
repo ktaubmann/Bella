@@ -26,6 +26,7 @@ MESSAGES = {
  "editor.none": "Ouvrez d’abord un éditeur ABAP.",
  "editor.noSelection": "Sélectionnez d’abord le code.",
  "editor.noMethod": "Placez le curseur dans une METHOD, FORM ou FUNCTION.",
+ "editor.changed": "Le code de l’éditeur a changé pendant que Bella travaillait ; l’emplacement du résultat est introuvable. Rien n’a été modifié ; relancez l’action.",
  "diff.shellTitle": "Bella – Vérifier la modification",
  "diff.message": "Bella écrit uniquement dans l’éditeur. Rien n’est sauvegardé ni activé ; Ctrl+Z annule.",
  "diff.proposed": "Proposition de Bella", "diff.current": "Contenu actuel de l’éditeur",

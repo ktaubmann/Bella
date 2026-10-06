@@ -44,6 +44,7 @@ MESSAGES = {
  "editor.none": "Bitte zuerst einen ABAP-Editor öffnen.",
  "editor.noSelection": "Bitte zuerst Code markieren.",
  "editor.noMethod": "Bitte den Cursor in eine METHOD, FORM oder FUNCTION setzen.",
+ "editor.changed": "Der Code im Editor hat sich geändert, während Bella gearbeitet hat; die Stelle für das Ergebnis ist nicht mehr auffindbar. Es wurde nichts geändert – starte die Aktion bitte noch einmal.",
  "diff.shellTitle": "Bella – Änderung prüfen",
  "diff.message": "Bella schreibt nur in den Editor. Nichts wird gesichert oder aktiviert; Strg+Z macht es rückgängig.",
  "diff.proposed": "Vorschlag von Bella",

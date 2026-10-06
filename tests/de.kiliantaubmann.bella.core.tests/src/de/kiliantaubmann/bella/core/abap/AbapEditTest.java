@@ -1,6 +1,8 @@
 package de.kiliantaubmann.bella.core.abap;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -32,5 +34,22 @@ class AbapEditTest {
 	@Test
 	void keepsFullLineCommentsInColumnOne() {
 		assertEquals("    x = 1.\n* note\n    y = 2.", AbapEdit.indent("x = 1.\n* note\ny = 2.", "    "));
+	}
+
+	@Test
+	void relocatesTheActionRangeAfterTyping() {
+		String then = "METHOD a.\n  x = 1.\nENDMETHOD.\nMETHOD b.\n  y = 2.\nENDMETHOD.\n";
+		int sel = then.indexOf("y = 2.");
+		assertArrayEquals(new int[] { sel, 6 }, AbapEdit.relocate(then, then, sel, 6).orElseThrow());
+		String now = "* new comment\n" + then;
+		assertArrayEquals(new int[] { sel + 14, 6 }, AbapEdit.relocate(now, then, sel, 6).orElseThrow(),
+				"text added above moves the range");
+		int cursor = then.indexOf("ENDMETHOD.\nMETHOD b");
+		assertArrayEquals(new int[] { cursor + 14, 0 }, AbapEdit.relocate(now, then, cursor, 0).orElseThrow());
+		assertTrue(AbapEdit.relocate(then.replace("y = 2.", "y = 3."), then, sel, 6).isEmpty(),
+				"the selected code itself changed");
+		String twice = "  y = 2.\n" + then;
+		assertArrayEquals(new int[] { sel + 9, 6 }, AbapEdit.relocate(twice, then, sel, 6).orElseThrow(),
+				"the closest occurrence wins");
 	}
 }

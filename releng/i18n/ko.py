@@ -25,6 +25,7 @@ MESSAGES = {
  "editor.readOnly": "편집기가 읽기 전용입니다. 먼저 오브젝트를 변경 모드로 전환하세요.",
  "editor.none": "먼저 ABAP 편집기를 여세요.", "editor.noSelection": "먼저 코드를 선택하세요.",
  "editor.noMethod": "커서를 METHOD, FORM 또는 FUNCTION 안에 두세요.",
+ "editor.changed": "Bella가 작업하는 동안 편집기의 코드가 변경되어 결과를 넣을 위치를 찾을 수 없습니다. 아무것도 변경하지 않았습니다. 작업을 다시 실행하십시오.",
  "diff.shellTitle": "Bella – 변경 사항 검토",
  "diff.message": "Bella는 편집기에만 작성합니다. 저장하거나 활성화하지 않으며 Ctrl+Z로 되돌릴 수 있습니다.",
  "diff.proposed": "Bella의 제안", "diff.current": "현재 편집기 내용",

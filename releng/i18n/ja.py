@@ -25,6 +25,7 @@ MESSAGES = {
  "editor.readOnly": "エディターは読み取り専用です。先にオブジェクトを変更モードにしてください。",
  "editor.none": "先に ABAP エディターを開いてください。", "editor.noSelection": "先にコードを選択してください。",
  "editor.noMethod": "カーソルを METHOD、FORM または FUNCTION の中に置いてください。",
+ "editor.changed": "Bella の処理中にエディターのコードが変更されたため、結果を入れる場所が見つかりません。何も変更していません。もう一度実行してください。",
  "diff.shellTitle": "Bella – 変更を確認",
  "diff.message": "Bella はエディターに書き込むだけです。保存や有効化は行いません。Ctrl+Z で元に戻せます。",
  "diff.proposed": "Bella の提案", "diff.current": "現在のエディターの内容",

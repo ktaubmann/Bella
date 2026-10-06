@@ -120,4 +120,41 @@ public final class AbapEdit {
 		}
 		return String.join("\n", java.util.Arrays.asList(lines).subList(a, b));
 	}
+
+	/** Characters before the cursor that identify the insertion point again. */
+	static final int CURSOR_CONTEXT = 120;
+
+	/**
+	 * Where a range of {@code then} is in {@code now}, for editor actions whose
+	 * result arrives after the developer may have kept typing: the same place
+	 * if the source is unchanged, else the same text found again (the
+	 * occurrence closest to the old place). For an empty range (cursor) the
+	 * code before it is searched.
+	 *
+	 * @return offset and length in {@code now}; empty if the text is gone
+	 */
+	public static Optional<int[]> relocate(String now, String then, int offset, int length) {
+		if (now.equals(then)) {
+			return Optional.of(new int[] { offset, length });
+		}
+		if (length == 0) {
+			if (offset == 0) {
+				return Optional.of(new int[] { 0, 0 });
+			}
+			String before = then.substring(Math.max(0, offset - CURSOR_CONTEXT), offset);
+			return closest(now, before, offset - before.length()).map(at -> new int[] { at + before.length(), 0 });
+		}
+		String text = then.substring(offset, offset + length);
+		return closest(now, text, offset).map(at -> new int[] { at, length });
+	}
+
+	private static Optional<Integer> closest(String haystack, String needle, int near) {
+		int best = -1;
+		for (int at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
+			if (best < 0 || Math.abs(at - near) < Math.abs(best - near)) {
+				best = at;
+			}
+		}
+		return best < 0 ? Optional.empty() : Optional.of(best);
+	}
 }

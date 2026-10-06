@@ -229,6 +229,23 @@ class WorkbenchSmokeTest {
 	}
 
 	@Test
+	void resultGoesWhereTheActionStartedEvenAfterTyping() throws Exception {
+		BellaPlugin.getDefault().prefs().setValue(Prefs.DIFF_PREVIEW, false);
+		IEditorPart part = openDemoEditor();
+		ITextEditor editor = EditorBridge.textEditor(part).orElseThrow();
+		IDocument doc = EditorBridge.document(editor);
+		editor.selectAndReveal(doc.get().indexOf("rv = 0."), 0);
+		CodeActions.Anchor anchor = CodeActions.Anchor.of(editor);
+		// while Bella works, the developer adds a line on top and moves the cursor to the start
+		doc.replace(0, 0, "* changed meanwhile\n");
+		editor.selectAndReveal(0, 0);
+		CodeActions.apply(part, editor, CodeActions.Target.METHOD, "rv = 42.", null, anchor);
+		pump();
+		assertTrue(doc.get().contains("  METHOD total.\n    rv = 42.\n  ENDMETHOD."), doc.get());
+		assertTrue(doc.get().startsWith("* changed meanwhile\n"), doc.get());
+	}
+
+	@Test
 	void atcFixReplacesTheWholeSourceWithoutSaving() throws Exception {
 		BellaPlugin.getDefault().prefs().setValue(Prefs.DIFF_PREVIEW, false);
 		IEditorPart part = openDemoEditor();

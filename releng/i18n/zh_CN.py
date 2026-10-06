@@ -25,6 +25,7 @@ MESSAGES = {
  "editor.readOnly": "编辑器为只读。请先将对象切换到修改模式。",
  "editor.none": "请先打开 ABAP 编辑器。", "editor.noSelection": "请先选择代码。",
  "editor.noMethod": "请将光标放在 METHOD、FORM 或 FUNCTION 内。",
+ "editor.changed": "Bella 工作期间编辑器中的代码已更改，无法再找到放置结果的位置。未做任何更改；请重新运行该操作。",
  "diff.shellTitle": "Bella – 检查更改",
  "diff.message": "Bella 只写入编辑器，不会保存或激活任何内容；按 Ctrl+Z 可撤销。",
  "diff.proposed": "Bella 的建议", "diff.current": "编辑器当前内容",

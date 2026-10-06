@@ -25,6 +25,7 @@ MESSAGES = {
  "editor.readOnly": "Edytor jest tylko do odczytu. Najpierw przełącz obiekt w tryb zmiany.",
  "editor.none": "Najpierw otwórz edytor ABAP.", "editor.noSelection": "Najpierw zaznacz kod.",
  "editor.noMethod": "Umieść kursor wewnątrz METHOD, FORM lub FUNCTION.",
+ "editor.changed": "Kod w edytorze zmienił się, gdy Bella pracowała, i nie można odnaleźć miejsca na wynik. Nic nie zostało zmienione; uruchom akcję ponownie.",
  "diff.shellTitle": "Bella – Sprawdź zmianę",
  "diff.message": "Bella zapisuje tylko w edytorze. Nic nie jest zapisywane ani aktywowane; Ctrl+Z cofa zmianę.",
  "diff.proposed": "Propozycja Belli", "diff.current": "Aktualna zawartość edytora",

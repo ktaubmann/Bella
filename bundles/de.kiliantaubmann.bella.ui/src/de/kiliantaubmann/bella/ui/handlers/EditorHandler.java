@@ -81,6 +81,7 @@ abstract class EditorHandler extends AbstractHandler {
 		NamingRules naming = plugin.conventions(EditorBridge.adtObject(part).map(AdtEditorObject::destinationId)
 				.orElse(null)).naming();
 		CancelToken cancel = new CancelToken();
+		CodeActions.Anchor anchor = CodeActions.Anchor.of(editor);
 		Job job = new Job(Messages.get("generate.jobName")) {
 			@Override
 			protected org.eclipse.core.runtime.IStatus run(IProgressMonitor monitor) {
@@ -128,7 +129,7 @@ abstract class EditorHandler extends AbstractHandler {
 					Log.info("editor", "proposal for " + objectName + ": " + code.length() + " chars, "
 							+ findings.size() + " style findings, definitions " + used);
 					String notes = CodeActions.previewNotes(used, findings);
-					Display.getDefault().asyncExec(() -> CodeActions.apply(part, editor, target, code, notes));
+					Display.getDefault().asyncExec(() -> CodeActions.apply(part, editor, target, code, notes, anchor));
 				} catch (CancelToken.CancelledException e) {
 					return Status.CANCEL_STATUS;
 				} catch (Exception e) {

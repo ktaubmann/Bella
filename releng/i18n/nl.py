@@ -25,6 +25,7 @@ MESSAGES = {
  "editor.readOnly": "De editor is alleen-lezen. Zet het object eerst in wijzigmodus.",
  "editor.none": "Open eerst een ABAP-editor.", "editor.noSelection": "Selecteer eerst de code.",
  "editor.noMethod": "Plaats de cursor in een METHOD, FORM of FUNCTION.",
+ "editor.changed": "De code in de editor is gewijzigd terwijl Bella bezig was; de plek voor het resultaat is niet meer te vinden. Er is niets gewijzigd; voer de actie opnieuw uit.",
  "diff.shellTitle": "Bella – Wijziging controleren",
  "diff.message": "Bella schrijft alleen in de editor. Er wordt niets opgeslagen of geactiveerd; Ctrl+Z maakt het ongedaan.",
  "diff.proposed": "Voorstel van Bella", "diff.current": "Huidige inhoud van de editor",

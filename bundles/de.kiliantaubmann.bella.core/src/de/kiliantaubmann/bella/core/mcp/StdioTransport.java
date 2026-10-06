@@ -6,18 +6,23 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
 
 import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.util.CancelToken;
+import de.kiliantaubmann.bella.core.util.Executables;
 import de.kiliantaubmann.bella.core.util.Json;
 import de.kiliantaubmann.bella.core.util.Log;
 
@@ -35,7 +40,13 @@ public final class StdioTransport implements McpTransport {
 
 	public StdioTransport(List<String> command, Map<String, String> env, long timeoutSeconds) throws IOException {
 		this.timeoutSeconds = timeoutSeconds;
-		ProcessBuilder pb = new ProcessBuilder(command);
+		ProcessBuilder pb;
+		try {
+			pb = new ProcessBuilder(resolve(command, System.getenv(), System.getProperty("os.name", ""),
+					Files::isRegularFile));
+		} catch (IllegalArgumentException e) {
+			throw new IOException(e.getMessage(), e);
+		}
 		pb.environment().putAll(env);
 		try {
 			this.process = pb.start();
@@ -57,6 +68,32 @@ public final class StdioTransport implements McpTransport {
 		Thread err = new Thread(this::readStderr, "bella-mcp-stderr");
 		err.setDaemon(true);
 		err.start();
+	}
+
+	/**
+	 * On Windows a bare program name such as {@code npx} is looked up on the
+	 * PATH with {@code .exe}, {@code .cmd} and {@code .bat}: Java only adds
+	 * {@code .exe} itself, and npm installs {@code .cmd} shims, which have to
+	 * run through {@code cmd.exe}. Elsewhere the command is used as it is.
+	 */
+	static List<String> resolve(List<String> command, Map<String, String> env, String osName,
+			Predicate<Path> exists) {
+		if (command.isEmpty() || !osName.toLowerCase(Locale.ROOT).startsWith("windows")) {
+			return command;
+		}
+		String program = command.get(0);
+		List<String> args = command.subList(1, command.size());
+		Path exe;
+		if (program.contains("\\") || program.contains("/") || program.contains(".")) {
+			exe = Path.of(program);
+		} else {
+			exe = Executables.find(null, env, osName, exists,
+					List.of(program + ".exe", program + ".cmd", program + ".bat"), List.of()).orElse(null);
+			if (exe == null) {
+				return command;
+			}
+		}
+		return Executables.command(exe, args);
 	}
 
 	/** Splits a command line honouring double quotes. */
@@ -188,11 +225,15 @@ public final class StdioTransport implements McpTransport {
 		} catch (IOException e) {
 			// ignore
 		}
+		// npx and cmd.exe start the server as a child; it holds the SAP connection and must end too.
+		List<ProcessHandle> children = process.descendants().toList();
 		process.destroy();
+		children.forEach(ProcessHandle::destroy);
 		try {
 			if (!process.waitFor(2, TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 			}
+			children.stream().filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			process.destroyForcibly();

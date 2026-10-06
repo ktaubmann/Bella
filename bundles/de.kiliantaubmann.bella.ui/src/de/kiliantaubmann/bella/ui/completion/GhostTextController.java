@@ -281,6 +281,11 @@ public final class GhostTextController implements PaintListener, VerifyKeyListen
 
 	@Override
 	public void documentAboutToBeChanged(DocumentEvent event) {
+		// Before the change: the extra vertical indent sits on a line number that a paste or a
+		// change from elsewhere (e.g. Bella's diff preview) may shift.
+		if (!applying) {
+			dismiss();
+		}
 	}
 
 	@Override
@@ -289,7 +294,6 @@ public final class GhostTextController implements PaintListener, VerifyKeyListen
 		if (applying) {
 			return;
 		}
-		dismiss();
 		if (!BellaPlugin.getDefault().autoCompletion() || event.getText() == null
 				|| event.getText().isEmpty() || event.getText().contains("\n")) {
 			return;

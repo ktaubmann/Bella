@@ -25,6 +25,7 @@ MESSAGES = {
  "editor.readOnly": "Editor je pouze pro čtení. Nejprve přepněte objekt do režimu změn.",
  "editor.none": "Nejprve otevřete editor ABAP.", "editor.noSelection": "Nejprve vyberte kód.",
  "editor.noMethod": "Umístěte kurzor do METHOD, FORM nebo FUNCTION.",
+ "editor.changed": "Kód v editoru se změnil, zatímco Bella pracovala, a místo pro výsledek už nelze najít. Nic se nezměnilo; spusťte akci znovu.",
  "diff.shellTitle": "Bella – Zkontrolovat změnu",
  "diff.message": "Bella zapisuje jen do editoru. Nic se neuloží ani neaktivuje; Ctrl+Z změnu vrátí.",
  "diff.proposed": "Návrh od Belly", "diff.current": "Aktuální obsah editoru",

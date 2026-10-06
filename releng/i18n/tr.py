@@ -25,6 +25,7 @@ MESSAGES = {
  "editor.readOnly": "Düzenleyici salt okunur. Önce nesneyi değiştirme moduna alın.",
  "editor.none": "Önce bir ABAP düzenleyicisi açın.", "editor.noSelection": "Önce kodu seçin.",
  "editor.noMethod": "İmleci bir METHOD, FORM veya FUNCTION içine yerleştirin.",
+ "editor.changed": "Bella çalışırken düzenleyicideki kod değişti ve sonucun yeri artık bulunamıyor. Hiçbir şey değiştirilmedi; işlemi yeniden çalıştırın.",
  "diff.shellTitle": "Bella – Değişikliği gözden geçir",
  "diff.message": "Bella yalnızca düzenleyiciye yazar. Hiçbir şey kaydedilmez veya etkinleştirilmez; Ctrl+Z geri alır.",
  "diff.proposed": "Bella’nın önerisi", "diff.current": "Düzenleyicinin mevcut içeriği",
