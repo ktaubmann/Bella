@@ -177,6 +177,8 @@ public final class CopilotCli {
 			return launcher.start(Executables.command(exe, args), env(System.getenv()), workDir);
 		} catch (IOException e) {
 			throw new LlmException("Could not start the Copilot CLI (" + exe + "): " + e.getMessage(), e);
+		} catch (IllegalArgumentException e) {
+			throw new LlmException(0, e.getMessage());
 		}
 	}
 

@@ -25,10 +25,9 @@ final class Turn {
 
 	/** Tool kinds Bella never lets the CLI run on its own. */
 	private static final List<String> FORBIDDEN_KINDS = List.of("execute", "edit", "delete", "move", "fetch");
-	private static final Pattern BELLA_TOOL = Pattern.compile("(^|[^a-z0-9])" + CopilotCli.MCP_SERVER_NAME
-			+ "([-_/.:(\\s]|$)");
-
-	private static final Pattern TOKEN = Pattern.compile("[A-Za-z0-9_]+");
+	/** A title that is a tool name, optionally after the server name and followed by its arguments. */
+	private static final Pattern TOOL_TITLE = Pattern.compile("(?:" + CopilotCli.MCP_SERVER_NAME
+			+ "\\s*[-_/.:]\\s*)?([A-Za-z0-9_]+)(?:\\s*\\(.*\\))?", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
 	private final ConversationListener listener;
 	private final StringBuilder text = new StringBuilder();
@@ -150,21 +149,11 @@ final class Turn {
 				return true;
 			}
 		}
+		// The whole title must name a Bella tool, e.g. "bella-adt_read_source", "adt_read_source" or
+		// "adt_read_source(…)"; a tool name somewhere in a command line ("echo adt_read_source && …") is not enough.
 		String title = Json.str(toolCall, "title");
-		if (title == null) {
-			return false;
-		}
-		if (BELLA_TOOL.matcher(title.toLowerCase(Locale.ROOT)).find()) {
-			return true;
-		}
-		// Title may be just the tool name, e.g. "adt_read_source" or "adt_read_source(…)".
-		java.util.regex.Matcher m = TOKEN.matcher(title);
-		while (m.find()) {
-			if (isBellaToolName.test(m.group())) {
-				return true;
-			}
-		}
-		return false;
+		java.util.regex.Matcher m = title == null ? null : TOOL_TITLE.matcher(title.strip());
+		return m != null && m.matches() && isBellaToolName.test(m.group(1));
 	}
 
 	private static String pick(JsonArray options, String wantedKind) {

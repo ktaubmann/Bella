@@ -173,6 +173,8 @@ public final class ClaudeCli {
 			return launcher.start(command(exe, args), env(), workDir);
 		} catch (IOException e) {
 			throw new LlmException("Could not start the Claude Code CLI (" + exe + "): " + e.getMessage(), e);
+		} catch (IllegalArgumentException e) {
+			throw new LlmException(0, e.getMessage());
 		}
 	}
 

@@ -112,4 +112,16 @@ class ClaudeCliTest {
 				Path.of("."));
 		assertEquals(ClaudeCli.State.NOT_FOUND, cli.status().state());
 	}
+
+	@Test
+	void shimsGetNoArgumentsCmdWouldInterpret() {
+		assertEquals(List.of("cmd.exe", "/c", "claude.cmd", "--model", "claude-opus-5", "--tools", ""),
+				ClaudeCli.command(Path.of("claude.cmd"), List.of("--model", "claude-opus-5", "--tools", "")));
+		for (String bad : List.of("opus & calc", "opus|x", "%PATH%", "a\"b", "x^y", "!v!")) {
+			org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+					() -> ClaudeCli.command(Path.of("claude.cmd"), List.of("--model", bad)), bad);
+		}
+		assertEquals(List.of("claude.exe", "--model", "opus & calc"),
+				ClaudeCli.command(Path.of("claude.exe"), List.of("--model", "opus & calc")), "no shell without a shim");
+	}
 }

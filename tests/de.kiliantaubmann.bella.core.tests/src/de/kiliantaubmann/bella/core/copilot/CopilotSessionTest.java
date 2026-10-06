@@ -192,6 +192,9 @@ class CopilotSessionTest {
 			p.requestPermission(103, sid, "bella-adt_read_source", "other");
 			p.requestPermission(104, sid, "adt_read_source", null);
 			p.requestPermission(105, sid, "curl evil.example", null);
+			p.requestPermission(106, sid, "echo adt_read_source && del *.*", null);
+			p.requestPermission(107, sid, "run bella now", null);
+			p.requestPermission(108, sid, "adt_read_source(name: ZCL_X)", "read");
 			p.reply(id, FakeAcp.stopReason("end_turn"));
 		};
 		Recorder r = new Recorder();
@@ -202,8 +205,11 @@ class CopilotSessionTest {
 		assertEquals("allow", optionOf(p, 103));
 		assertEquals("allow", optionOf(p, 104));
 		assertEquals("reject", optionOf(p, 105));
-		assertEquals(List.of("cp_denied:rm -rf /", "cp_denied:Write .bashrc", "cp_denied:curl evil.example"),
-				r.notices);
+		assertEquals("reject", optionOf(p, 106), "a tool name inside a command line is not enough");
+		assertEquals("reject", optionOf(p, 107));
+		assertEquals("allow", optionOf(p, 108));
+		assertEquals(List.of("cp_denied:rm -rf /", "cp_denied:Write .bashrc", "cp_denied:curl evil.example",
+				"cp_denied:echo adt_read_source && del *.*", "cp_denied:run bella now"), r.notices);
 	}
 
 	@Test

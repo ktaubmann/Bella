@@ -45,15 +45,30 @@ public final class Executables {
 		return candidates.stream().filter(exists).findFirst();
 	}
 
+	/** Characters {@code cmd.exe /c} treats as command syntax even inside quotes ({@code %}, {@code !}) or outside. */
+	private static final java.util.regex.Pattern CMD_SPECIAL = java.util.regex.Pattern.compile("[&|<>^%!\"\r\n]");
+
 	private static String stripQuotes(String s) {
 		return s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"") ? s.substring(1, s.length() - 1) : s;
 	}
 
-	/** Full command line for the executable plus {@code args}; {@code .cmd} shims run through {@code cmd.exe}. */
+	/**
+	 * Full command line for the executable plus {@code args}; {@code .cmd} shims run through {@code cmd.exe}.
+	 *
+	 * @throws IllegalArgumentException if a shim would get an argument that
+	 *                                  {@code cmd.exe} interprets (e.g. {@code &} in a model name)
+	 */
 	public static List<String> command(Path executable, List<String> args) {
 		List<String> cmd = new ArrayList<>();
 		String name = executable.getFileName().toString().toLowerCase(Locale.ROOT);
 		if (name.endsWith(".cmd") || name.endsWith(".bat")) {
+			for (String a : args) {
+				if (CMD_SPECIAL.matcher(a).find()) {
+					throw new IllegalArgumentException("The argument '" + a + "' contains a character that cmd.exe "
+							+ "would interpret (& | < > ^ % ! \" or a line break), so Bella does not start " + name
+							+ " with it. Check the model name in the preferences, or use the .exe of the CLI.");
+				}
+			}
 			cmd.add("cmd.exe");
 			cmd.add("/c");
 		}

@@ -483,4 +483,12 @@ class AdtToolProviderTest {
 		assertTrue(r.content().contains("Unknown class include"), r.content());
 		assertTrue(adt.log.stream().noneMatch(l -> l.contains("zcl_b")), adt.log.toString());
 	}
+
+	@Test
+	void columnsAreOnlyColumnNames() {
+		ToolResult r = new AdtToolProvider(twoSystems(), () -> "dev").call("adt_table_contents", Json.parseObject(
+				"{\"table\":\"t000\",\"columns\":\"mandt FROM usr02 UNION SELECT bname\"}"), CancelToken.NONE);
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("'columns' takes column names"), r.content());
+	}
 }

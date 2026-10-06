@@ -786,6 +786,9 @@ public final class AdtToolProvider implements ToolProvider {
 	static final int TABLE_RESULT_CHARS = 40_000;
 
 	private static final Pattern SQL_NAME = Pattern.compile("[A-Za-z/][A-Za-z0-9_/]*");
+	/** {@code *} or column names, optionally with a table alias ({@code m~matnr}), separated by commas. */
+	private static final Pattern SQL_COLUMNS = Pattern.compile(
+			"\\*|[A-Za-z/][A-Za-z0-9_/]*(?:~[A-Za-z0-9_/]+)?(?:\\s*,\\s*[A-Za-z/][A-Za-z0-9_/]*(?:~[A-Za-z0-9_/]+)?)*");
 
 	private ToolResult tableContents(JsonObject in, CancelToken cancel) throws IOException {
 		String sql = Json.str(in, "sql");
@@ -795,6 +798,10 @@ public final class AdtToolProvider implements ToolProvider {
 				return ToolResult.error("Give 'table' (a table or CDS view name) or a SELECT statement in 'sql'.");
 			}
 			String columns = Json.str(in, "columns");
+			if (columns != null && !columns.isBlank() && !SQL_COLUMNS.matcher(columns.trim()).matches()) {
+				return ToolResult.error("'columns' takes column names separated by commas (e.g. matnr, mtart); "
+						+ "for expressions, joins or aliases write the whole statement in 'sql'.");
+			}
 			String where = Json.str(in, "where");
 			sql = "SELECT " + (columns == null || columns.isBlank() ? "*" : columns.trim()) + " FROM "
 					+ table.trim().toUpperCase(Locale.ROOT)
