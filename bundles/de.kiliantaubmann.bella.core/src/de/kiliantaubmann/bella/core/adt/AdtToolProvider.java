@@ -207,7 +207,7 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[] { "name" }, objectProps()), Capability.UNIT_TEST, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_atc_check",
 				"Run ATC (ABAP Test Cockpit) checks on an object and list the findings by priority. ATC checks the "
-						+ "active version: activate first (adt_activate runs ATC itself after a successful activation).",
+						+ "active version: activate first (or activate with run_atc, which runs ATC after a successful activation).",
 				schema(new String[] { "name" }, objectProps("check_variant", "string",
 						"ATC check variant; omit for the one set in Bella's preferences, else the system default.")),
 				Capability.ATC, ToolSpec.Kind.READ));
@@ -288,7 +288,7 @@ public final class AdtToolProvider implements ToolProvider {
 				"run_unit_tests", "boolean", "After a successful activation run the ABAP Unit tests of the activated "
 						+ "classes, programs and function groups and add the result (default false).",
 				"run_atc", "boolean", "After a successful activation run ATC on the activated objects and add the "
-						+ "findings (default true).");
+						+ "findings (default false). Set it on the last activation of a task, not on every one.");
 		JsonObject objects = new JsonObject();
 		objects.addProperty("type", "array");
 		objects.addProperty("description", "Objects to activate together.");
@@ -893,7 +893,7 @@ public final class AdtToolProvider implements ToolProvider {
 		String done = "Activated " + names + " on " + s.label() + (msgs.isEmpty() ? "." : ":\n" + format(msgs));
 		boolean test = in.has("run_unit_tests") && in.get("run_unit_tests").isJsonPrimitive()
 				&& in.get("run_unit_tests").getAsBoolean();
-		boolean atc = !in.has("run_atc") || !in.get("run_atc").isJsonPrimitive() || in.get("run_atc").getAsBoolean();
+		boolean atc = in.has("run_atc") && in.get("run_atc").isJsonPrimitive() && in.get("run_atc").getAsBoolean();
 		return ToolResult.ok(done + (test ? "\n\n" + unitTestsAfterActivation(c, refs, cancel) : "")
 				+ (atc ? "\n\n" + atcAfterActivation(c, refs, cancel) : ""));
 	}

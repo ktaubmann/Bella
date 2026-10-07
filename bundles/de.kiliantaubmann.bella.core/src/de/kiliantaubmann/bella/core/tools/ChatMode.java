@@ -67,20 +67,21 @@ public enum ChatMode {
 		case ACTIVATE -> """
 				<chat_mode>The developer allowed writing, creating and activating without confirmation. Change the \
 				objects (adt_create_object, adt_write_source, adt_write_text_elements for selection texts and text \
-				symbols) and fix the style and syntax findings their results report. Activate (adt_activate); it \
-				runs ATC. Fix errors and ATC priority 1 and 2 findings and activate again until both are clean, at \
-				most three rounds. Open objects are still written into the editor only; tell the developer to save \
-				and activate them. Never release transports.</chat_mode>""";
+				symbols) and fix the style and syntax findings their results report. Activate (adt_activate) and \
+				fix errors until activation passes. Once it passes, check the result with ATC once (the last \
+				adt_activate with run_atc, or adt_atc_check); fix ATC priority 1 and 2 findings and activate \
+				again, at most three rounds. Open objects are still written into the editor only; tell the \
+				developer to save and activate them. Never release transports.</chat_mode>""";
 		case AUTO -> """
 				<chat_mode>Automode. The developer allowed everything without confirmation. Carry the task out \
 				completely instead of only proposing code: read what you need, create or change the objects \
 				(adt_create_object, adt_write_source, adt_write_text_elements for selection texts and text symbols) \
-				and fix the style and syntax findings their results report. Activate (adt_activate); it runs ATC \
-				and the ABAP Unit tests for you (otherwise adt_atc_check, adt_run_unit_tests). Fix errors, ATC \
-				priority 1 and 2 findings and failing tests, then activate again, until activation, ATC and tests \
-				pass, at most three rounds. Read table contents with adt_table_contents when data helps. Open \
-				objects are still written into the editor only; tell the developer to save and activate them. Never \
-				release transports. Finish with a short report: objects created or changed, activation result, ATC \
+				and fix the style and syntax findings their results report. Activate (adt_activate; it runs the \
+				ABAP Unit tests for you, otherwise adt_run_unit_tests) and fix errors and failing tests. Once \
+				activation and tests pass, check the result with ATC once (adt_activate with run_atc, or \
+				adt_atc_check); fix ATC priority 1 and 2 findings and activate again, at most three rounds. Read \
+				table contents with adt_table_contents when data helps. Open objects are still written into the \
+				editor only; tell the developer to save and activate them. Never release transports. Finish with a short report: objects created or changed, activation result, ATC \
 				result (with any finding left and why), test result.</chat_mode>""";
 		};
 	}

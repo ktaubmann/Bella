@@ -133,6 +133,7 @@ class PromptsTest {
 		for (ChatMode mode : List.of(ChatMode.ACTIVATE,
 				ChatMode.AUTO)) {
 			assertTrue(mode.instruction().contains("ATC priority 1 and 2"), mode.instruction());
+			assertTrue(mode.instruction().contains("check the result with ATC once"), mode.instruction());
 			assertTrue(mode.instruction().contains("adt_write_text_elements"), mode.instruction());
 		}
 		EditorContext ctx = new EditorContext("ZX", "PROG/P", null, "REPORT zx.", "REPORT zx.", 0);

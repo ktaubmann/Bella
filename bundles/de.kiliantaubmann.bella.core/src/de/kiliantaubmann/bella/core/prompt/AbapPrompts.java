@@ -61,8 +61,9 @@ public final class AbapPrompts {
 				- Run abap_lint on code you write and fix the findings that apply. adt_write_source and
 				  adt_create_object add Bella's style check and a syntax check to their result; fix those findings
 				  before activating.
-				- ATC checks the active version: adt_activate runs it after a successful activation. Fix priority 1
-				  and 2 findings, activate again, and say why you leave any finding.
+				- ATC checks the active version, so run it after activation, once a change is complete (adt_activate
+				  with run_atc, or adt_atc_check), not after every activation. Fix priority 1 and 2 findings,
+				  activate again, and say why you leave any finding.
 				- Maintain texts in the text pool with adt_write_text_elements: selection texts for PARAMETERS and
 				  SELECT-OPTIONS, text symbols for TEXT-nnn.
 				- Before writing code that depends on the release, check it with adt_list_systems (SAP_BASIS release

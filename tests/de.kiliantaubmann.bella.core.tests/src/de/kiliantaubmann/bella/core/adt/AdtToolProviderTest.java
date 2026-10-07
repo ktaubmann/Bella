@@ -581,7 +581,7 @@ class AdtToolProviderTest {
 	}
 
 	@Test
-	void activationRunsAtc() {
+	void activationRunsAtcOnlyWhenAsked() {
 		FakeAdt adt = twoSystems()
 				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(""))
 				.route("POST /sap/bc/adt/atc/worklists", r -> new AdtResponse(200, "text/plain", "W1"))
@@ -592,14 +592,14 @@ class AdtToolProviderTest {
 								+ "atcfinding:priority=\"2\" atcfinding:checkTitle=\"Extended Program Check\" "
 								+ "atcfinding:messageTitle=\"Char. strings w/o text elements\"/></atcworklist:worklist>"));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev", () -> "", d -> "ZVARIANT");
-		ToolResult r = call(p, "adt_activate", "{\"objects\":[{\"name\":\"ZREP\",\"type\":\"PROG\"}]}");
+		ToolResult r = call(p, "adt_activate", "{\"objects\":[{\"name\":\"ZREP\",\"type\":\"PROG\"}],\"run_atc\":true}");
 		assertFalse(r.isError(), r.content());
 		assertTrue(r.content().contains("ATC findings:\nPriority 2 line 12: Extended Program Check: Char. strings w/o text "
 				+ "elements\nFix priority 1 and 2 findings now"), r.content());
 		assertTrue(adt.log.contains("POST /sap/bc/adt/atc/worklists?checkVariant=ZVARIANT"), adt.log.toString());
 
 		int before = adt.log.size();
-		ToolResult off = call(p, "adt_activate", "{\"objects\":[{\"name\":\"ZREP\",\"type\":\"PROG\"}],\"run_atc\":false}");
+		ToolResult off = call(p, "adt_activate", "{\"objects\":[{\"name\":\"ZREP\",\"type\":\"PROG\"}]}");
 		assertFalse(off.content().contains("ATC"), off.content());
 		assertTrue(adt.log.subList(before, adt.log.size()).stream().noneMatch(l -> l.contains("/atc/")));
 	}
