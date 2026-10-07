@@ -12,7 +12,7 @@
 
   <properties>
     <tycho.version>4.0.13</tycho.version>
-    <eclipse.release>2024-12</eclipse.release>
+    <eclipse.release>2026-09</eclipse.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 

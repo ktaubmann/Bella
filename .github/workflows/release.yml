@@ -72,7 +72,7 @@ jobs:
 
             ${{ vars.BELLA_GPG_KEYNAME && format('Signed with PGP. Key fingerprint: `{0}`', vars.BELLA_GPG_KEYNAME) || '' }}
 
-            Requires Eclipse 2024-12+ with Java 21 and SAP ABAP Development Tools. Bella uses the installed ADT and does not update it.
+            Requires Eclipse 2026-09+ with Java 21 and SAP ABAP Development Tools. Bella uses the installed ADT and does not update it.
 
   pages:
     name: Publish update site on GitHub Pages

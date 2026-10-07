@@ -123,7 +123,7 @@ The chat mode can tighten or loosen this (see *Chat modes*); refusals stay refus
 ## Installation
 
 Requirements:
-- Eclipse 2024-12 or newer with Java 21
+- Eclipse 2026-09 or newer with Java 21
 - SAP ABAP Development Tools
 - on Linux also WebKitGTK (`libwebkit2gtk-4.1`) for the chat
 
