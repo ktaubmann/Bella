@@ -32,6 +32,7 @@ import de.kiliantaubmann.bella.core.mcp.McpClient;
 import de.kiliantaubmann.bella.core.mcp.StreamableHttpTransport;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
+import de.kiliantaubmann.bella.core.tools.ChatMode;
 import de.kiliantaubmann.bella.core.tools.ToolPolicy;
 import de.kiliantaubmann.bella.core.tools.ToolProvider;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -68,7 +69,9 @@ class CopilotSessionTest {
 		@Override
 		public List<ToolSpec> listTools() {
 			return List.of(ToolSpec.of("adt_read_source", "Reads source", Json.parseObject("{\"type\":\"object\"}"),
-					Capability.READ_SOURCE, ToolSpec.Kind.READ));
+					Capability.READ_SOURCE, ToolSpec.Kind.READ),
+					ToolSpec.of("adt_write_source", "Writes source", Json.parseObject("{\"type\":\"object\"}"),
+							Capability.WRITE_SOURCE, ToolSpec.Kind.WRITE));
 		}
 
 		@Override
@@ -157,6 +160,49 @@ class CopilotSessionTest {
 		assertTrue(server.getAsJsonArray("headers").get(0).getAsJsonObject().get("value").getAsString()
 				.startsWith("Bearer "));
 		assertEquals(tmp.resolve("work").toAbsolutePath().toString(), Json.str(p.newSessionParams, "cwd"));
+	}
+
+	@Test
+	void planModeAlsoHoldsForCopilot() throws Exception {
+		ToolRegistry registry = new ToolRegistry();
+		registry.addProvider(tools);
+		registry.refresh(e -> {
+		});
+		List<String> confirmations = new CopyOnWriteArrayList<>();
+		ToolExecutor plan = new ToolExecutor(registry, () -> ToolPolicy.defaults().withMode(ChatMode.PLAN),
+				(tool, input) -> confirmations.add(tool.name()), null);
+		CopilotCli cli = new CopilotCli(new CopilotCli.Config(exe.toString(), ""), fake, tmp.resolve("work"));
+		try (CopilotSession planned = new CopilotSession(cli, () -> new ChatSession.Settings(model, 1000, "high"),
+				"Du bist Bella.", plan, "0.3.0")) {
+			fake.script = (p, id, sid, text) -> {
+				try {
+					JsonObject server = p.newSessionParams.getAsJsonArray("mcpServers").get(0).getAsJsonObject();
+					String auth = server.getAsJsonArray("headers").get(0).getAsJsonObject().get("value").getAsString();
+					try (McpClient client = new McpClient(new StreamableHttpTransport(
+							URI.create(Json.str(server, "url")), auth.substring("Bearer ".length()),
+							HttpTransport.jdk()))) {
+						client.initialize("copilot");
+						McpClient.CallResult write = client.callTool("adt_write_source",
+								Json.parseObject("{\"name\":\"ZCL_ORDERS\",\"source\":\"x\"}"), CancelToken.NONE);
+						McpClient.CallResult read = client.callTool("adt_read_source",
+								Json.parseObject("{\"name\":\"ZCL_ORDERS\"}"), CancelToken.NONE);
+						p.update(sid, "agent_message_chunk", (write.isError() ? "refused: " + write.text() : "written")
+								+ " | " + read.text());
+						p.reply(id, FakeAcp.stopReason("end_turn"));
+					}
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			};
+			Recorder r = new Recorder();
+			planned.ask(ChatMode.PLAN.apply("Baue ZCL_ORDERS um"), r, CancelToken.NONE);
+			assertTrue(r.text.toString().startsWith("refused: Refused in plan mode"), r.text.toString());
+			assertTrue(r.text.toString().endsWith("| result of adt_read_source"), "reading still works");
+			assertEquals(List.of("adt_read_source:ZCL_ORDERS"), tools.calls, "nothing was written");
+			assertTrue(confirmations.isEmpty(), "refused before any confirmation");
+			assertTrue(fake.started.get(0).prompts.get(0).contains("<chat_mode>Plan mode."),
+					"Copilot gets the plan-mode instruction");
+		}
 	}
 
 	@Test
