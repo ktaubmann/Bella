@@ -43,7 +43,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "La lectura se ejecuta; escribir, activar y leer contenidos de tablas preguntan antes",
  "chat.mode.read_data": "Leer datos sin preguntar",
  "chat.mode.read_data.tip": "Como «Preguntar antes de cambiar», pero los contenidos de tablas (base de datos) se leen sin preguntar",
- "chat.mode.activate": "Escribir y activar sin preguntar",
+ "chat.mode.activate": "Escribir y activar",
  "chat.mode.activate.tip": "Bella escribe, crea y activa sin preguntar; leer contenidos de tablas sigue preguntando",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "Todo sin preguntar: escribir, crear, activar, leer contenidos de tablas y ejecutar las pruebas ABAP Unit tras cada activación",

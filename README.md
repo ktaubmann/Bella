@@ -51,10 +51,10 @@ A drop-down below the chat input sets how freely Bella may act, from careful to 
 | Mode | Reading | Table contents | Writing into an open editor | Saving, creating, activating in SAP |
 |---|---|---|---|---|
 | **Plan only** | runs | asks | refused | refused; Bella answers with a numbered plan |
-| **Suggest only (diff)** | runs | asks | diff preview | refused |
+| **Diff mode only (suggest)** | runs | asks | diff preview | refused |
 | **Ask before changes** (default) | runs | asks | diff preview | asks |
 | **Read data without asking** | runs | runs | diff preview | asks |
-| **Write & activate without asking** | runs | asks | diff preview | runs |
+| **Write and activate** | runs | asks | diff preview | runs |
 | **Automode** | runs | runs | diff preview | runs, plus ABAP Unit after each activation (`adt_activate` with `run_unit_tests`); Bella carries the task out and fixes errors and failing tests |
 
 - Choosing one of the two modes that write without asking asks once for confirmation.

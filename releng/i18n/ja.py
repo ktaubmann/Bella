@@ -43,7 +43,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "読み取りは実行され、書き込み・有効化・テーブル内容の読み取りは事前に確認します",
  "chat.mode.read_data": "データは確認なしで読み取り",
  "chat.mode.read_data.tip": "「変更前に確認」と同じですが、テーブル内容（データベース）は確認なしで読み取ります",
- "chat.mode.activate": "書き込みと有効化を確認なしで",
+ "chat.mode.activate": "書き込みと有効化",
  "chat.mode.activate.tip": "Bella は確認なしで書き込み・作成・有効化を行います。テーブル内容の読み取りは引き続き確認します",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "すべて確認なし: 書き込み、作成、有効化、テーブル内容の読み取り、および有効化ごとの ABAP Unit テスト",

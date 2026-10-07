@@ -43,7 +43,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "Čtení běží; zápis, aktivace a čtení obsahu tabulek se nejdřív ptají",
  "chat.mode.read_data": "Číst data bez dotazu",
  "chat.mode.read_data.tip": "Jako „Ptát se před změnami“, ale obsah tabulek (databáze) se čte bez dotazu",
- "chat.mode.activate": "Zapisovat a aktivovat bez dotazu",
+ "chat.mode.activate": "Zapisovat a aktivovat",
  "chat.mode.activate.tip": "Bella zapisuje, vytváří a aktivuje bez dotazu; čtení obsahu tabulek se stále ptá",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "Vše bez dotazu: zápis, vytváření, aktivace, čtení obsahu tabulek a testy ABAP Unit po každé aktivaci",

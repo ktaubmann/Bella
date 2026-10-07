@@ -43,7 +43,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "读取直接运行；写入、激活和读取表内容前会先询问",
  "chat.mode.read_data": "读取数据无需询问",
  "chat.mode.read_data.tip": "与“更改前询问”相同，但读取表内容（数据库）无需询问",
- "chat.mode.activate": "写入并激活无需询问",
+ "chat.mode.activate": "写入并激活",
  "chat.mode.activate.tip": "Bella 无需询问即写入、创建和激活；读取表内容仍会询问",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "全部无需询问：写入、创建、激活、读取表内容，并在每次激活后运行 ABAP Unit 测试",

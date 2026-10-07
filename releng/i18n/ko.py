@@ -43,7 +43,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "읽기는 실행되고 쓰기, 활성화, 테이블 내용 읽기는 먼저 묻습니다",
  "chat.mode.read_data": "데이터는 묻지 않고 읽기",
  "chat.mode.read_data.tip": "‘변경 전에 묻기’와 같지만 테이블 내용(데이터베이스)은 묻지 않고 읽습니다",
- "chat.mode.activate": "묻지 않고 쓰기 및 활성화",
+ "chat.mode.activate": "쓰기 및 활성화",
  "chat.mode.activate.tip": "Bella가 묻지 않고 쓰기, 생성, 활성화합니다. 테이블 내용 읽기는 계속 묻습니다",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "모두 묻지 않음: 쓰기, 생성, 활성화, 테이블 내용 읽기, 활성화할 때마다 ABAP Unit 테스트 실행",

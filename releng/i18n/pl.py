@@ -43,7 +43,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "Odczyt działa; zapis, aktywacja i odczyt zawartości tabel pytają najpierw",
  "chat.mode.read_data": "Czytaj dane bez pytania",
  "chat.mode.read_data.tip": "Jak „Pytaj przed zmianami”, ale zawartość tabel (baza danych) jest czytana bez pytania",
- "chat.mode.activate": "Zapisuj i aktywuj bez pytania",
+ "chat.mode.activate": "Zapisuj i aktywuj",
  "chat.mode.activate.tip": "Bella zapisuje, tworzy i aktywuje bez pytania; odczyt zawartości tabel nadal pyta",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "Wszystko bez pytania: zapis, tworzenie, aktywacja, odczyt zawartości tabel i testy ABAP Unit po każdej aktywacji",

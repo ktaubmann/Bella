@@ -43,7 +43,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "Lezen loopt; schrijven, activeren en tabelinhoud lezen vragen eerst",
  "chat.mode.read_data": "Gegevens lezen zonder te vragen",
  "chat.mode.read_data.tip": "Zoals „Vragen voor wijzigingen”, maar tabelinhoud (database) wordt zonder te vragen gelezen",
- "chat.mode.activate": "Schrijven en activeren zonder te vragen",
+ "chat.mode.activate": "Schrijven en activeren",
  "chat.mode.activate.tip": "Bella schrijft, maakt aan en activeert zonder te vragen; tabelinhoud lezen vraagt nog steeds",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "Alles zonder te vragen: schrijven, aanmaken, activeren, tabelinhoud lezen en na elke activering de ABAP Unit-tests uitvoeren",

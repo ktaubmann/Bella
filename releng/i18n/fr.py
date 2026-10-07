@@ -44,7 +44,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "La lecture s’exécute ; l’écriture, l’activation et la lecture du contenu des tables demandent d’abord",
  "chat.mode.read_data": "Lire les données sans demander",
  "chat.mode.read_data.tip": "Comme « Demander avant les modifications », mais le contenu des tables (base de données) est lu sans demander",
- "chat.mode.activate": "Écrire et activer sans demander",
+ "chat.mode.activate": "Écrire et activer",
  "chat.mode.activate.tip": "Bella écrit, crée et active sans demander ; la lecture du contenu des tables demande toujours",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "Tout sans demander : écrire, créer, activer, lire le contenu des tables et exécuter les tests ABAP Unit après chaque activation",

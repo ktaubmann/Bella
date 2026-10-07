@@ -43,7 +43,7 @@ MESSAGES = {
  "chat.mode.normal.tip": "Okuma çalışır; yazma, etkinleştirme ve tablo içeriği okuma önce sorar",
  "chat.mode.read_data": "Verileri sormadan oku",
  "chat.mode.read_data.tip": "„Değişiklikten önce sor” gibi, ancak tablo içerikleri (veritabanı) sormadan okunur",
- "chat.mode.activate": "Sormadan yaz ve etkinleştir",
+ "chat.mode.activate": "Yaz ve etkinleştir",
  "chat.mode.activate.tip": "Bella sormadan yazar, oluşturur ve etkinleştirir; tablo içeriği okuma yine sorar",
  "chat.mode.auto": "Automode",
  "chat.mode.auto.tip": "Her şey sormadan: yazma, oluşturma, etkinleştirme, tablo içeriği okuma ve her etkinleştirmeden sonra ABAP Unit testleri",
