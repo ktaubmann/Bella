@@ -7,7 +7,10 @@ package de.kiliantaubmann.bella.core.tools;
  */
 public enum ChatMode {
 
-	/** Read and analyse only, then propose a plan; every write is refused. */
+	/**
+	 * Read and analyse only, then propose a plan; every write is refused. Used
+	 * for the turns of the Planning Mode button, not offered in the drop-down.
+	 */
 	PLAN,
 
 	/**
@@ -53,8 +56,8 @@ public enum ChatMode {
 				editor (Bella refuses these tools in this mode). Read what you need with the read tools, then answer \
 				with a concrete, numbered plan: which objects you would create or change, what changes in each \
 				(short code sketches where useful), in which order, how you would activate and test it, and the \
-				risks or open questions. End by saying that the developer can choose another mode below the chat \
-				to carry the plan out.</chat_mode>""";
+				risks or open questions. Do not ask how to continue: the developer accepts, changes or cancels the \
+				plan with buttons below the chat.</chat_mode>""";
 		case SUGGEST -> """
 				<chat_mode>Suggest mode. Nothing may be saved, created or activated in the SAP system (Bella refuses \
 				it). Propose changes instead: for an object open in the editor use adt_write_source, which shows the \

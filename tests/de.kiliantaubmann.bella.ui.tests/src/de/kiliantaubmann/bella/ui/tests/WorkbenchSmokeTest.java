@@ -141,27 +141,44 @@ class WorkbenchSmokeTest {
 	}
 
 	@Test
-	void chatHasAModeDropDown() {
+	void chatHasAModeDropDownAndAPlanningButton() {
 		ChatView view = ChatView.open().orElseThrow();
 		pump();
-		Combo modes = find(view.getSite().getShell(), Combo.class).stream()
-				.filter(c -> c.getItemCount() == ChatMode.values().length
-						&& c.getItem(0).equals(Messages.get("chat.mode.plan")))
+		Composite root = view.getSite().getShell();
+		Combo modes = find(root, Combo.class).stream()
+				.filter(c -> c.getItemCount() > 0 && c.getItem(0).equals(Messages.get("chat.mode.suggest")))
 				.findFirst().orElseThrow();
+		assertFalse(List.of(modes.getItems()).contains(Messages.get("chat.plan.button")),
+				"plan mode is a button, not a drop-down entry");
+		assertEquals(ChatMode.values().length - 1, modes.getItemCount());
 		assertEquals(ChatMode.NORMAL, view.mode(), "a chat starts with asking before changes");
 		assertEquals(Messages.get("chat.mode.normal"), modes.getText());
 		for (ChatMode m : ChatMode.values()) {
-			assertFalse(Messages.get("chat.mode." + m.name().toLowerCase()).startsWith("!"), m.name());
-			assertFalse(Messages.get("chat.mode." + m.name().toLowerCase() + ".tip").startsWith("!"), m.name());
+			if (m != ChatMode.PLAN) {
+				assertFalse(Messages.get("chat.mode." + m.name().toLowerCase()).startsWith("!"), m.name());
+				assertFalse(Messages.get("chat.mode." + m.name().toLowerCase() + ".tip").startsWith("!"), m.name());
+			}
 		}
-		modes.select(ChatMode.PLAN.ordinal());
-		modes.notifyListeners(SWT.Selection, new Event());
-		assertEquals(ChatMode.PLAN, view.mode());
-		modes.select(ChatMode.READ_DATA.ordinal());
+		modes.select(List.of(modes.getItems()).indexOf(Messages.get("chat.mode.read_data")));
 		modes.notifyListeners(SWT.Selection, new Event());
 		assertEquals(ChatMode.READ_DATA, view.mode(), "no confirmation for reading data");
 		view.setMode(ChatMode.NORMAL);
 		assertEquals(Messages.get("chat.mode.normal"), modes.getText());
+
+		Button planning = find(root, Button.class).stream()
+				.filter(b -> b.getText().equals(Messages.get("chat.plan.button"))).findFirst().orElseThrow();
+		assertTrue(planning.isEnabled());
+		for (String key : List.of("accept", "change", "cancel", "question", "changeHint", "cancelled")) {
+			assertFalse(Messages.get("chat.plan." + key).startsWith("!"), key);
+		}
+		assertFalse(view.isPlanPending(), "the plan choice appears only after a plan");
+		Text input = find(root, Text.class).stream().filter(t -> (t.getStyle() & SWT.MULTI) != 0).findFirst()
+				.orElseThrow();
+		view.changePlan();
+		assertEquals(Messages.get("chat.plan.changeHint"), input.getMessage());
+		view.cancelPlan();
+		assertEquals(Messages.get("chat.inputHint"), input.getMessage());
+		assertFalse(view.isPlanPending());
 		page().hideView(view);
 	}
 

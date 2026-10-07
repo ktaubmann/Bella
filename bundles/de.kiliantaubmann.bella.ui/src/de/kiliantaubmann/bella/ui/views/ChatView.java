@@ -19,6 +19,7 @@ import org.eclipse.jface.action.IToolBarManager;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.layout.GridDataFactory;
 import org.eclipse.jface.layout.GridLayoutFactory;
+import org.eclipse.swt.layout.GridData;
 import org.eclipse.jface.preference.PreferenceDialog;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.browser.Browser;
@@ -75,6 +76,17 @@ public class ChatView extends ViewPart {
 	private Button stop;
 	private Button withContext;
 	private Combo modeChoice;
+	/** The modes the drop-down offers; plan mode has its own button. */
+	static final List<ChatMode> MODES = java.util.Arrays.stream(ChatMode.values()).filter(m -> m != ChatMode.PLAN)
+			.toList();
+	private Button planning;
+	/** Accept, change or cancel, shown below a plan. */
+	private Composite planBar;
+	/** Plan mode for the running planning turn, on top of the drop-down's mode. */
+	private volatile ChatMode turnOverride;
+	/** The next message from the input changes the last plan. */
+	private boolean revisingPlan;
+	private int lastAnswerId;
 	/** Read on the job thread at every tool call, so unticking takes effect at once. */
 	private volatile ChatMode mode = ChatMode.NORMAL;
 	private Label status;
@@ -175,6 +187,7 @@ public class ChatView extends ViewPart {
 	}
 
 	private void createInput(Composite parent) {
+		createPlanBar(parent);
 		Composite bottom = new Composite(parent, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).applyTo(bottom);
 		GridLayoutFactory.swtDefaults().numColumns(3).margins(6, 6).applyTo(bottom);
@@ -196,7 +209,11 @@ public class ChatView extends ViewPart {
 		stop.setToolTipText(Messages.get("chat.stop"));
 		stop.setEnabled(false);
 		stop.addListener(SWT.Selection, e -> cancel());
-		GridDataFactory.fillDefaults().span(2, 1).applyTo(new Label(bottom, SWT.NONE));
+		planning = new Button(bottom, SWT.PUSH);
+		planning.setText(Messages.get("chat.plan.button"));
+		planning.setToolTipText(Messages.get("chat.plan.buttonTip"));
+		GridDataFactory.fillDefaults().span(2, 1).applyTo(planning);
+		planning.addListener(SWT.Selection, e -> sendFromInput(true));
 		Composite options = new Composite(bottom, SWT.NONE);
 		GridLayoutFactory.fillDefaults().numColumns(2).spacing(12, 0).applyTo(options);
 		withContext = new Button(options, SWT.CHECK);
@@ -204,12 +221,12 @@ public class ChatView extends ViewPart {
 		withContext.setToolTipText(Messages.get("chat.withContextTip"));
 		withContext.setSelection(true);
 		modeChoice = new Combo(options, SWT.READ_ONLY | SWT.DROP_DOWN);
-		for (ChatMode m : ChatMode.values()) {
+		for (ChatMode m : MODES) {
 			modeChoice.add(Messages.get(modeKey(m)));
 		}
-		modeChoice.setVisibleItemCount(ChatMode.values().length);
+		modeChoice.setVisibleItemCount(MODES.size());
 		modeChoice.addListener(SWT.Selection, e -> {
-			ChatMode chosen = ChatMode.values()[Math.max(0, modeChoice.getSelectionIndex())];
+			ChatMode chosen = MODES.get(Math.max(0, modeChoice.getSelectionIndex()));
 			if (chosen.writesWithoutAsking() && chosen != mode && !MessageDialog.openConfirm(getSite().getShell(),
 					Messages.get(modeKey(chosen)), Messages.get(modeKey(chosen) + ".confirm"))) {
 				setMode(mode); // back to the previous choice
@@ -259,10 +276,73 @@ public class ChatView extends ViewPart {
 	/** Selects a mode in the drop-down and uses it from the next tool call on. UI thread. */
 	public void setMode(ChatMode newMode) {
 		mode = newMode;
-		modeChoice.select(newMode.ordinal());
+		modeChoice.select(MODES.indexOf(newMode));
 		modeChoice.setToolTipText(Messages.get(modeKey(newMode) + ".tip"));
 		updateStatus();
 	}
+
+	/** Accept, change or cancel below a plan; hidden until a planning turn has answered. */
+	private void createPlanBar(Composite parent) {
+		planBar = new Composite(parent, SWT.NONE);
+		GridDataFactory.fillDefaults().grab(true, false).exclude(true).applyTo(planBar);
+		GridLayoutFactory.swtDefaults().numColumns(4).margins(6, 4).applyTo(planBar);
+		planBar.setVisible(false);
+		Label question = new Label(planBar, SWT.NONE);
+		question.setText(Messages.get("chat.plan.question"));
+		GridDataFactory.fillDefaults().grab(true, false).align(SWT.FILL, SWT.CENTER).applyTo(question);
+		Button accept = new Button(planBar, SWT.PUSH);
+		accept.setText(Messages.get("chat.plan.accept"));
+		accept.addListener(SWT.Selection, e -> acceptPlan());
+		Button change = new Button(planBar, SWT.PUSH);
+		change.setText(Messages.get("chat.plan.change"));
+		change.addListener(SWT.Selection, e -> changePlan());
+		Button discard = new Button(planBar, SWT.PUSH);
+		discard.setText(Messages.get("chat.plan.cancel"));
+		discard.addListener(SWT.Selection, e -> cancelPlan());
+	}
+
+	private void showPlanBar(boolean show) {
+		if (planBar == null || planBar.isDisposed() || planBar.getVisible() == show) {
+			return;
+		}
+		planBar.setVisible(show);
+		((GridData) planBar.getLayoutData()).exclude = !show;
+		planBar.getParent().layout(true, true);
+	}
+
+	/** Whether the accept/change/cancel choice below a plan is shown. */
+	public boolean isPlanPending() {
+		return planBar != null && planBar.getVisible();
+	}
+
+	/** Carries the plan out in the mode chosen in the drop-down. UI thread. */
+	public void acceptPlan() {
+		showPlanBar(false);
+		revisingPlan = false;
+		ask(Messages.get("chat.plan.accept"), ACCEPT_PLAN, false);
+	}
+
+	/** The next message from the input revises the plan, again in plan mode. UI thread. */
+	public void changePlan() {
+		showPlanBar(false);
+		revisingPlan = true;
+		input.setMessage(Messages.get("chat.plan.changeHint"));
+		input.setFocus();
+	}
+
+	/** Drops the plan; nothing is carried out. UI thread. */
+	public void cancelPlan() {
+		showPlanBar(false);
+		revisingPlan = false;
+		input.setMessage(Messages.get("chat.inputHint"));
+		js("notice(" + lastAnswerId + ",\"warn\"," + str(Markdown.escape(Messages.get("chat.plan.cancelled"))) + ")");
+	}
+
+	static final String ACCEPT_PLAN = "The developer accepted the plan above. Carry it out now, step by step and in "
+			+ "the order of the plan, and report what you did.";
+
+	static final String REVISE_PLAN = "The developer wants the plan changed. Give the complete revised plan.\n\n"
+			+ "Change request: ";
 
 	/** Message key of a mode's label, e.g. {@code chat.mode.read_data}. */
 	static String modeKey(ChatMode m) {
@@ -303,11 +383,15 @@ public class ChatView extends ViewPart {
 		if (session != null) {
 			session.close();
 		}
-		session = plugin.newConversation(this::confirmTool, new OpenEditorRouter(), () -> mode);
+		session = plugin.newConversation(this::confirmTool, new OpenEditorRouter(),
+				() -> turnOverride != null ? turnOverride : mode);
 	}
 
 	private void newChat() {
 		cancel();
+		showPlanBar(false);
+		revisingPlan = false;
+		input.setMessage(Messages.get("chat.inputHint"));
 		newSession();
 		codeBlocks.clear();
 		js("showEmpty()");
@@ -323,7 +407,9 @@ public class ChatView extends ViewPart {
 				? Optional.ofNullable(EditorBridge.systemLabel(activeEditor())).orElse("")
 				: "";
 		String text = Messages.fmt("chat.status", plugin.chatModelLabel(), system.isEmpty() ? "–" : system);
-		if (mode != ChatMode.NORMAL) {
+		if (turnOverride == ChatMode.PLAN) {
+			text += " · " + Messages.get("chat.plan.button");
+		} else if (mode != ChatMode.NORMAL) {
 			text += " · " + Messages.get(modeKey(mode));
 		}
 		status.setText(text);
@@ -357,11 +443,25 @@ public class ChatView extends ViewPart {
 	// ---- sending ------------------------------------------------------------------------
 
 	private void sendFromInput() {
+		sendFromInput(false);
+	}
+
+	/** @param planning answer with a plan only (the Planning Mode button) */
+	private void sendFromInput(boolean planning) {
 		String text = input.getText().trim();
 		if (text.isEmpty() || running != null) {
+			if (planning) {
+				input.setFocus(); // the button plans what is typed
+			}
 			return;
 		}
 		input.setText("");
+		if (revisingPlan) {
+			planning = true;
+			revisingPlan = false;
+			input.setMessage(Messages.get("chat.inputHint"));
+			text = REVISE_PLAN + text;
+		}
 		String prompt = text;
 		if (withContext.getSelection()) {
 			IEditorPart part = activeEditor();
@@ -370,7 +470,7 @@ public class ChatView extends ViewPart {
 				prompt = withEditorContext(text, EditorBridge.context(part, editor.get()));
 			}
 		}
-		ask(text, prompt);
+		ask(text.startsWith(REVISE_PLAN) ? text.substring(REVISE_PLAN.length()) : text, prompt, planning);
 	}
 
 	static String withEditorContext(String question, EditorContext ctx) {
@@ -393,9 +493,18 @@ public class ChatView extends ViewPart {
 	 * UI thread.
 	 */
 	public void ask(String display, String prompt) {
+		ask(display, prompt, false);
+	}
+
+	/**
+	 * @param planning plan mode for this turn only: Bella reads and answers with
+	 *                 a plan, then offers to accept, change or cancel it
+	 */
+	public void ask(String display, String prompt, boolean planning) {
 		if (running != null) {
 			return;
 		}
+		showPlanBar(false);
 		if (!BellaPlugin.getDefault().conversationType().isInstance(session.unwrap())) {
 			newSession(); // provider switched in the preferences: the old chat cannot continue
 			updateStatus();
@@ -405,14 +514,19 @@ public class ChatView extends ViewPart {
 		js("addUser(" + userId + "," + str(display) + ")");
 		js("startAssistant(" + botId + ")");
 		CancelToken cancel = new CancelToken();
-		ChatMode turnMode = mode;
+		ChatMode turnMode = planning ? ChatMode.PLAN : mode;
+		turnOverride = planning ? ChatMode.PLAN : null;
+		lastAnswerId = botId;
+		AtomicBoolean answered = new AtomicBoolean();
 		running = cancel;
 		setBusy(true);
+		updateStatus();
 		Renderer renderer = new Renderer(botId);
 		Job job = Job.create(Messages.get("chat.jobName"), (IProgressMonitor monitor) -> {
 			try {
 				BellaPlugin.getDefault().tools().refresh(err -> renderer.notice("warn", Markdown.escape(err)));
 				session.ask(turnMode.apply(prompt), renderer, cancel);
+				answered.set(!cancel.isCancelled());
 			} catch (CancelToken.CancelledException e) {
 				renderer.notice("warn", Messages.get("chat.cancelled"));
 			} catch (Exception e) {
@@ -422,7 +536,12 @@ public class ChatView extends ViewPart {
 				Display.getDefault().asyncExec(() -> {
 					js("endAssistant(" + botId + ")");
 					running = null;
+					turnOverride = null;
 					setBusy(false);
+					updateStatus();
+					if (planning && answered.get()) {
+						showPlanBar(true);
+					}
 				});
 			}
 			return Status.OK_STATUS;
@@ -436,6 +555,7 @@ public class ChatView extends ViewPart {
 			return;
 		}
 		send.setEnabled(!busy);
+		planning.setEnabled(!busy);
 		stop.setEnabled(busy);
 	}
 

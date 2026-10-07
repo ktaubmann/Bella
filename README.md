@@ -28,7 +28,7 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Suggest refactoring / unit test** | Right-click → Bella (chat) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** with editor context, streaming and tool calls; insert code blocks, replace the selection or take them over as a method body | `Ctrl+Alt+B`, pink B in the toolbar, menu *Bella* |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read (also DDIC tables, structures, data elements, domains, table types, function modules, message classes), table contents, context of used objects, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, style check, write, create, activate | automatically in the chat |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat modes** from *Plan only* to *Automode* (see below) | Drop-down below the chat input |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat modes** from *Diff mode only* to *Automode*, and **Planning Mode** with accept, change or cancel (see below) | Drop-down and button below the chat input |
 
 <p align="center"><img src="docs/screenshots/context-menu.png" width="560" alt="Right-click in the ABAP editor: submenu Bella with its actions"></p>
 
@@ -50,7 +50,6 @@ A drop-down below the chat input sets how freely Bella may act, from careful to 
 
 | Mode | Reading | Table contents | Writing into an open editor | Saving, creating, activating in SAP |
 |---|---|---|---|---|
-| **Plan only** | runs | asks | refused | refused; Bella answers with a numbered plan |
 | **Diff mode only (suggest)** | runs | asks | diff preview | refused |
 | **Ask before changes** (default) | runs | asks | diff preview | asks |
 | **Read data without asking** | runs | runs | diff preview | asks |
@@ -58,6 +57,10 @@ A drop-down below the chat input sets how freely Bella may act, from careful to 
 | **Automode** | runs | runs | diff preview | runs, plus ABAP Unit after each activation (`adt_activate` with `run_unit_tests`); Bella carries the task out and fixes errors and failing tests |
 
 - Choosing one of the two modes that write without asking asks once for confirmation.
+- **Planning Mode** (button next to *Send*): Bella reads and analyses what you typed and answers with a numbered plan; nothing is changed, also not in the editor. Below the plan you then choose:
+  - **Accept plan**: Bella carries the plan out in the mode chosen in the drop-down (e.g. asking before each change, or everything at once in *Automode*).
+  - **Change plan**: you type what should be different; Bella answers with a revised plan and asks again.
+  - **Cancel**: the plan is dropped and nothing happens.
 - In every mode the allowed packages, your `DENY` rules and the ban on releasing transports stay, and objects open in an editor are only changed in the editor (you save and activate those).
 - The modes work the same with an API key, the Claude subscription and GitHub Copilot.
 - Use the modes that write without asking in development systems only.
