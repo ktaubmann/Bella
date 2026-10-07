@@ -29,7 +29,7 @@ runner=()
 if command -v xvfb-run >/dev/null; then
   runner=(xvfb-run -a)
 fi
-"${runner[@]}" mvn -B -ntp ${BELLA_MVN_PROFILES:--Padt} $sign verify
+"${runner[@]}" ./mvnw -B -ntp ${BELLA_MVN_PROFILES:--Padt} $sign verify
 
 rm -f "$zip_file"
 (cd releng/de.kiliantaubmann.bella.updatesite/target/repository && zip -qr "$zip_file" .)

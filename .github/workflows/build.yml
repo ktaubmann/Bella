@@ -19,7 +19,7 @@ jobs:
       - name: Check translations
         run: python3 releng/i18n/generate.py && git diff --exit-code
       - name: Build and test
-        run: xvfb-run -a mvn -B -ntp verify
+        run: xvfb-run -a ./mvnw -B -ntp verify
 
   with-adt:
     name: Full build incl. ADT integration and update site
@@ -33,7 +33,7 @@ jobs:
           java-version: '21'
           cache: maven
       - name: Build with ADT (SAP tools p2 repository)
-        run: mvn -B -ntp -Padt verify -DskipTests
+        run: ./mvnw -B -ntp -Padt verify -DskipTests
       - name: Show ADT REST resource overloads (diagnostics)
         if: always()
         run: |
