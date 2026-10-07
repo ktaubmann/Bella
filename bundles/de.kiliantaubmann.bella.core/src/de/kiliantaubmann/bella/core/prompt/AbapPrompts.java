@@ -72,7 +72,8 @@ public final class AbapPrompts {
 				  or ABAP Cloud) and use only syntax and APIs that release offers.
 				- To review a transport request, start with adt_transport_review; never change or release anything.
 				- For a runtime error, read the short dump (adt_short_dumps). Before writing a non-local object, ask
-				  adt_transport_info which transport request to use.
+				  adt_transport_info which transport request to use. If none fits, offer to create one
+				  (adt_transport_manage 'create'); the developer confirms it.
 				- Read table or CDS view contents with adt_table_contents when data helps (select few columns and
 				  rows; the developer may have to confirm each read, depending on the chat mode).
 				- A <chat_mode> note in a message sets how freely you may act (plan, suggest, Automode …); follow it.
@@ -82,6 +83,8 @@ public final class AbapPrompts {
 				  definitions and references with adt_navigate.
 				- Before using an SAP API in ABAP Cloud or clean core code, check that it is released
 				  (adt_object_info 'api_state'); use the successor of a deprecated API.
+				- For a RAP behavior pool, add the missing handler methods with adt_rap 'generate_handlers'; for
+				  performance or authorization problems use adt_diagnose (traces, SQL trace, authorization trace).
 
 				Rules for changing code:
 				- If the object is open in the developer's editor, a write goes into the editor buffer only. It is not

@@ -74,7 +74,6 @@ public final class ToolPolicy {
 			new Rule("adt_delete_object", Decision.ASK),
 			new Rule("adt_transport_manage", Decision.ASK),
 			new Rule("adt_git_write", Decision.ASK),
-			new Rule("adt_ui5_deploy", Decision.ASK),
 			new Rule("adt_package_manage:delete", Decision.ASK),
 			new Rule("adt_trace_control", Decision.ASK),
 			new Rule("adt_settings_write", Decision.ASK),

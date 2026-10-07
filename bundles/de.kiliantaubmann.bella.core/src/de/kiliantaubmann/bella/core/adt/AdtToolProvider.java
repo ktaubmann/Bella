@@ -344,7 +344,9 @@ public final class AdtToolProvider implements ToolProvider {
 				"Transport requests of a user with their tasks and number of objects: modifiable ones by default, "
 						+ "released ones with status R.",
 				schema(new String[0], "user", "string", "Owner; default the logged-on user, '*' for all users.", "status",
-						"string", "D modifiable (default) or R released.", "system", "string", SYSTEM_DESC),
+						"string", "D modifiable (default) or R released.", "values", "string",
+						"Instead of requests: layers (transport layers) or targets (transport targets).", "system",
+						"string", SYSTEM_DESC),
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_transport_review",
 				"Everything needed to review a transport request, read only: header, tasks, objects, per source the diff "
@@ -426,6 +428,98 @@ public final class AdtToolProvider implements ToolProvider {
 						"Transport request for non-local objects.", "force", "boolean",
 						"Delete even though other objects use it.")),
 				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_diagnose",
+				"Runtime diagnostics, read only: 'system_messages' (SM02), 'gateway_errors' (/IWFND/ERROR_LOG; with "
+						+ "'id' one error in detail), 'traces' (ABAP profiler traces; with 'id' and 'part' hitlist, "
+						+ "statements or db_accesses one analysis), 'trace_requests' (armed traces), 'sql_trace_state' "
+						+ "(ST05), 'sql_trace_directory', 'authorization_trace' (STUSERTRACE; 'user', 'auth_object', "
+						+ "'only_failures'), 'atc_variants' ('filter').",
+				schema(new String[] { "action" }, "action", "string", "One of the actions above.", "id", "string",
+						"Entry id from a list.", "part", "string", "traces: hitlist (default), statements or db_accesses.",
+						"user", "string", "User filter.", "auth_object", "string", "authorization_trace: object, e.g. S_TCODE.",
+						"only_failures", "boolean", "authorization_trace: only failed checks.", "filter", "string",
+						"atc_variants: name pattern, e.g. Z*.", "max_results", "integer", "Default 50.", "system", "string",
+						SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_trace_control",
+				"Start or stop traces; Bella always asks first. 'trace_start' arms an ABAP profiler trace for the next "
+						+ "execution ('process_type' http, dialog, batch, rfc or any; 'object_type' url, transaction, "
+						+ "report, functionmodule or any; 'user', 'sql_trace', 'max_executions', 'expires_hours'); "
+						+ "'trace_cancel' removes an armed trace ('id' from trace_requests); 'set_sql_trace' switches "
+						+ "ST05 on or off ('on', optional 'user'). Read the result with adt_diagnose.",
+				schema(new String[] { "action" }, "action", "string", "trace_start, trace_cancel or set_sql_trace.",
+						"id", "string", "trace_cancel: trace request id.", "process_type", "string", "trace_start.",
+						"object_type", "string", "trace_start.", "user", "string", "User to trace; default the developer.",
+						"sql_trace", "boolean", "trace_start: record database accesses too (default true).",
+						"max_executions", "integer", "trace_start: default 1.", "expires_hours", "integer",
+						"trace_start: default 24.", "on", "boolean", "set_sql_trace: on or off.", "system", "string",
+						SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_transport_manage",
+				"Change transport requests; Bella always asks first, and releasing stays impossible. 'create' a "
+						+ "workbench request ('description', optional 'package', 'transport_layer' or 'target'); "
+						+ "'reassign' to another 'owner' ('with_tasks'); 'delete' ('with_tasks'); 'remove_object' from a "
+						+ "request ('pgmid', 'object_type', 'object_name', e.g. R3TR CLAS ZCL_X). Transport layers and "
+						+ "targets: adt_list_transports 'values'.",
+				schema(new String[] { "action" }, "action", "string", "create, reassign, delete or remove_object.",
+						"request", "string", "Transport request number.", "description", "string", "create.", "package",
+						"string", "create: package whose route the request follows.", "transport_layer", "string",
+						"create.", "target", "string", "create: transport target.", "owner", "string", "reassign.",
+						"with_tasks", "boolean", "reassign/delete: the open tasks too.", "pgmid", "string",
+						"remove_object, e.g. R3TR.", "object_type", "string", "remove_object, e.g. CLAS.", "object_name",
+						"string", "remove_object.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_package_manage",
+				"'create' a package ('name', 'description', 'super_package', 'software_component', "
+						+ "'transport_layer', 'package_type' development/structure/main, 'transport') or 'delete' one "
+						+ "(always asks). Bound to the allowed packages.",
+				schema(new String[] { "action", "name" }, "action", "string", "create or delete.", "name", "string",
+						"Package name.", "description", "string", "create.", "super_package", "string", "create.",
+						"software_component", "string", "create: default LOCAL.", "transport_layer", "string", "create.",
+						"package_type", "string", "create: development (default), structure or main.", "transport",
+						"string", "Transport request.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_git",
+				"Git repositories of the system, read only. provider 'abapgit' (default; abapGit's ADT backend): "
+						+ "'repos', 'check' ('repo': key or package). provider 'gcts': 'repos', 'system', 'branches', "
+						+ "'history', 'objects' ('repo': repository id).",
+				schema(new String[] { "action" }, "action", "string", "See above.", "provider", "string",
+						"abapgit (default) or gcts.", "repo", "string", "Repository key, id or package.", "limit",
+						"integer", "history: default 20.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_git_write",
+				"abapGit through ADT; Bella always asks first and passes no Git credentials. 'clone' a repository "
+						+ "into a package ('url', 'package', 'branch', 'transport'); 'pull' ('repo', 'transport'); "
+						+ "'switch_branch' ('repo', 'branch', 'create'); 'push' the changed objects ('repo', 'comment', "
+						+ "'author_name', 'author_email', optional 'objects').",
+				schema(new String[] { "action" }, "action", "string", "clone, pull, switch_branch or push.", "repo",
+						"string", "Repository key or package.", "url", "string", "clone: HTTPS URL.", "package", "string",
+						"clone: target package.", "branch", "string", "Branch.", "create", "boolean",
+						"switch_branch: create the branch.", "transport", "string", "Transport request.", "comment",
+						"string", "push: commit message.", "author_name", "string", "push.", "author_email", "string",
+						"push.", "objects", "string", "push: comma separated object names; default all changed.",
+						"system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_rap",
+				"RAP helpers. 'generate_handlers': adds the handler classes and methods a behavior definition needs "
+						+ "(actions, determinations, validations, features, authorization) to a behavior pool's local "
+						+ "types, like Eclipse's Generate Behavior Implementation ('name': the behavior pool class, "
+						+ "optional 'bdef', 'dry_run'). 'publish_srvb' / 'unpublish_srvb' a service binding ('name').",
+				schema(new String[] { "action", "name" }, "action", "string",
+						"generate_handlers, publish_srvb or unpublish_srvb.", "name", "string",
+						"Behavior pool class or service binding.", "bdef", "string",
+						"generate_handlers: behavior definition; default from FOR BEHAVIOR OF.", "dry_run", "boolean",
+						"generate_handlers: show the include without saving.", "transport", "string", "Transport request.",
+						"system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_ui5",
+				"UI5 and Fiori, read only. 'apps' lists BSP/UI5 apps ('filter'); 'files' lists a folder of an app "
+						+ "('app', 'path'); 'file' reads a file; 'deploy_info' shows package and description of an app; "
+						+ "'flp_catalogs', 'flp_groups', 'flp_tiles' ('catalog') read the launchpad customizing.",
+				schema(new String[] { "action" }, "action", "string", "See above.", "app", "string", "BSP application.",
+						"path", "string", "Path inside the app, e.g. webapp/manifest.json.", "filter", "string",
+						"apps: name filter.", "catalog", "string", "flp_tiles: catalog id.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_write_text_elements",
 				"Replace one part of the text pool of a program (PROG), class (CLAS, symbols only) or function group "
 						+ "(FUGR). Use it for the selection texts of PARAMETERS and SELECT-OPTIONS and for the text symbols "
@@ -467,6 +561,11 @@ public final class AdtToolProvider implements ToolProvider {
 			String group = Json.str(in, "group");
 			boolean inGroup = group != null && !group.isBlank()
 					&& List.of("FUNC", "INCL").contains(AdtDdic.normalizeType(Json.str(in, "type")));
+			if (name.equals("adt_package_manage")) {
+				// the package itself must be one Bella may write to
+				String pkg = Json.str(in, "name") == null ? "" : Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
+				return checkPackage(pkg, pkg, patterns);
+			}
 			if (name.equals("adt_create_object") && !inGroup) {
 				String pkg = Json.str(in, "package");
 				return checkPackage(Json.str(in, "name"), pkg == null ? "" : pkg.trim(), patterns);
@@ -502,7 +601,8 @@ public final class AdtToolProvider implements ToolProvider {
 
 	/** Tools that change objects and are bound to the allowed packages. */
 	private static final List<String> WRITES = List.of("adt_write_source", "adt_create_object", "adt_activate",
-			"adt_write_text_elements", "adt_write_metadata", "adt_edit_code", "adt_delete_object");
+			"adt_write_text_elements", "adt_write_metadata", "adt_edit_code", "adt_delete_object", "adt_package_manage",
+			"adt_rap");
 
 	private static Optional<String> checkPackage(String object, String pkg, List<String> patterns) {
 		if (pkg.isEmpty()) {
@@ -535,6 +635,14 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_navigate" -> navigate(in, cancel);
 			case "adt_edit_code" -> editCode(in, cancel);
 			case "adt_delete_object" -> deleteObject(in, cancel);
+			case "adt_diagnose" -> diagnose(in, cancel);
+			case "adt_trace_control" -> traceControl(in, cancel);
+			case "adt_transport_manage" -> transportManage(in, cancel);
+			case "adt_package_manage" -> packageManage(in, cancel);
+			case "adt_git" -> git(in, cancel);
+			case "adt_git_write" -> gitWrite(in, cancel);
+			case "adt_rap" -> rap(in, cancel);
+			case "adt_ui5" -> ui5(in, cancel);
 			case "adt_format" -> format(in, cancel);
 			case "adt_settings_write" -> writeSettings(in, cancel);
 			case "adt_write_text_elements" -> writeTextElements(in, cancel);
@@ -1147,6 +1255,455 @@ public final class AdtToolProvider implements ToolProvider {
 				+ ".");
 	}
 
+	private static String action(JsonObject in) {
+		String a = Json.str(in, "action");
+		return a == null ? "" : a.trim().toLowerCase(Locale.ROOT);
+	}
+
+	private static boolean flag(JsonObject in, String key, boolean def) {
+		return in.has(key) && in.get(key).isJsonPrimitive() ? in.get(key).getAsBoolean() : def;
+	}
+
+	private ToolResult diagnose(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		int max = Math.max(1, Math.min(200, Json.integer(in, "max_results", 50)));
+		String id = Json.str(in, "id");
+		String user = Json.str(in, "user");
+		switch (action(in)) {
+		case "system_messages" -> {
+			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, "/sap/bc/adt/runtime/systemmessages?maxResults="
+					+ max, AdtDiagnostics.FEED, cancel), max));
+		}
+		case "gateway_errors" -> {
+			if (id != null && !id.isBlank()) {
+				String path = id.startsWith("/sap/bc/adt/gw/errorlog/") ? id : "/sap/bc/adt/gw/errorlog/" + id.trim();
+				if (path.contains("..") || path.contains("?")) {
+					return ToolResult.error("Invalid gateway error id.");
+				}
+				String html = AdtDiagnostics.get(c, path, "text/html, application/xhtml+xml, application/xml;q=0.5", cancel);
+				return ToolResult.ok(AdtDiagnostics.cut(html.replaceAll("(?s)<script.*?</script>", "")
+						.replaceAll("<[^>]+>", " ").replaceAll("&nbsp;", " ").replaceAll("[ \\t]+", " ")
+						.replaceAll("\\s*\\n\\s*", "\n").trim()));
+			}
+			String query = "?maxResults=" + max + (user == null || user.isBlank() ? "" : "&username=" + AdtClient.enc(user));
+			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, "/sap/bc/adt/gw/errorlog" + query,
+					AdtDiagnostics.FEED, cancel), max));
+		}
+		case "traces" -> {
+			if (id == null || id.isBlank()) {
+				return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, AdtDiagnostics.TRACES,
+						AdtDiagnostics.FEED, cancel), max));
+			}
+			String traceId = id.trim().replaceFirst("^.*/abaptraces/", "");
+			if (!traceId.matches("[A-Za-z0-9_%.,-]+") || traceId.contains("..")) {
+				return ToolResult.error("Invalid trace id.");
+			}
+			String part = Json.str(in, "part");
+			String sub = part == null || part.isBlank() ? "hitlist" : part.trim().toLowerCase(Locale.ROOT);
+			sub = switch (sub) {
+			case "hitlist" -> "hitlist";
+			case "statements" -> "statements";
+			case "db_accesses", "dbaccesses" -> "dbAccesses";
+			default -> null;
+			};
+			if (sub == null) {
+				return ToolResult.error("part is hitlist, statements or db_accesses.");
+			}
+			return ToolResult.ok(AdtDiagnostics.cut(AdtDiagnostics.compact(AdtDiagnostics.get(c,
+					AdtDiagnostics.TRACES + "/" + traceId + "/" + sub, "application/xml", cancel), 300)));
+		}
+		case "trace_requests" -> {
+			String u = user == null || user.isBlank() ? s.user() : user;
+			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, AdtDiagnostics.TRACES + "/requests?user="
+					+ AdtClient.enc(u == null ? "" : u.toUpperCase(Locale.ROOT)), AdtDiagnostics.FEED, cancel), max));
+		}
+		case "sql_trace_state" -> {
+			return ToolResult.ok(AdtDiagnostics.compact(AdtDiagnostics.get(c, AdtDiagnostics.ST05_STATE,
+					AdtDiagnostics.ST05_STATE_TYPE, cancel), 100));
+		}
+		case "sql_trace_directory" -> {
+			return ToolResult.ok(AdtDiagnostics.compact(AdtDiagnostics.get(c, "/sap/bc/adt/st05/trace/directory",
+					"application/*", cancel), 50) + "SAP shows recorded SQL statements in the SQL trace analysis "
+					+ "(the URL above, or ST05 in SAP GUI); ADT has no API for them.");
+		}
+		case "authorization_trace" -> {
+			AdtClient.TableData rows = c.tableContents(AdtDiagnostics.authorizationTraceSql(user,
+					Json.str(in, "auth_object"), flag(in, "only_failures", false)), max, cancel);
+			if (rows.rows().isEmpty()) {
+				return ToolResult.ok("No authorization trace entries match. The trace must be on (profile parameter "
+						+ "auth/auth_user_trace, STUSERTRACE).");
+			}
+			StringBuilder sb = new StringBuilder(String.join(" | ", rows.columns()) + "\n");
+			rows.rows().forEach(r -> sb.append(String.join(" | ", r)).append('\n'));
+			return ToolResult.ok(sb + "RC 0 passed, 4 no authorization, 12 no authorization for the object.");
+		}
+		case "atc_variants" -> {
+			String filter = Json.str(in, "filter");
+			String xml = AdtDiagnostics.get(c, "/sap/bc/adt/atc/variants?name="
+					+ AdtClient.enc(filter == null || filter.isBlank() ? "*" : filter.trim()),
+					"application/vnd.sap.adt.nameditems.v1+xml", cancel);
+			StringBuilder sb = new StringBuilder("ATC check variants:\n");
+			for (String[] v : AdtDiagnostics.namedItems(xml)) {
+				if (!v[0].isEmpty()) {
+					sb.append("- ").append(v[0]).append(v[1].isEmpty() ? "" : "  " + v[1]).append('\n');
+				}
+			}
+			return ToolResult.ok(sb.toString());
+		}
+		default -> {
+			return ToolResult.error("Unknown action; see the tool description.");
+		}
+		}
+	}
+
+	private ToolResult traceControl(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String user = Json.str(in, "user");
+		switch (action(in)) {
+		case "trace_start" -> {
+			String u = user == null || user.isBlank() ? s.user() : user;
+			if (u == null || u.isBlank()) {
+				return ToolResult.error("Give 'user', the user whose next execution is traced.");
+			}
+			String armed = AdtDiagnostics.startTrace(c, u, s.client(), Json.str(in, "process_type"),
+					Json.str(in, "object_type"), flag(in, "sql_trace", true), Json.integer(in, "max_executions", 1),
+					Json.integer(in, "expires_hours", 24), "Bella trace", cancel);
+			return ToolResult.ok("Trace armed for " + u.toUpperCase(Locale.ROOT) + ":\n" + armed
+					+ "Run the program or request now, then read it with adt_diagnose 'traces'.");
+		}
+		case "trace_cancel" -> {
+			String path = AdtDiagnostics.traceRequestPath(Json.str(in, "id"));
+			AdtResponse r = c.exchange(AdtRequest.delete(path), cancel);
+			if (!r.ok()) {
+				return ToolResult.error("Could not cancel the trace: " + AdtErrors.message(r));
+			}
+			return ToolResult.ok("Trace request cancelled.");
+		}
+		case "set_sql_trace" -> {
+			if (!in.has("on") || !in.get("on").isJsonPrimitive()) {
+				return ToolResult.error("Give 'on': true or false.");
+			}
+			boolean on = in.get("on").getAsBoolean();
+			String state = AdtDiagnostics.get(c, AdtDiagnostics.ST05_STATE, AdtDiagnostics.ST05_STATE_TYPE, cancel);
+			AdtResponse r = c.exchange(AdtRequest.put(AdtDiagnostics.ST05_STATE,
+					AdtDiagnostics.withSqlTrace(state, on, user), AdtDiagnostics.ST05_STATE_TYPE)
+					.withHeader("Accept", AdtDiagnostics.ST05_STATE_TYPE), cancel);
+			if (!r.ok()) {
+				return ToolResult.error("Could not change the SQL trace: " + AdtErrors.message(r));
+			}
+			return ToolResult.ok("SQL trace (ST05) " + (on ? "on" : "off")
+					+ (user == null || user.isBlank() ? "" : " for " + user.toUpperCase(Locale.ROOT)) + ".");
+		}
+		default -> {
+			return ToolResult.error("action is trace_start, trace_cancel or set_sql_trace.");
+		}
+		}
+	}
+
+	private ToolResult transportManage(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String request = Json.str(in, "request");
+		boolean withTasks = flag(in, "with_tasks", false);
+		switch (action(in)) {
+		case "create" -> {
+			String id = AdtManage.createTransport(c, Json.str(in, "description"), Json.str(in, "package"),
+					Json.str(in, "transport_layer"), Json.str(in, "target"), cancel);
+			return ToolResult.ok("Created transport request " + id + " in " + s.label() + ".");
+		}
+		case "reassign" -> {
+			AdtManage.reassign(c, request, Json.str(in, "owner"), withTasks, cancel);
+			return ToolResult.ok(request.trim().toUpperCase(Locale.ROOT) + " now belongs to "
+					+ Json.str(in, "owner").trim().toUpperCase(Locale.ROOT) + (withTasks ? ", with its open tasks." : "."));
+		}
+		case "delete" -> {
+			AdtManage.deleteTransport(c, request, withTasks, cancel);
+			return ToolResult.ok("Deleted " + request.trim().toUpperCase(Locale.ROOT) + (withTasks ? " and its tasks." : "."));
+		}
+		case "remove_object" -> {
+			String pgmid = Json.str(in, "pgmid");
+			String type = Json.str(in, "object_type");
+			String name = Json.str(in, "object_name");
+			if (pgmid == null || type == null || name == null) {
+				return ToolResult.error("Give 'pgmid', 'object_type' and 'object_name', e.g. R3TR CLAS ZCL_X.");
+			}
+			String task = AdtManage.removeObject(c, request, pgmid, type, name, cancel);
+			return ToolResult.ok("Removed " + pgmid.toUpperCase(Locale.ROOT) + " " + type.toUpperCase(Locale.ROOT) + " "
+					+ name.toUpperCase(Locale.ROOT) + " from task " + task + ".");
+		}
+		default -> {
+			return ToolResult.error("action is create, reassign, delete or remove_object; releasing is not possible.");
+		}
+		}
+	}
+
+	private ToolResult packageManage(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String rawName = Json.str(in, "name");
+		if (rawName == null || rawName.isBlank()) {
+			return ToolResult.error("Give 'name', the package.");
+		}
+		String name = rawName.trim().toUpperCase(Locale.ROOT);
+		switch (action(in)) {
+		case "create" -> {
+			String description = Json.str(in, "description");
+			if (description == null || description.isBlank()) {
+				return ToolResult.error("Give 'description'.");
+			}
+			AdtManage.createPackage(c, AdtManage.packageXml(name, description, Json.str(in, "super_package"),
+					Json.str(in, "software_component"), Json.str(in, "transport_layer"), Json.str(in, "package_type"),
+					s.user()), Json.str(in, "transport"), cancel);
+			return ToolResult.ok("Created package " + name + " in " + s.label() + ".");
+		}
+		case "delete" -> {
+			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+				AdtClient.delete(session, AdtManage.packageUri(name), Json.str(in, "transport"), cancel);
+			}
+			return ToolResult.ok("Deleted package " + name + ".");
+		}
+		default -> {
+			return ToolResult.error("action is create or delete.");
+		}
+		}
+	}
+
+	private ToolResult git(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		String provider = Json.str(in, "provider");
+		if ("gcts".equalsIgnoreCase(provider)) {
+			return ToolResult.ok(AdtGit.gcts(c, action(in), Json.str(in, "repo"), Json.integer(in, "limit", 20), cancel));
+		}
+		switch (action(in)) {
+		case "repos" -> {
+			List<AdtGit.Repo> repos = AdtGit.repos(c, cancel);
+			if (repos.isEmpty()) {
+				return ToolResult.ok("No abapGit repositories.");
+			}
+			StringBuilder sb = new StringBuilder();
+			repos.forEach(r -> sb.append("- ").append(r.pkg()).append("  ").append(r.url())
+					.append(r.branch().isEmpty() ? "" : "  " + r.branch()).append("  key ").append(r.key()).append('\n'));
+			return ToolResult.ok(sb.toString());
+		}
+		case "check" -> {
+			AdtGit.Repo repo = AdtGit.repo(c, Json.str(in, "repo"), cancel);
+			AdtResponse r = c.exchange(AdtRequest.post(repo.link("check"), AdtGit.REPO_V3, "", null), cancel);
+			return r.ok() && (r.body() == null || r.body().isBlank()) ? ToolResult.ok("The repository is consistent.")
+					: ToolResult.ok("abapGit reports: " + AdtDiagnostics.cut(AdtErrors.message(r)));
+		}
+		default -> {
+			return ToolResult.error("abapgit actions: repos, check; gcts actions: repos, system, branches, history, objects.");
+		}
+		}
+	}
+
+	private ToolResult gitWrite(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		List<String> patterns = packagePatterns(writePackages.get());
+		switch (action(in)) {
+		case "clone" -> {
+			String url = Json.str(in, "url");
+			String pkg = Json.str(in, "package");
+			if (url == null || !url.trim().matches("https://[^\\s@]+") || pkg == null || pkg.isBlank()) {
+				return ToolResult.error("Give 'url' (an https URL without credentials) and 'package'.");
+			}
+			Optional<String> refused = patterns.isEmpty() ? Optional.empty()
+					: checkPackage(pkg.trim().toUpperCase(Locale.ROOT), pkg.trim().toUpperCase(Locale.ROOT), patterns);
+			if (refused.isPresent()) {
+				return ToolResult.error(refused.get());
+			}
+			AdtResponse r = c.exchange(AdtRequest.post(AdtGit.ABAPGIT + "/repos", AdtGit.OBJECTS,
+					AdtGit.repoXml(pkg.trim(), url.trim(), Json.str(in, "branch"), Json.str(in, "transport")),
+					AdtGit.REPO_V3), cancel);
+			if (!r.ok()) {
+				return ToolResult.error("Clone failed: " + AdtErrors.message(r));
+			}
+			return ToolResult.ok("Cloned " + url.trim() + " into " + pkg.trim().toUpperCase(Locale.ROOT) + ". "
+					+ AdtGit.objectResult(r.body()));
+		}
+		case "pull", "switch_branch", "push" -> {
+			AdtGit.Repo repo = AdtGit.repo(c, Json.str(in, "repo"), cancel);
+			Optional<String> refused = patterns.isEmpty() ? Optional.empty() : checkPackage(repo.pkg(), repo.pkg(), patterns);
+			if (refused.isPresent()) {
+				return ToolResult.error(refused.get());
+			}
+			if (action(in).equals("pull")) {
+				AdtResponse r = c.exchange(AdtRequest.post(AdtGit.ABAPGIT + "/repos/" + AdtClient.enc(repo.key()) + "/pull",
+						AdtGit.OBJECTS, AdtGit.repoXml(repo.pkg(), repo.url(), repo.branch(), Json.str(in, "transport")),
+						AdtGit.REPO_V3), cancel);
+				if (!r.ok()) {
+					return ToolResult.error("Pull failed: " + AdtErrors.message(r));
+				}
+				return ToolResult.ok("Pulled " + repo.url() + " into " + repo.pkg() + ". " + AdtGit.objectResult(r.body()));
+			}
+			if (action(in).equals("switch_branch")) {
+				String branch = Json.str(in, "branch");
+				if (branch == null || branch.isBlank()) {
+					return ToolResult.error("Give 'branch'.");
+				}
+				AdtResponse r = c.exchange(AdtRequest.post(AdtGit.ABAPGIT + "/repos/" + AdtClient.enc(repo.key())
+						+ "/branches/" + AdtClient.enc(branch.trim()) + "?create=" + flag(in, "create", false),
+						AdtGit.REPO_V3, "", null), cancel);
+				if (!r.ok()) {
+					return ToolResult.error("Switching the branch failed: " + AdtErrors.message(r));
+				}
+				return ToolResult.ok(repo.pkg() + " is on branch " + branch.trim() + " now.");
+			}
+			String comment = Json.str(in, "comment");
+			if (comment == null || comment.isBlank()) {
+				return ToolResult.error("Give 'comment', the commit message.");
+			}
+			String stagePath = repo.link("stage");
+			AdtResponse stage = c.exchange(AdtRequest.get(stagePath, AdtGit.STAGE_V1), cancel);
+			if (!stage.ok()) {
+				return ToolResult.error("Staging failed: " + AdtErrors.message(stage));
+			}
+			String objects = Json.str(in, "objects");
+			List<String> only = objects == null || objects.isBlank() ? List.of()
+					: List.of(objects.split("\\s*,\\s*")).stream().map(String::trim).toList();
+			String payload = AdtGit.stagingPayload(stage.body(), only, comment, Json.str(in, "author_name"),
+					Json.str(in, "author_email"));
+			AdtResponse push = c.exchange(AdtRequest.post(repo.link("push"), AdtGit.STAGE_V1, payload, AdtGit.STAGE_V1),
+					cancel);
+			if (!push.ok()) {
+				return ToolResult.error("Push failed: " + AdtErrors.message(push));
+			}
+			return ToolResult.ok("Pushed the changes of " + repo.pkg() + " to " + repo.url() + ".");
+		}
+		default -> {
+			return ToolResult.error("action is clone, pull, switch_branch or push.");
+		}
+		}
+	}
+
+	private ToolResult rap(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String rawName = Json.str(in, "name");
+		if (rawName == null || rawName.isBlank()) {
+			return ToolResult.error("Give 'name': the behavior pool or the service binding.");
+		}
+		String name = rawName.trim().toUpperCase(Locale.ROOT);
+		switch (action(in)) {
+		case "generate_handlers" -> {
+			String classUri = AdtObjectRef.uriFor(name, "CLAS");
+			String main = c.readSource(classUri, null, cancel);
+			String bdef = Json.str(in, "bdef");
+			bdef = bdef == null || bdef.isBlank() ? AdtRap.behaviorOf(main) : bdef.trim().toUpperCase(Locale.ROOT);
+			if (bdef == null) {
+				return ToolResult.error(name + " is no behavior pool (no FOR BEHAVIOR OF); give 'bdef'.");
+			}
+			String bdefSource = c.readSource(AdtObjectRef.uriFor(bdef, "BDEF"), null, cancel);
+			Map<String, List<AdtRap.Handler>> handlers = AdtRap.handlers(bdefSource);
+			String include;
+			try {
+				include = c.readSource(classUri, "implementations", cancel);
+			} catch (AdtException e) {
+				include = "";
+			}
+			List<String> added = new ArrayList<>();
+			String scaffolded;
+			try {
+				scaffolded = AdtRap.scaffold(include, handlers, added);
+			} catch (ClassSurgery.SurgeryException e) {
+				return ToolResult.error("Cannot add the handlers: " + e.getMessage());
+			}
+			if (added.isEmpty()) {
+				return ToolResult.ok(name + " already has all handler methods " + bdef + " requires.");
+			}
+			if (flag(in, "dry_run", false)) {
+				return ToolResult.ok("Would add " + String.join(", ", added) + " (not saved):\n```abap\n" + scaffolded
+						+ "\n```");
+			}
+			String tr;
+			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+				tr = AdtClient.writeSource(session, classUri, "implementations", scaffolded, Json.str(in, "transport"),
+						cancel);
+			} finally {
+				c.invalidate(classUri);
+				inactive.remove(s.destinationId());
+			}
+			return ToolResult.ok("Added " + String.join(", ", added) + " to the local types of " + name
+					+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet; implement the methods with "
+					+ "adt_write_source (include implementations).");
+		}
+		case "publish_srvb", "unpublish_srvb" -> {
+			String uri = AdtDdic.objectUri("SRVB", name, null);
+			String[] versions = AdtRap.bindingVersions(c.readMetadata(uri, cancel));
+			return ToolResult.ok(AdtRap.publish(c, name, action(in).equals("publish_srvb"), versions[0], versions[1],
+					cancel));
+		}
+		default -> {
+			return ToolResult.error("action is generate_handlers, publish_srvb or unpublish_srvb.");
+		}
+		}
+	}
+
+	private static final String BSP = "/sap/bc/adt/filestore/ui5-bsp/objects";
+
+	private ToolResult ui5(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		String app = Json.str(in, "app");
+		String path = Json.str(in, "path");
+		switch (action(in)) {
+		case "apps" -> {
+			String filter = Json.str(in, "filter");
+			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, BSP + "?maxResults=200"
+					+ (filter == null || filter.isBlank() ? "" : "&name=" + AdtClient.enc(filter.trim())),
+					"application/atom+xml", cancel), 200));
+		}
+		case "files", "file" -> {
+			if (app == null || app.isBlank()) {
+				return ToolResult.error("Give 'app'.");
+			}
+			String clean = path == null ? "" : path.trim().replaceFirst("^/+", "");
+			if (clean.contains("..")) {
+				return ToolResult.error("Invalid path.");
+			}
+			String object = clean.isEmpty() ? app.trim().toUpperCase(Locale.ROOT)
+					: app.trim().toUpperCase(Locale.ROOT) + "/" + clean;
+			String body = AdtDiagnostics.get(c, BSP + "/" + AdtClient.enc(object) + "/content",
+					action(in).equals("files") ? "application/atom+xml" : "*/*", cancel);
+			return ToolResult.ok(action(in).equals("files") ? AdtDiagnostics.atom(body, 300) : AdtDiagnostics.cut(body));
+		}
+		case "deploy_info" -> {
+			if (app == null || app.isBlank()) {
+				return ToolResult.error("Give 'app'.");
+			}
+			return ToolResult.ok(AdtDiagnostics.json(AdtDiagnostics.get(c, "/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV/"
+					+ "Repositories('" + AdtClient.enc(app.trim().toUpperCase(Locale.ROOT)) + "')?$format=json",
+					"application/json", cancel)));
+		}
+		case "flp_catalogs", "flp_groups", "flp_tiles" -> {
+			String base = "/sap/opu/odata/UI2/PAGE_BUILDER_CUST";
+			String query = switch (action(in)) {
+			case "flp_catalogs" -> "/Catalogs?$format=json&$top=500&$select=id,domainId,title,type,scope,chipCount";
+			case "flp_groups" -> "/Pages?$format=json&$top=500&$select=id,title,catalogId,layout&$filter=catalogId%20eq%20'"
+					+ "%2FUI2%2FFLPD_CATALOG'";
+			default -> {
+				String catalog = Json.str(in, "catalog");
+				if (catalog == null || catalog.isBlank()) {
+					yield null;
+				}
+				String page = "X-SAP-UI2-CATALOGPAGE:" + catalog.trim().replaceFirst("^X-SAP-UI2-CATALOGPAGE:", "");
+				yield "/Pages('" + AdtClient.enc(page) + "')/PageChipInstances?$format=json&$top=500"
+						+ "&$select=pageId,instanceId,chipId,title,configuration";
+			}
+			};
+			if (query == null) {
+				return ToolResult.error("Give 'catalog'.");
+			}
+			return ToolResult.ok(AdtDiagnostics.json(AdtDiagnostics.get(c, base + query, "application/json", cancel)));
+		}
+		default -> {
+			return ToolResult.error("action is apps, files, file, deploy_info, flp_catalogs, flp_groups or flp_tiles.");
+		}
+		}
+	}
+
 	private ToolResult format(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		String action = Json.str(in, "action");
@@ -1287,7 +1844,7 @@ public final class AdtToolProvider implements ToolProvider {
 			sb.append("Already locked in request ").append(t.lockedIn()).append("; use it.\n");
 		}
 		if (t.candidates().isEmpty()) {
-			sb.append("No open request of the developer fits; ask them for one (Bella cannot create or release requests).");
+			sb.append("No open request of the developer fits; ask them for one or offer to create one with adt_transport_manage 'create' (Bella never releases requests).");
 		} else {
 			sb.append("Open requests that fit:\n");
 			t.candidates().forEach(r -> sb.append("- ").append(r).append('\n'));
@@ -1300,6 +1857,19 @@ public final class AdtToolProvider implements ToolProvider {
 		String user = Json.str(in, "user");
 		user = user == null || user.isBlank() ? s.user() : user.trim();
 		String status = Json.str(in, "status");
+		String values = Json.str(in, "values");
+		if (values != null && !values.isBlank()) {
+			boolean layers = values.trim().equalsIgnoreCase("layers");
+			String xml = AdtDiagnostics.get(client(s), layers ? "/sap/bc/adt/packages/valuehelps/transportlayers"
+					: "/sap/bc/adt/cts/transportrequests/valuehelp/target?maxItemCount=200",
+					"application/vnd.sap.adt.nameditems.v1+xml", cancel);
+			StringBuilder sb = new StringBuilder(layers ? "Transport layers:\n" : "Transport targets:\n");
+			for (String[] v : AdtDiagnostics.namedItems(xml)) {
+				sb.append("- ").append(v[0].isEmpty() ? "(local)" : v[0]).append(v[1].isEmpty() ? "" : "  " + v[1])
+						.append(v[2].isEmpty() ? "" : "  → " + v[2]).append('\n');
+			}
+			return ToolResult.ok(sb.toString());
+		}
 		List<AdtTransportRequest> list = client(s).transports(user == null ? "*" : user, status, cancel);
 		if (list.isEmpty()) {
 			return ToolResult.ok("No " + ("R".equalsIgnoreCase(status) ? "released" : "modifiable")
