@@ -210,12 +210,16 @@ public class ChatView extends ViewPart {
 		stop.setEnabled(false);
 		stop.addListener(SWT.Selection, e -> cancel());
 		planning = new Button(bottom, SWT.PUSH);
+		planning.setImage(BellaPlugin.image("plan"));
 		planning.setText(Messages.get("chat.plan.button"));
 		planning.setToolTipText(Messages.get("chat.plan.buttonTip"));
-		GridDataFactory.fillDefaults().span(2, 1).applyTo(planning);
+		// as wide as Send and Stop together, normal button height
+		GridDataFactory.swtDefaults().span(2, 1).align(SWT.FILL, SWT.BEGINNING).applyTo(planning);
 		planning.addListener(SWT.Selection, e -> sendFromInput(true));
+		// context, mode and status in one row below, so the button columns stay narrow
 		Composite options = new Composite(bottom, SWT.NONE);
-		GridLayoutFactory.fillDefaults().numColumns(2).spacing(12, 0).applyTo(options);
+		GridDataFactory.fillDefaults().span(3, 1).grab(true, false).applyTo(options);
+		GridLayoutFactory.fillDefaults().numColumns(3).spacing(12, 0).applyTo(options);
 		withContext = new Button(options, SWT.CHECK);
 		withContext.setText(Messages.get("chat.withContext"));
 		withContext.setToolTipText(Messages.get("chat.withContextTip"));
@@ -234,8 +238,8 @@ public class ChatView extends ViewPart {
 			}
 			setMode(chosen);
 		});
-		status = new Label(bottom, SWT.NONE);
-		GridDataFactory.fillDefaults().grab(true, false).span(2, 1).applyTo(status);
+		status = new Label(options, SWT.NONE);
+		GridDataFactory.fillDefaults().grab(true, false).align(SWT.FILL, SWT.CENTER).applyTo(status);
 
 		IToolBarManager tb = getViewSite().getActionBars().getToolBarManager();
 		Action newChat = new Action(Messages.get("chat.new"), BellaPlugin.descriptor("new_chat")) {

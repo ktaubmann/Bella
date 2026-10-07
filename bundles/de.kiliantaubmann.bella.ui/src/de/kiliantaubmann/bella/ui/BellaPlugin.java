@@ -153,7 +153,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 	public static final String IMG_BELLA = "bella";
 
 	private static final String[] IMAGES = { IMG_BELLA, "explain", "generate", "rewrite", "method", "insert",
-			"replace", "copy", "send", "stop", "new_chat", "tool", "activate", "refactor", "test", "settings" };
+			"replace", "copy", "send", "stop", "new_chat", "tool", "activate", "refactor", "test", "settings", "plan" };
 
 	@Override
 	protected void initializeImageRegistry(ImageRegistry reg) {
