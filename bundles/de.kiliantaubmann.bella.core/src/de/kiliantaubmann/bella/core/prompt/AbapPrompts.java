@@ -78,6 +78,10 @@ public final class AbapPrompts {
 				- A <chat_mode> note in a message sets how freely you may act (plan, suggest, Automode …); follow it.
 				- Save tokens on large objects: read one method (adt_read_source with 'method') or the matching lines
 				  ('grep') instead of the whole source, and change one method with adt_write_source 'method'.
+				- Add, re-sign, move or delete a method with adt_edit_code instead of rewriting the whole class; find
+				  definitions and references with adt_navigate.
+				- Before using an SAP API in ABAP Cloud or clean core code, check that it is released
+				  (adt_object_info 'api_state'); use the successor of a deprecated API.
 
 				Rules for changing code:
 				- If the object is open in the developer's editor, a write goes into the editor buffer only. It is not

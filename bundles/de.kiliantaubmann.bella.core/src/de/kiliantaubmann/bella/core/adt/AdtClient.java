@@ -1078,6 +1078,23 @@ public final class AdtClient {
 		return new AdtObjectRef(r.objectUri(), upper, r.type(), packageName == null ? "" : packageName, description);
 	}
 
+	/**
+	 * Deletes an object: lock, DELETE, all in one stateful session (the lock
+	 * ends with the deletion).
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	public static String delete(AdtTransport.Session session, String objectUri, String transport, CancelToken cancel)
+			throws IOException {
+		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
+			AdtResponse r = exchange(session, AdtRequest.delete(objectUri + "?lockHandle=" + enc(handle)
+					+ (tr.isBlank() ? "" : "&corrNr=" + enc(tr))), cancel);
+			if (!r.ok()) {
+				throw new AdtException(r.status(), "Could not delete: " + AdtErrors.message(r));
+			}
+		});
+	}
+
 	/** The metadata XML of an object (data element, domain, message class …). */
 	public String readMetadata(String objectUri, CancelToken cancel) throws IOException {
 		return send(AdtRequest.get(objectUri, "application/*"), cancel).body();

@@ -19,6 +19,8 @@ import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.abap.AbapEdit;
 import de.kiliantaubmann.bella.core.abap.AbapSlices;
+import de.kiliantaubmann.bella.core.abap.ClassSurgery;
+import de.kiliantaubmann.bella.core.abap.CodeEdits;
 import de.kiliantaubmann.bella.core.abap.ObjectTarget;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
@@ -43,6 +45,15 @@ public final class OpenEditorRouter implements WriteGuard {
 		if (!activated.isEmpty()) {
 			AtomicReference<Optional<ToolResult>> result = new AtomicReference<>(Optional.empty());
 			Display.getDefault().syncExec(() -> result.set(unsavedBeforeActivation(activated)));
+			return result.get();
+		}
+		if ("adt_edit_code".equals(tool.name())) {
+			Optional<ObjectTarget> target = ObjectTarget.fromToolInput(input);
+			if (target.isEmpty()) {
+				return Optional.empty();
+			}
+			AtomicReference<Optional<ToolResult>> result = new AtomicReference<>(Optional.empty());
+			Display.getDefault().syncExec(() -> result.set(editInOpenEditor(target.get(), input)));
 			return result.get();
 		}
 		if (!ObjectTarget.isSourceWrite(tool, input)) {
@@ -85,6 +96,43 @@ public final class OpenEditorRouter implements WriteGuard {
 			}
 			source = updated.get();
 		}
+		return replaceBuffer(part, editor.get(), doc, target, before, source)
+				.or(() -> Optional.of(ToolResult.ok(target.name()
+						+ " is open in the developer's editor, so the new source was written into the editor buffer. "
+						+ "It is NOT saved and NOT activated; the developer reviews it and saves/activates in ADT."
+						+ styleCheck(written, method != null && !method.isBlank()))));
+	}
+
+	/** adt_edit_code on an open object: the same change, applied to the editor buffer. */
+	private static Optional<ToolResult> editInOpenEditor(ObjectTarget target, JsonObject input) {
+		IEditorPart part = findOpenEditor(target);
+		if (part == null) {
+			return Optional.empty();
+		}
+		Optional<ITextEditor> editor = EditorBridge.textEditor(part);
+		if (editor.isEmpty()) {
+			return Optional.of(ToolResult.error(Messages.fmt("router.noTextEditor", target.name())));
+		}
+		IDocument doc = EditorBridge.document(editor.get());
+		String before = doc.get();
+		String after;
+		try {
+			after = CodeEdits.apply(before, target.name(), input);
+		} catch (ClassSurgery.SurgeryException e) {
+			return Optional.of(ToolResult.error(e.getMessage()));
+		}
+		return replaceBuffer(part, editor.get(), doc, target, before, after)
+				.or(() -> Optional.of(ToolResult.ok(target.name() + " is open in the developer's editor, so the change "
+						+ "was made in the editor buffer. It is NOT saved and NOT activated; the developer reviews it and "
+						+ "saves/activates in ADT.")));
+	}
+
+	/**
+	 * Shows the diff preview and replaces the buffer; empty when the change
+	 * went into the buffer, otherwise the result to report instead.
+	 */
+	private static Optional<ToolResult> replaceBuffer(IEditorPart part, ITextEditor editor, IDocument doc,
+			ObjectTarget target, String before, String source) {
 		if (before.equals(source)) {
 			return Optional.of(ToolResult.ok("The open editor of " + target.name() + " already contains this source."));
 		}
@@ -95,14 +143,11 @@ public final class OpenEditorRouter implements WriteGuard {
 					+ " in the diff preview."));
 		}
 		try {
-			EditorBridge.replace(editor.get(), 0, doc.getLength(), source);
+			EditorBridge.replace(editor, 0, doc.getLength(), source);
 		} catch (Exception e) {
 			return Optional.of(ToolResult.error("Could not write into the editor: " + e.getMessage()));
 		}
-		return Optional.of(ToolResult.ok(target.name()
-				+ " is open in the developer's editor, so the new source was written into the editor buffer. "
-				+ "It is NOT saved and NOT activated; the developer reviews it and saves/activates in ADT."
-				+ styleCheck(written, method != null && !method.isBlank())));
+		return Optional.empty();
 	}
 
 	/** Bella's style check of the code written, as the ADT tools add it to a write in the SAP system. */

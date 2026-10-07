@@ -20,6 +20,8 @@ import de.kiliantaubmann.bella.core.abap.AbapEdit;
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.abap.AbapSlices;
 import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
+import de.kiliantaubmann.bella.core.abap.ClassSurgery;
+import de.kiliantaubmann.bella.core.abap.CodeEdits;
 import de.kiliantaubmann.bella.core.abap.TextDeltas;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
@@ -305,6 +307,26 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[] { "indentation", "style" }, "indentation", "boolean", "Indent code.", "style",
 						"string", "keywordUpper, keywordLower, keywordAuto or none.", "system", "string", SYSTEM_DESC),
 				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_object_info",
+				"More about one object, read only. action 'api_state': release state of an SAP object (C0 extend, C1 "
+						+ "use in cloud and key user apps, C2 remote API …) and its successor, before using it in ABAP "
+						+ "Cloud or clean core code; 'versions': version history of the source; 'version_source': the "
+						+ "source of one version ('version': its number); 'variants': variants of a program.",
+				schema(new String[] { "name", "action" }, objectProps("action", "string",
+						"api_state, versions, version_source or variants.", "version", "string",
+						"version_source: version number from 'versions'.", "include", "string",
+						"Class include for versions, default main.")),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_navigate",
+				"Code navigation, read only. 'definition': where the symbol at line/column is defined; 'references': "
+						+ "objects that use the object, or the symbol at line/column; 'completion': ADT's code "
+						+ "completion at line/column; 'hierarchy': superclass, interfaces and subclasses of a class. "
+						+ "Lines count from 1, columns from 0.",
+				schema(new String[] { "name", "action" }, objectProps("action", "string",
+						"definition, references, completion or hierarchy.", "line", "integer", "Line (from 1).",
+						"column", "integer", "Column (from 0).", "include", "string", "Class include, default main.",
+						"source", "string", "Unsaved source to navigate in; default the saved source.")),
+				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_text_elements",
 				"Read the text pool of a program, class or function group: text symbols (TEXT-001), selection texts "
 						+ "(labels of PARAMETERS and SELECT-OPTIONS) or list headings.",
@@ -381,6 +403,29 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "everything else. Message classes: 'messages' adds or replaces messages by number, "
 						+ "'remove_numbers' deletes some. Does not activate (message classes need no activation).",
 				metadataSchema, null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_edit_code",
+				"Targeted change of a class, program or include that keeps the rest of the source. Classes: "
+						+ "'add_method' ('source': the METHODS clause, 'visibility'; adds an empty implementation), "
+						+ "'edit_method_signature' ('method', 'source': the new METHODS clause), 'edit_class_definition' "
+						+ "('source': CLASS … DEFINITION … ENDCLASS.), 'change_method_visibility' ('method', 'visibility'; "
+						+ "keeps the body), 'delete_method' ('method'). Programs and includes: 'edit_unit' ('unit', "
+						+ "'source': the whole FORM or MODULE), 'add_unit' ('source'). Write method bodies with "
+						+ "adt_write_source 'method'. Bella refuses a change that adds syntax errors. Like "
+						+ "adt_write_source, open objects are changed in the editor only.",
+				schema(new String[] { "name", "action" }, objectProps("action", "string",
+						String.join(", ", CodeEdits.ACTIONS) + ".", "method", "string", "Method name.", "source",
+						"string", "METHODS clause, class definition or FORM/MODULE, depending on the action.",
+						"visibility", "string", "public (default), protected or private.", "unit", "string",
+						"edit_unit: name of the FORM or MODULE.", "transport", "string",
+						"Transport request, required for non-local objects unless already assigned.")),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_delete_object",
+				"Delete an object from the SAP system. Bella checks the where-used list first and refuses while "
+						+ "other objects use it, unless 'force' is true; it always asks the developer.",
+				schema(new String[] { "name", "type" }, objectProps("transport", "string",
+						"Transport request for non-local objects.", "force", "boolean",
+						"Delete even though other objects use it.")),
+				null, ToolSpec.Kind.WRITE));
 		t.add(ToolSpec.of("adt_write_text_elements",
 				"Replace one part of the text pool of a program (PROG), class (CLAS, symbols only) or function group "
 						+ "(FUGR). Use it for the selection texts of PARAMETERS and SELECT-OPTIONS and for the text symbols "
@@ -457,7 +502,7 @@ public final class AdtToolProvider implements ToolProvider {
 
 	/** Tools that change objects and are bound to the allowed packages. */
 	private static final List<String> WRITES = List.of("adt_write_source", "adt_create_object", "adt_activate",
-			"adt_write_text_elements", "adt_write_metadata");
+			"adt_write_text_elements", "adt_write_metadata", "adt_edit_code", "adt_delete_object");
 
 	private static Optional<String> checkPackage(String object, String pkg, List<String> patterns) {
 		if (pkg.isEmpty()) {
@@ -486,6 +531,10 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_atc_check" -> atc(in, cancel);
 			case "adt_text_elements" -> textElements(in, cancel);
 			case "adt_quickfix" -> quickfix(in, cancel);
+			case "adt_object_info" -> objectInfo(in, cancel);
+			case "adt_navigate" -> navigate(in, cancel);
+			case "adt_edit_code" -> editCode(in, cancel);
+			case "adt_delete_object" -> deleteObject(in, cancel);
 			case "adt_format" -> format(in, cancel);
 			case "adt_settings_write" -> writeSettings(in, cancel);
 			case "adt_write_text_elements" -> writeTextElements(in, cancel);
@@ -868,6 +917,234 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 		}
 		return offset;
+	}
+
+	private ToolResult objectInfo(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String objectUri = AdtObjectRef.objectUri(ref.uri());
+		String action = Json.str(in, "action");
+		switch (action == null ? "" : action.trim().toLowerCase(Locale.ROOT)) {
+		case "api_state" -> {
+			List<AdtCodeIntel.Contract> contracts = AdtCodeIntel.releaseState(c, objectUri, cancel);
+			if (contracts.isEmpty()) {
+				return ToolResult.ok(ref.name() + " has no release state (not released for any contract).");
+			}
+			StringBuilder sb = new StringBuilder("Release state of " + ref.name() + ":\n");
+			for (AdtCodeIntel.Contract k : contracts) {
+				sb.append("- ").append(k.contract()).append(": ")
+						.append(k.stateDescription().isEmpty() ? k.state() : k.stateDescription());
+				if (k.cloud() || k.keyUser()) {
+					sb.append(" (").append(k.cloud() ? "ABAP Cloud" : "").append(k.cloud() && k.keyUser() ? ", " : "")
+							.append(k.keyUser() ? "key user apps" : "").append(')');
+				}
+				if (!k.successors().isEmpty()) {
+					sb.append("; successor ").append(String.join(", ", k.successors()));
+				}
+				sb.append('\n');
+			}
+			return ToolResult.ok(sb.toString());
+		}
+		case "versions", "version_source" -> {
+			List<AdtRevisions.Revision> revisions = c.revisions(versionsUri(ref, objectUri, Json.str(in, "include")),
+					cancel);
+			if (revisions.isEmpty()) {
+				return ToolResult.ok(ref.name() + " has no version history.");
+			}
+			if (action.equalsIgnoreCase("versions")) {
+				StringBuilder sb = new StringBuilder("Versions of " + ref.name() + ", newest first:\n");
+				for (AdtRevisions.Revision r : revisions) {
+					sb.append(r.number().isEmpty() ? r.id() : r.number()).append("  ").append(r.timestamp()).append("  ")
+							.append(r.author()).append(r.transport().isEmpty() ? "" : "  " + r.transport()).append('\n');
+				}
+				return ToolResult.ok(sb.toString());
+			}
+			String wanted = Json.str(in, "version");
+			for (AdtRevisions.Revision r : revisions) {
+				if (wanted != null && (wanted.trim().equals(r.number()) || wanted.trim().equals(r.id()))) {
+					return ToolResult.ok(c.revisionText(r.uri(), cancel));
+				}
+			}
+			return ToolResult.error("Give 'version', one of the numbers from action 'versions'.");
+		}
+		case "variants" -> {
+			AdtResponse r = c.exchange(AdtRequest.get(objectUri + "/variants", "application/*"), cancel);
+			if (!r.ok()) {
+				return ToolResult.error("Could not read the variants: " + AdtErrors.message(r));
+			}
+			String body = r.body() == null ? "" : r.body();
+			return ToolResult.ok(body.isBlank() ? ref.name() + " has no variants."
+					: body.length() > DUMP_TEXT_CHARS ? body.substring(0, DUMP_TEXT_CHARS) + "\n…" : body);
+		}
+		default -> {
+			return ToolResult.error("action is api_state, versions, version_source or variants.");
+		}
+		}
+	}
+
+	private static String versionsUri(AdtObjectRef ref, String objectUri, String include) {
+		String type = ref.type() == null ? "" : ref.type().toUpperCase(Locale.ROOT);
+		if (type.startsWith("DDLS") || type.startsWith("DCLS")) {
+			return objectUri + "/versions";
+		}
+		if (include != null && !include.isBlank() && !include.equalsIgnoreCase("main")) {
+			return AdtObjectRef.sourceUri(objectUri, include) + "/versions";
+		}
+		return objectUri + "/source/main/versions";
+	}
+
+	private static final Pattern CLASS_NAME = Pattern.compile("(?:/[A-Z0-9_]+/)?[A-Z0-9_]+");
+
+	private ToolResult navigate(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		String action = Json.str(in, "action");
+		String a = action == null ? "" : action.trim().toLowerCase(Locale.ROOT);
+		if (a.equals("hierarchy")) {
+			String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
+			if (!CLASS_NAME.matcher(name).matches()) {
+				return ToolResult.error("Invalid class name " + name + ".");
+			}
+			AdtClient.TableData own = c.tableContents(
+					"SELECT clsname, refclsname, reltype FROM seometarel WHERE clsname = '" + name + "'", 100, cancel);
+			AdtClient.TableData sub = c.tableContents(
+					"SELECT clsname FROM seometarel WHERE refclsname = '" + name + "' AND reltype = '2'", 100, cancel);
+			String superclass = "";
+			List<String> interfaces = new ArrayList<>();
+			int refCol = own.columns().indexOf("REFCLSNAME");
+			int typeCol = own.columns().indexOf("RELTYPE");
+			for (List<String> row : own.rows()) {
+				String rel = row.get(typeCol).trim();
+				if (rel.equals("2")) {
+					superclass = row.get(refCol).trim();
+				} else if (rel.equals("1")) {
+					interfaces.add(row.get(refCol).trim());
+				}
+			}
+			List<String> subclasses = sub.rows().stream().map(r -> r.get(0).trim()).toList();
+			return ToolResult.ok(name + ": superclass " + (superclass.isEmpty() ? "none" : superclass) + "; interfaces "
+					+ (interfaces.isEmpty() ? "none" : String.join(", ", interfaces)) + "; subclasses "
+					+ (subclasses.isEmpty() ? "none" : String.join(", ", subclasses)) + ".");
+		}
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String objectUri = AdtObjectRef.objectUri(ref.uri());
+		String sourceUri = AdtObjectRef.sourceUri(objectUri, Json.str(in, "include"));
+		int line = Json.integer(in, "line", 0);
+		int column = Math.max(0, Json.integer(in, "column", 0));
+		if (a.equals("references")) {
+			String uri = line > 0 ? sourceUri + "#start=" + line + "," + column : objectUri;
+			List<AdtObjectRef> refs = c.whereUsed(uri, cancel);
+			if (refs.isEmpty()) {
+				return ToolResult.ok("No references found.");
+			}
+			StringBuilder sb = new StringBuilder(refs.size() + " references:\n");
+			refs.stream().limit(100).forEach(r -> sb.append("- ").append(r.name()).append(" (").append(r.type())
+					.append(r.packageName().isEmpty() ? "" : ", " + r.packageName()).append(")\n"));
+			return ToolResult.ok(sb.toString());
+		}
+		if (line < 1) {
+			return ToolResult.error("Give 'line' (from 1) and 'column' (from 0).");
+		}
+		String source = Json.str(in, "source");
+		if (source == null || source.isBlank()) {
+			source = c.readSource(objectUri, Json.str(in, "include"), cancel);
+		}
+		if (a.equals("definition")) {
+			AdtCodeIntel.Target t = AdtCodeIntel.definition(c, sourceUri, source, line, column, cancel);
+			if (t == null) {
+				return ToolResult.ok("ADT finds no definition at line " + line + ":" + column + ".");
+			}
+			String where = AdtObjectRef.objectUri(t.uri());
+			return ToolResult.ok("Defined in " + (t.name().isEmpty() ? where.substring(where.lastIndexOf('/') + 1)
+					.toUpperCase(Locale.ROOT) : t.name()) + (t.type().isEmpty() ? "" : " (" + t.type() + ")")
+					+ (t.line() > 0 ? " line " + t.line() : "") + ": " + t.uri());
+		}
+		if (a.equals("completion")) {
+			List<AdtCodeIntel.Proposal> proposals = AdtCodeIntel.completion(c, sourceUri, source, line, column, cancel);
+			if (proposals.isEmpty()) {
+				return ToolResult.ok("No completion proposals.");
+			}
+			StringBuilder sb = new StringBuilder();
+			proposals.stream().limit(50).forEach(p -> sb.append(p.text())
+					.append(p.description().isEmpty() ? "" : " - " + p.description()).append('\n'));
+			return ToolResult.ok(sb.toString());
+		}
+		return ToolResult.error("action is definition, references, completion or hierarchy.");
+	}
+
+	private ToolResult editCode(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String uri = AdtObjectRef.objectUri(ref.uri());
+		String before = c.readSource(uri, null, cancel);
+		String after;
+		try {
+			after = CodeEdits.apply(before, ref.name(), in);
+		} catch (ClassSurgery.SurgeryException e) {
+			return ToolResult.error(e.getMessage());
+		}
+		if (after.equals(before)) {
+			return ToolResult.ok("Nothing to change in " + ref.name() + ".");
+		}
+		String action = Json.str(in, "action").trim().toLowerCase(Locale.ROOT);
+		if (!action.equals("edit_method_signature")) {
+			// a signature change may break the body until it is rewritten; everything else must stay compilable
+			Optional<String> added = newSyntaxErrors(c, uri, before, after, cancel);
+			if (added.isPresent()) {
+				return ToolResult.error("Not saved: the change would add syntax errors:\n" + added.get());
+			}
+		}
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeSource(session, uri, null, after, Json.str(in, "transport"), cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Saved " + action + " in " + ref.name() + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet."
+				+ "\n```diff\n" + LineDiff.unified(before, after, "before", "after", 1).text() + "```"
+				+ syntaxAfterWrite(c, uri, cancel));
+	}
+
+	/** Syntax errors the new source has and the old one did not; empty when none or when the check cannot run. */
+	private static Optional<String> newSyntaxErrors(AdtClient c, String uri, String before, String after,
+			CancelToken cancel) {
+		try {
+			List<String> old = c.syntaxCheck(uri, before, cancel).stream().filter(m -> m.severity().equals("Error"))
+					.map(AdtClient.Message::text).toList();
+			List<AdtClient.Message> now = c.syntaxCheck(uri, after, cancel).stream()
+					.filter(m -> m.severity().equals("Error") && !old.contains(m.text())).toList();
+			return now.isEmpty() ? Optional.empty() : Optional.of(format(now));
+		} catch (IOException | RuntimeException e) {
+			return Optional.empty();
+		}
+	}
+
+	private ToolResult deleteObject(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String uri = AdtObjectRef.objectUri(ref.uri());
+		boolean force = in.has("force") && in.get("force").isJsonPrimitive() && in.get("force").getAsBoolean();
+		if (!force) {
+			List<AdtObjectRef> users = c.whereUsed(uri, cancel).stream()
+					.filter(u -> !u.name().equalsIgnoreCase(ref.name())).toList();
+			if (!users.isEmpty()) {
+				return ToolResult.error(ref.name() + " is used by " + users.size() + " objects, e.g. " + String.join(", ",
+						users.stream().limit(10).map(AdtObjectRef::name).toList())
+						+ ". Not deleted; delete it anyway only if the developer wants that ('force': true).");
+			}
+		}
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.delete(session, uri, Json.str(in, "transport"), cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Deleted " + ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")")
+				+ ".");
 	}
 
 	private ToolResult format(JsonObject in, CancelToken cancel) throws IOException {
