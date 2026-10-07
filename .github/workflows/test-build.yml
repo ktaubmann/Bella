@@ -40,7 +40,7 @@ jobs:
           KEYNAME: ${{ vars.BELLA_GPG_KEYNAME }}
         run: |
           short="${GITHUB_SHA::7}"
-          version=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout)
+          version=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)
           {
             echo "**Test build, not for production use.** It is replaced by every push to the branch \`test\`."
             echo

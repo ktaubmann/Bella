@@ -292,12 +292,14 @@ When something does not work, switch on the log under *Preferences → Bella →
 ## Development
 
 ```bash
-mvn verify                    # core, UI, unit tests (without the SAP SDK)
-xvfb-run -a mvn verify        # plus the workbench smoke test on Linux
-mvn -Padt verify              # plus the ADT bundle and the update site
+./mvnw verify                 # core, UI, unit tests (without the SAP SDK)
+xvfb-run -a ./mvnw verify     # plus the workbench smoke test on Linux
+./mvnw -Padt verify           # plus the ADT bundle and the update site
                               #   (downloads ADT from tools.hana.ondemand.com)
 python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 ```
+
+`mvnw` (`mvnw.cmd` on Windows) uses Maven 3.9.16; Tycho 4.0.13 does not start with Maven 3.10.
 
 `-Padt` downloads ADT from SAP's update site; SAP's license terms for these downloads (SAP Developer License Agreement) apply to whoever runs the build. The ADT bundles are only used to compile against and are not part of Bella's update site.
 

@@ -41,7 +41,8 @@ jobs:
       - name: Check that the tag matches the project version
         run: |
           tag="${TAG#v}"
-          version=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout | sed 's/-SNAPSHOT$//')
+          # read from pom.xml: "mvn help:evaluate" can fail inside Tycho on a runner with an empty Maven cache
+          version=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml | sed 's/-SNAPSHOT$//')
           if [ "$tag" != "$version" ]; then
             echo "::error::Tag v$tag does not match project version $version (pom.xml)"
             exit 1
