@@ -104,6 +104,10 @@ public final class ToolExecutor {
 			Log.info(AREA, tool.name() + ": redirected into the open editor");
 			return intercepted.get();
 		}
+		if (rules.editorOnly(tool)) {
+			Log.info(AREA, tool.name() + ": refused in suggest mode");
+			return ToolResult.error(rules.refusal(tool));
+		}
 		Optional<ToolProvider> owner = tools.providerOf(tool.name());
 		if (owner.isEmpty()) {
 			return ToolResult.error("Tool provider is no longer available: " + tool.name());
@@ -118,9 +122,9 @@ public final class ToolExecutor {
 			return ToolResult.error("The developer declined this tool call.");
 		}
 		JsonObject effective = input;
-		if (rules.mode() == ChatMode.GOD && ToolRegistry.ADT_PROVIDER_ID.equals(tool.providerId())
+		if (rules.mode() == ChatMode.AUTO && ToolRegistry.ADT_PROVIDER_ID.equals(tool.providerId())
 				&& "adt_activate".equals(tool.remoteName())) {
-			// Godmode tests every activation; the model can neither forget nor switch it off.
+			// Automode tests every activation; the model can neither forget nor switch it off.
 			effective = input.deepCopy();
 			effective.addProperty(AUTO_TEST, true);
 		}

@@ -381,7 +381,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 
 	/**
 	 * @param mode the chat's mode at the time of each tool call (plan mode,
-	 *             normal, Godmode)
+	 *             suggest, ask, read data, activate, Automode)
 	 */
 	public Conversation newConversation(ToolExecutor.Confirmer confirmer, WriteGuard writeGuard,
 			Supplier<ChatMode> mode) {

@@ -65,8 +65,8 @@ public final class AbapPrompts {
 				- For a runtime error, read the short dump (adt_short_dumps). Before writing a non-local object, ask
 				  adt_transport_info which transport request to use.
 				- Read table or CDS view contents with adt_table_contents when data helps (select few columns and
-				  rows; the developer confirms each read unless Godmode is on).
-				- A <chat_mode> note in a message sets how freely you may act (plan mode or Godmode); follow it.
+				  rows; the developer may have to confirm each read, depending on the chat mode).
+				- A <chat_mode> note in a message sets how freely you may act (plan, suggest, Automode …); follow it.
 				- Save tokens on large objects: read one method (adt_read_source with 'method') or the matching lines
 				  ('grep') instead of the whole source, and change one method with adt_write_source 'method'.
 

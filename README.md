@@ -28,7 +28,7 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/refactor.png"> | **Suggest refactoring / unit test** | Right-click → Bella (chat) |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat** with editor context, streaming and tool calls; insert code blocks, replace the selection or take them over as a method body | `Ctrl+Alt+B`, pink B in the toolbar, menu *Bella* |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read (also DDIC tables, structures, data elements, domains, table types, function modules, message classes), table contents, context of used objects, where-used, syntax check (also for unsaved code), ABAP Unit, ATC, style check, write, create, activate | automatically in the chat |
-| <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Plan mode** and **Godmode** for the chat (see below) | Tick boxes below the chat input |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat modes** from *Plan only* to *Automode* (see below) | Drop-down below the chat input |
 
 <p align="center"><img src="docs/screenshots/context-menu.png" width="560" alt="Right-click in the ABAP editor: submenu Bella with its actions"></p>
 
@@ -44,14 +44,23 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 </tr>
 </table>
 
-### Plan mode and Godmode
+### Chat modes
 
-Two tick boxes below the chat input set how freely Bella may act. They exclude each other, apply from the next tool call on and are off whenever the chat opens.
+A drop-down below the chat input sets how freely Bella may act, from careful to free. It applies from the next tool call on, and every chat starts with *Ask before changes*.
 
-- **Plan mode**: Bella only reads and analyses, then answers with a numbered plan (objects, changes, order, activation and tests, risks). Every tool that is not read only is refused, including writes into the open editor.
-- **Godmode**: Bella carries a task out the way ARC-1 does, without asking: it creates and changes objects, activates them, runs the ABAP Unit tests of the activated classes, programs and function groups right after each activation (`adt_activate` with `run_unit_tests`), and fixes errors and failing tests. It reads table contents without asking, too. Ticking it asks once for confirmation.
-  - Still in place: the allowed packages, your `DENY` rules, no release of transports, and objects open in an editor are only changed in the editor (you save and activate those).
-  - Use it in development systems only.
+| Mode | Reading | Table contents | Writing into an open editor | Saving, creating, activating in SAP |
+|---|---|---|---|---|
+| **Plan only** | runs | asks | refused | refused; Bella answers with a numbered plan |
+| **Suggest only (diff)** | runs | asks | diff preview | refused |
+| **Ask before changes** (default) | runs | asks | diff preview | asks |
+| **Read data without asking** | runs | runs | diff preview | asks |
+| **Write & activate without asking** | runs | asks | diff preview | runs |
+| **Automode** | runs | runs | diff preview | runs, plus ABAP Unit after each activation (`adt_activate` with `run_unit_tests`); Bella carries the task out and fixes errors and failing tests |
+
+- Choosing one of the two modes that write without asking asks once for confirmation.
+- In every mode the allowed packages, your `DENY` rules and the ban on releasing transports stay, and objects open in an editor are only changed in the editor (you save and activate those).
+- The modes work the same with an API key, the Claude subscription and GitHub Copilot.
+- Use the modes that write without asking in development systems only.
 
 ### How Bella gets SAP context
 
@@ -63,11 +72,11 @@ A model that does not know your system guesses field names and signatures. Bella
 
 Tables and structures are read as source on newer ABAP releases (7.52 and later). On older releases, and for data elements, domains, table types and message classes, Bella summarizes the object's ADT description.
 
-- **Table contents**: `adt_table_contents` reads rows of a table or CDS view through ADT's data preview, like SE16 or the SQL console: `table` with optional `columns`, `where` and `max_rows` (default 100, at most 1000), or a complete ABAP SQL `SELECT` in `sql`. Only a single `SELECT` is sent, and SAP checks your authorization for the data. Because the rows go to the model provider, Bella asks before each read unless Godmode is on.
+- **Table contents**: `adt_table_contents` reads rows of a table or CDS view through ADT's data preview, like SE16 or the SQL console: `table` with optional `columns`, `where` and `max_rows` (default 100, at most 1000), or a complete ABAP SQL `SELECT` in `sql`. Only a single `SELECT` is sent, and SAP checks your authorization for the data. Because the rows go to the model provider, Bella asks before each read unless the chat mode is *Read data without asking* or *Automode*.
 - **System knowledge**: `adt_list_systems` shows each system's SAP_BASIS release or whether it is an ABAP Cloud system, and the editor actions tell the model the release. `adt_transport_info` asks SAP which transport request a change needs, `adt_short_dumps` lists and reads runtime errors (ST22).
 - **Transport review**: `adt_list_transports` lists requests, `adt_transport_review` collects a review dossier for one: per source the diff between the version in the request and the version before it (version choice as in ARC-1's transport diff), syntax check, ATC and ABAP Unit in one run each, objects not activated, and customer objects the changed code uses that are missing, inactive or held in another open request. The review answer starts with the verdict and at most five blocking and five should-fix points, then an overview table per object, then the details.
 
-**Compared with ARC-1:** Bella's tools now cover what ARC-1's `SAPRead` (incl. single methods, grep and active/inactive versions), `SAPContext`, `SAPQuery` (table contents and SQL), read-only `SAPTransport` (incl. the transport diff) and the dumps of `SAPDiagnose` offer, plus a package allowlist for writes. With Godmode, writing, creating, activating and testing run without confirmation as with ARC-1. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log and rate limits, Git (gCTS/abapGit), or when the tools should run on a server instead of in Eclipse.
+**Compared with ARC-1:** Bella's tools now cover what ARC-1's `SAPRead` (incl. single methods, grep and active/inactive versions), `SAPContext`, `SAPQuery` (table contents and SQL), read-only `SAPTransport` (incl. the transport diff) and the dumps of `SAPDiagnose` offer, plus a package allowlist for writes. With *Automode*, writing, creating, activating and testing run without confirmation as with ARC-1. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log and rate limits, Git (gCTS/abapGit), or when the tools should run on a server instead of in Eclipse.
 
 ### Ground rule: open objects are only changed in the editor
 
@@ -103,7 +112,7 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 | Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
 | Release transports | always refused |
 
-Plan mode refuses everything that is not read only; Godmode runs everything that would ask. Refusals stay refusals in both.
+The chat mode can tighten or loosen this (see *Chat modes*); refusals stay refusals in every mode.
 
 - Add your own rules under *Preferences → Bella → SAP-Tools & ARC-1*, one per line as `pattern=AUTO|CONFIRM|DENY`.
 - **Allowed packages** (same page, default `$TMP, Z*, Y*`): Bella's tools write, create and activate only there; other writes are refused before you are asked. Empty allows all packages. Writing into an open editor is not affected.

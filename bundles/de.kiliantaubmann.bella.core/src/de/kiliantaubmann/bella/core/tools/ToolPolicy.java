@@ -14,7 +14,8 @@ import com.google.gson.JsonObject;
  * confirmation, or is refused. User rules are evaluated first, then the
  * built-in defaults: reading runs automatically, writing and activating asks,
  * releasing transports is refused. The {@link ChatMode} applies last: plan
- * mode refuses everything that is not read only, Godmode runs what would ask.
+ * mode refuses everything that is not read only, the free modes run what
+ * would ask (see {@link #decide}).
  */
 public final class ToolPolicy {
 
@@ -120,7 +121,26 @@ public final class ToolPolicy {
 		if (configured == Decision.DENY || blockedByPlan(tool)) {
 			return Decision.DENY;
 		}
-		return mode == ChatMode.GOD ? Decision.AUTO : configured;
+		if (configured != Decision.CONFIRM) {
+			return configured;
+		}
+		boolean data = Capability.TABLE_CONTENTS.equals(tool.capability());
+		boolean runs = switch (mode) {
+		case AUTO -> true;
+		case ACTIVATE -> tool.kind() == ToolSpec.Kind.WRITE && !data;
+		case READ_DATA -> data;
+		default -> false;
+		};
+		return runs ? Decision.AUTO : Decision.CONFIRM;
+	}
+
+	/**
+	 * In suggest mode a tool that is not read only may only run as far as the
+	 * write guard turns it into a proposal in the open editor; anything else
+	 * is refused (see {@link #refusal}).
+	 */
+	public boolean editorOnly(ToolSpec tool) {
+		return mode == ChatMode.SUGGEST && tool.kind() != ToolSpec.Kind.READ;
 	}
 
 	private Decision configured(ToolSpec tool, JsonObject input) {
@@ -150,6 +170,10 @@ public final class ToolPolicy {
 		if (blockedByPlan(tool)) {
 			return "Refused in plan mode: Bella does not change anything in this mode. Do not retry; describe the change in "
 					+ "your plan instead.";
+		}
+		if (editorOnly(tool)) {
+			return "Refused in suggest mode: nothing is saved, created or activated in the SAP system. Do not retry; "
+					+ "propose the change in the open editor (adt_write_source) or as a code block.";
 		}
 		return "Refused by Bella's tool policy. Do not retry this call; tell the developer.";
 	}

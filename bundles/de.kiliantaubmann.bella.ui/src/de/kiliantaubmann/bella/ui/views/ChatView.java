@@ -30,6 +30,7 @@ import org.eclipse.swt.dnd.TextTransfer;
 import org.eclipse.swt.dnd.Transfer;
 import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
@@ -73,8 +74,7 @@ public class ChatView extends ViewPart {
 	private Button send;
 	private Button stop;
 	private Button withContext;
-	private Button planMode;
-	private Button godMode;
+	private Combo modeChoice;
 	/** Read on the job thread at every tool call, so unticking takes effect at once. */
 	private volatile ChatMode mode = ChatMode.NORMAL;
 	private Label status;
@@ -198,25 +198,24 @@ public class ChatView extends ViewPart {
 		stop.addListener(SWT.Selection, e -> cancel());
 		GridDataFactory.fillDefaults().span(2, 1).applyTo(new Label(bottom, SWT.NONE));
 		Composite options = new Composite(bottom, SWT.NONE);
-		GridLayoutFactory.fillDefaults().numColumns(3).spacing(12, 0).applyTo(options);
+		GridLayoutFactory.fillDefaults().numColumns(2).spacing(12, 0).applyTo(options);
 		withContext = new Button(options, SWT.CHECK);
 		withContext.setText(Messages.get("chat.withContext"));
 		withContext.setToolTipText(Messages.get("chat.withContextTip"));
 		withContext.setSelection(true);
-		planMode = new Button(options, SWT.CHECK);
-		planMode.setText(Messages.get("chat.planMode"));
-		planMode.setToolTipText(Messages.get("chat.planModeTip"));
-		planMode.addListener(SWT.Selection, e -> setMode(planMode.getSelection() ? ChatMode.PLAN : ChatMode.NORMAL));
-		godMode = new Button(options, SWT.CHECK);
-		godMode.setText(Messages.get("chat.godMode"));
-		godMode.setToolTipText(Messages.get("chat.godModeTip"));
-		godMode.addListener(SWT.Selection, e -> {
-			if (godMode.getSelection() && !MessageDialog.openConfirm(getSite().getShell(),
-					Messages.get("chat.godModeConfirmTitle"), Messages.get("chat.godModeConfirm"))) {
-				godMode.setSelection(false);
+		modeChoice = new Combo(options, SWT.READ_ONLY | SWT.DROP_DOWN);
+		for (ChatMode m : ChatMode.values()) {
+			modeChoice.add(Messages.get(modeKey(m)));
+		}
+		modeChoice.setVisibleItemCount(ChatMode.values().length);
+		modeChoice.addListener(SWT.Selection, e -> {
+			ChatMode chosen = ChatMode.values()[Math.max(0, modeChoice.getSelectionIndex())];
+			if (chosen.writesWithoutAsking() && chosen != mode && !MessageDialog.openConfirm(getSite().getShell(),
+					Messages.get(modeKey(chosen)), Messages.get(modeKey(chosen) + ".confirm"))) {
+				setMode(mode); // back to the previous choice
 				return;
 			}
-			setMode(godMode.getSelection() ? ChatMode.GOD : ChatMode.NORMAL);
+			setMode(chosen);
 		});
 		status = new Label(bottom, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).span(2, 1).applyTo(status);
@@ -254,15 +253,20 @@ public class ChatView extends ViewPart {
 		};
 		getViewSite().getActionBars().getMenuManager().add(openLog);
 		newSession();
+		setMode(ChatMode.NORMAL);
+	}
+
+	/** Selects a mode in the drop-down and uses it from the next tool call on. UI thread. */
+	public void setMode(ChatMode newMode) {
+		mode = newMode;
+		modeChoice.select(newMode.ordinal());
+		modeChoice.setToolTipText(Messages.get(modeKey(newMode) + ".tip"));
 		updateStatus();
 	}
 
-	/** Plan mode and Godmode exclude each other. UI thread. */
-	private void setMode(ChatMode newMode) {
-		mode = newMode;
-		planMode.setSelection(newMode == ChatMode.PLAN);
-		godMode.setSelection(newMode == ChatMode.GOD);
-		updateStatus();
+	/** Message key of a mode's label, e.g. {@code chat.mode.read_data}. */
+	static String modeKey(ChatMode m) {
+		return "chat.mode." + m.name().toLowerCase(java.util.Locale.ROOT);
 	}
 
 	/** The chat's current mode. */
@@ -320,7 +324,7 @@ public class ChatView extends ViewPart {
 				: "";
 		String text = Messages.fmt("chat.status", plugin.chatModelLabel(), system.isEmpty() ? "–" : system);
 		if (mode != ChatMode.NORMAL) {
-			text += " · " + Messages.get(mode == ChatMode.PLAN ? "chat.planMode" : "chat.godMode");
+			text += " · " + Messages.get(modeKey(mode));
 		}
 		status.setText(text);
 		status.getParent().layout();

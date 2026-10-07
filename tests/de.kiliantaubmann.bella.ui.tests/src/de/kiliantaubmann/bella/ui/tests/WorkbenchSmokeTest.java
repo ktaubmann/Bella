@@ -141,22 +141,27 @@ class WorkbenchSmokeTest {
 	}
 
 	@Test
-	void chatHasPlanModeAndGodmode() {
+	void chatHasAModeDropDown() {
 		ChatView view = ChatView.open().orElseThrow();
 		pump();
-		List<Button> buttons = find(view.getSite().getShell(), Button.class);
-		Button plan = buttons.stream().filter(b -> b.getText().equals(Messages.get("chat.planMode"))).findFirst()
-				.orElseThrow();
-		Button god = buttons.stream().filter(b -> b.getText().equals(Messages.get("chat.godMode"))).findFirst()
-				.orElseThrow();
-		assertEquals(ChatMode.NORMAL, view.mode());
-		assertFalse(god.getSelection(), "Godmode is never on when the chat opens");
-		plan.setSelection(true);
-		plan.notifyListeners(SWT.Selection, new Event());
+		Combo modes = find(view.getSite().getShell(), Combo.class).stream()
+				.filter(c -> c.getItemCount() == ChatMode.values().length
+						&& c.getItem(0).equals(Messages.get("chat.mode.plan")))
+				.findFirst().orElseThrow();
+		assertEquals(ChatMode.NORMAL, view.mode(), "a chat starts with asking before changes");
+		assertEquals(Messages.get("chat.mode.normal"), modes.getText());
+		for (ChatMode m : ChatMode.values()) {
+			assertFalse(Messages.get("chat.mode." + m.name().toLowerCase()).startsWith("!"), m.name());
+			assertFalse(Messages.get("chat.mode." + m.name().toLowerCase() + ".tip").startsWith("!"), m.name());
+		}
+		modes.select(ChatMode.PLAN.ordinal());
+		modes.notifyListeners(SWT.Selection, new Event());
 		assertEquals(ChatMode.PLAN, view.mode());
-		plan.setSelection(false);
-		plan.notifyListeners(SWT.Selection, new Event());
-		assertEquals(ChatMode.NORMAL, view.mode());
+		modes.select(ChatMode.READ_DATA.ordinal());
+		modes.notifyListeners(SWT.Selection, new Event());
+		assertEquals(ChatMode.READ_DATA, view.mode(), "no confirmation for reading data");
+		view.setMode(ChatMode.NORMAL);
+		assertEquals(Messages.get("chat.mode.normal"), modes.getText());
 		page().hideView(view);
 	}
 

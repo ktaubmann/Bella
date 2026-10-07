@@ -115,10 +115,10 @@ class ToolExecutorTest {
 	}
 
 	@Test
-	void godModeActivatesWithoutAskingAndRunsTheTests() {
+	void autoModeActivatesWithoutAskingAndRunsTheTests() {
 		Recording provider = new Recording();
 		List<String> confirmations = new ArrayList<>();
-		ToolResult r = executor(provider, ChatMode.GOD, confirmations).run(
+		ToolResult r = executor(provider, ChatMode.AUTO, confirmations).run(
 				new ToolCall("1", "adt_activate", new JsonObject(), "{}", null), ToolExecutor.Observer.NONE,
 				CancelToken.NONE);
 		assertEquals("done", r.content());
@@ -127,7 +127,7 @@ class ToolExecutorTest {
 
 		JsonObject optOut = new JsonObject();
 		optOut.addProperty(ToolExecutor.AUTO_TEST, false);
-		executor(provider, ChatMode.GOD, confirmations).run(new ToolCall("2", "adt_activate", optOut, "{}", null),
+		executor(provider, ChatMode.AUTO, confirmations).run(new ToolCall("2", "adt_activate", optOut, "{}", null),
 				ToolExecutor.Observer.NONE, CancelToken.NONE);
 		assertTrue(provider.inputs.get(1).get(ToolExecutor.AUTO_TEST).getAsBoolean(), "Godmode always tests");
 	}
@@ -165,5 +165,32 @@ class ToolExecutorTest {
 		assertTrue(guarded.isEmpty());
 		assertTrue(confirmations.isEmpty());
 		assertTrue(provider.inputs.isEmpty());
+	}
+
+	@Test
+	void suggestModeWritesOnlyIntoTheOpenEditor() {
+		Recording provider = new Recording();
+		ToolRegistry registry = new ToolRegistry();
+		registry.addProvider(provider);
+		registry.refresh(e -> {
+		});
+		List<String> confirmations = new ArrayList<>();
+		WriteGuard editor = (tool, input) -> input.has("open")
+				? Optional.of(ToolResult.ok("proposed in the editor"))
+				: Optional.empty();
+		ToolExecutor executor = new ToolExecutor(registry, () -> ToolPolicy.defaults().withMode(ChatMode.SUGGEST),
+				(tool, input) -> confirmations.add(tool.name()), editor);
+		JsonObject open = new JsonObject();
+		open.addProperty("open", true);
+		assertEquals("proposed in the editor", executor.run(new ToolCall("1", "adt_write_source", open, "{}", null),
+				ToolExecutor.Observer.NONE, CancelToken.NONE).content());
+		ToolResult saved = executor.run(new ToolCall("2", "adt_write_source", new JsonObject(), "{}", null),
+				ToolExecutor.Observer.NONE, CancelToken.NONE);
+		ToolResult activated = executor.run(new ToolCall("3", "adt_activate", new JsonObject(), "{}", null),
+				ToolExecutor.Observer.NONE, CancelToken.NONE);
+		assertTrue(saved.isError() && saved.content().startsWith("Refused in suggest mode"), saved.content());
+		assertTrue(activated.isError(), activated.content());
+		assertTrue(provider.inputs.isEmpty(), "nothing reached the SAP system");
+		assertTrue(confirmations.isEmpty());
 	}
 }
