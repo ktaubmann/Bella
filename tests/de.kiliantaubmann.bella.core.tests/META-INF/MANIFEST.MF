@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Bella Core Tests
 Bundle-SymbolicName: de.kiliantaubmann.bella.core.tests
-Bundle-Version: 0.5.0.qualifier
+Bundle-Version: 0.6.0.qualifier
 Bundle-Vendor: Kilian Taubmann
 Fragment-Host: de.kiliantaubmann.bella.core
 Bundle-RequiredExecutionEnvironment: JavaSE-21
