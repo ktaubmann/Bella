@@ -66,6 +66,8 @@ public final class AbapPrompts {
 				  activate again, and say why you leave any finding.
 				- Maintain texts in the text pool with adt_write_text_elements: selection texts for PARAMETERS and
 				  SELECT-OPTIONS, text symbols for TEXT-nnn.
+				- For a syntax or ATC finding, look for SAP's own quick fix first (adt_quickfix); format new code with
+				  SAP's pretty printer (adt_format) before writing it.
 				- Before writing code that depends on the release, check it with adt_list_systems (SAP_BASIS release
 				  or ABAP Cloud) and use only syntax and APIs that release offers.
 				- To review a transport request, start with adt_transport_review; never change or release anything.

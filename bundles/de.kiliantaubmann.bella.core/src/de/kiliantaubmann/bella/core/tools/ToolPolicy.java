@@ -15,19 +15,42 @@ import com.google.gson.JsonObject;
  * built-in defaults: reading runs automatically, writing and activating asks,
  * releasing transports is refused. The {@link ChatMode} applies last: plan
  * mode refuses everything that is not read only, the free modes run what
- * would ask (see {@link #decide}).
+ * would ask (see {@link #decide}), except for rules with {@link Decision#ASK},
+ * which ask in every mode.
  */
 public final class ToolPolicy {
 
 	public enum Decision {
-		AUTO, CONFIRM, DENY
+		AUTO, CONFIRM, DENY,
+		/**
+		 * Asks in every chat mode, also in Automode; for actions that are hard
+		 * to undo (deleting, transports, Git, system settings). {@link #decide}
+		 * reports it as {@link #CONFIRM}.
+		 */
+		ASK
 	}
 
-	/** A glob rule on the tool name; {@code *} matches any run of characters. */
+	/**
+	 * A glob rule on the tool name, optionally followed by {@code :action} to
+	 * match only calls whose action argument ({@code action}, {@code operation}
+	 * …) matches; {@code *} matches any run of characters.
+	 */
 	public record Rule(String glob, Decision decision) {
 
 		boolean matches(String toolName) {
-			return toRegex(glob).matcher(toolName).matches();
+			return matches(toolName, null);
+		}
+
+		boolean matches(String toolName, JsonObject input) {
+			int colon = glob.indexOf(':');
+			if (colon < 0) {
+				return toRegex(glob).matcher(toolName).matches();
+			}
+			if (!toRegex(glob.substring(0, colon)).matcher(toolName).matches()) {
+				return false;
+			}
+			String action = action(input);
+			return action != null && toRegex(glob.substring(colon + 1)).matcher(action).matches();
 		}
 
 		private static Pattern toRegex(String glob) {
@@ -47,6 +70,26 @@ public final class ToolPolicy {
 	public static final List<Rule> DEFAULT_RULES = List.of(
 			new Rule("*transport_release*", Decision.DENY),
 			new Rule("*release_transport*", Decision.DENY),
+			// hard to undo or system wide: ask in every chat mode
+			new Rule("adt_delete_object", Decision.ASK),
+			new Rule("adt_transport_manage", Decision.ASK),
+			new Rule("adt_git_write", Decision.ASK),
+			new Rule("adt_ui5_deploy", Decision.ASK),
+			new Rule("adt_package_manage:delete", Decision.ASK),
+			new Rule("adt_trace_control", Decision.ASK),
+			new Rule("adt_settings_write", Decision.ASK),
+			// the same actions through ARC-1
+			new Rule("mcp_*SAPWrite:delete*", Decision.ASK),
+			new Rule("mcp_*SAPTransport:create", Decision.ASK),
+			new Rule("mcp_*SAPTransport:delete", Decision.ASK),
+			new Rule("mcp_*SAPTransport:reassign", Decision.ASK),
+			new Rule("mcp_*SAPTransport:remove_object", Decision.ASK),
+			new Rule("mcp_*SAPGit:clone", Decision.ASK),
+			new Rule("mcp_*SAPGit:pull", Decision.ASK),
+			new Rule("mcp_*SAPGit:push", Decision.ASK),
+			new Rule("mcp_*SAPGit:stage", Decision.ASK),
+			new Rule("mcp_*SAPGit:switch_branch", Decision.ASK),
+			new Rule("mcp_*SAPManage:delete_package", Decision.ASK),
 			new Rule("adt_write_source", Decision.CONFIRM),
 			new Rule("adt_create_object", Decision.CONFIRM),
 			new Rule("adt_activate", Decision.CONFIRM),
@@ -63,6 +106,20 @@ public final class ToolPolicy {
 			new Rule("mcp_*SAPDiagnose", Decision.AUTO));
 
 	private static final List<String> ACTION_KEYS = List.of("action", "operation", "op", "type", "mode");
+
+	/** The action argument of a multi-purpose tool call, or {@code null}. */
+	static String action(JsonObject input) {
+		if (input == null) {
+			return null;
+		}
+		for (String key : List.of("action", "operation", "op")) {
+			JsonElement e = input.get(key);
+			if (e != null && e.isJsonPrimitive()) {
+				return e.getAsString();
+			}
+		}
+		return null;
+	}
 
 	private final List<Rule> userRules;
 	private final ChatMode mode;
@@ -122,6 +179,9 @@ public final class ToolPolicy {
 		if (configured == Decision.DENY || blockedByPlan(tool)) {
 			return Decision.DENY;
 		}
+		if (configured == Decision.ASK) {
+			return Decision.CONFIRM;
+		}
 		if (configured != Decision.CONFIRM) {
 			return configured;
 		}
@@ -149,12 +209,12 @@ public final class ToolPolicy {
 			return Decision.DENY;
 		}
 		for (Rule r : userRules) {
-			if (r.matches(tool.name())) {
+			if (r.matches(tool.name(), input)) {
 				return r.decision();
 			}
 		}
 		for (Rule r : DEFAULT_RULES) {
-			if (r.matches(tool.name())) {
+			if (r.matches(tool.name(), input)) {
 				return r.decision();
 			}
 		}

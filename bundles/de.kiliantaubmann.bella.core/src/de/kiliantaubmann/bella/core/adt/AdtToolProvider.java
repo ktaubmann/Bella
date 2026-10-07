@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.google.gson.JsonArray;
@@ -18,6 +19,8 @@ import com.google.gson.JsonObject;
 import de.kiliantaubmann.bella.core.abap.AbapEdit;
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.abap.AbapSlices;
+import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
+import de.kiliantaubmann.bella.core.abap.TextDeltas;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.tools.Capability;
@@ -27,6 +30,7 @@ import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.LineDiff;
 
 /**
  * Bella's own SAP tools, executed through the developer's ADT logon. No
@@ -278,6 +282,29 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[] { "name" }, objectProps("check_variant", "string",
 						"ATC check variant; omit for the one set in Bella's preferences, else the system default.")),
 				Capability.ATC, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_quickfix",
+				"SAP's quick fixes (Ctrl+1 in ADT) for a syntax or ATC finding. action 'list' shows the fixes for a "
+						+ "line (and column, if known); 'preview' runs one fix ('proposal': its number or uri from the list) "
+						+ "and returns the changed code without saving it. Apply the result with adt_write_source.",
+				schema(new String[] { "name", "line" }, objectProps("action", "string", "list (default) or preview.",
+						"line", "integer", "Line of the finding (from 1).", "column", "integer",
+						"Column of the finding (from 0); omit to try the tokens of the line.", "include", "string",
+						"Class include, default main.", "proposal", "string",
+						"preview: number of the fix in the list (1, 2 …) or its uri.")),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_format",
+				"SAP's pretty printer with the system's settings. action 'format' (default) returns 'source' (or the "
+						+ "saved source of 'name') formatted, without saving it; 'get_settings' shows indentation and "
+						+ "keyword case.",
+				schema(new String[0], objectProps("action", "string", "format (default) or get_settings.", "source",
+						"string", "Code to format.", "include", "string", "Class include, default main.")),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_settings_write",
+				"Change the pretty printer settings for everybody on the system (indentation, keyword case). Bella "
+						+ "always asks first.",
+				schema(new String[] { "indentation", "style" }, "indentation", "boolean", "Indent code.", "style",
+						"string", "keywordUpper, keywordLower, keywordAuto or none.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
 		t.add(ToolSpec.of("adt_text_elements",
 				"Read the text pool of a program, class or function group: text symbols (TEXT-001), selection texts "
 						+ "(labels of PARAMETERS and SELECT-OPTIONS) or list headings.",
@@ -458,6 +485,9 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_run_unit_tests" -> unitTests(in, cancel);
 			case "adt_atc_check" -> atc(in, cancel);
 			case "adt_text_elements" -> textElements(in, cancel);
+			case "adt_quickfix" -> quickfix(in, cancel);
+			case "adt_format" -> format(in, cancel);
+			case "adt_settings_write" -> writeSettings(in, cancel);
 			case "adt_write_text_elements" -> writeTextElements(in, cancel);
 			case "adt_transport_info" -> transportInfo(in, cancel);
 			case "adt_short_dumps" -> shortDumps(in, cancel);
@@ -725,6 +755,156 @@ public final class AdtToolProvider implements ToolProvider {
 		return sb.toString();
 	}
 
+	private static final String QUICKFIX_HINT = "\nadt_quickfix lists SAP's own fixes for a finding's line.";
+
+	/** Columns tried when the model does not know the column of a finding. */
+	private static final int MAX_TOKENS_TRIED = 8;
+
+	private ToolResult quickfix(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String objectUri = AdtObjectRef.objectUri(ref.uri());
+		String include = Json.str(in, "include");
+		String sourceUri = AdtObjectRef.sourceUri(objectUri, include);
+		String source = c.readSource(objectUri, include, cancel);
+		int line = Json.integer(in, "line", 0);
+		String[] lines = source.replace("\r\n", "\n").split("\n", -1);
+		if (line < 1 || line > lines.length) {
+			return ToolResult.error("Line " + line + " is outside the source (" + lines.length + " lines).");
+		}
+		List<Integer> columns = new ArrayList<>();
+		if (in.has("column") && in.get("column").isJsonPrimitive()) {
+			columns.add(Math.max(0, Json.integer(in, "column", 0)));
+		} else {
+			Matcher m = Pattern.compile("\\S+").matcher(lines[line - 1]);
+			while (m.find() && columns.size() < MAX_TOKENS_TRIED) {
+				columns.add(m.start());
+			}
+		}
+		List<AdtQuickfix.Proposal> proposals = List.of();
+		int column = columns.isEmpty() ? 0 : columns.get(0);
+		for (int col : columns) {
+			proposals = AdtQuickfix.proposals(c, sourceUri, source, line, col, cancel);
+			if (!proposals.isEmpty()) {
+				column = col;
+				break;
+			}
+		}
+		String where = ref.name() + " line " + line + ":" + column;
+		if (proposals.isEmpty()) {
+			return ToolResult.ok("SAP has no quick fix for " + ref.name() + " line " + line + ".");
+		}
+		String action = Json.str(in, "action");
+		if (action == null || action.isBlank() || action.equalsIgnoreCase("list")) {
+			StringBuilder sb = new StringBuilder("Quick fixes for " + where + ":\n");
+			for (int i = 0; i < proposals.size(); i++) {
+				AdtQuickfix.Proposal p = proposals.get(i);
+				sb.append(i + 1).append(". ").append(p.name());
+				if (!p.description().isBlank() && !p.description().equals(p.name())) {
+					sb.append(" (").append(p.description()).append(')');
+				}
+				sb.append("  [").append(p.uri()).append("]\n");
+			}
+			return ToolResult.ok(sb.append("Preview one with action 'preview' and 'proposal'.").toString());
+		}
+		if (!action.equalsIgnoreCase("preview")) {
+			return ToolResult.error("Unknown action " + action + "; use list or preview.");
+		}
+		String wanted = Json.str(in, "proposal");
+		AdtQuickfix.Proposal chosen = null;
+		if (wanted != null && wanted.trim().matches("\\d+")) {
+			int i = Integer.parseInt(wanted.trim());
+			chosen = i >= 1 && i <= proposals.size() ? proposals.get(i - 1) : null;
+		} else if (wanted != null) {
+			chosen = proposals.stream().filter(p -> p.uri().equals(wanted.trim())).findFirst().orElse(null);
+		}
+		if (chosen == null) {
+			return ToolResult.error("Give 'proposal', the number (1-" + proposals.size() + ") or uri of a quick fix.");
+		}
+		List<AdtQuickfix.Delta> deltas = AdtQuickfix.apply(c, chosen, sourceUri, source, line, column, cancel);
+		List<TextDeltas.Delta> own = new ArrayList<>();
+		List<String> others = new ArrayList<>();
+		for (AdtQuickfix.Delta d : deltas) {
+			if (AdtQuickfix.sameSource(d.uri(), sourceUri)) {
+				own.add(d.delta());
+			} else {
+				others.add(AdtObjectRef.objectUri(d.uri()));
+			}
+		}
+		StringBuilder sb = new StringBuilder("Quick fix \"" + chosen.name() + "\" for " + where + ", not saved.");
+		if (!others.isEmpty()) {
+			sb.append("\nIt also changes other sources, which this preview leaves out: ")
+					.append(String.join(", ", others.stream().distinct().toList())).append('.');
+		}
+		if (own.isEmpty()) {
+			return ToolResult.ok(sb.append("\nIt changes nothing in this source.").toString());
+		}
+		String fixed;
+		try {
+			fixed = TextDeltas.apply(source, own);
+		} catch (IllegalArgumentException e) {
+			return ToolResult.error("SAP's quick fix returned changes Bella cannot apply: " + e.getMessage());
+		}
+		sb.append("\n```diff\n").append(LineDiff.unified(source, fixed, "before", "after", 2).text()).append("```");
+		int first = own.stream().mapToInt(TextDeltas.Delta::startLine).min().orElse(line);
+		int last = own.stream().mapToInt(TextDeltas.Delta::endLine).max().orElse(line);
+		Optional<AbapStructureScanner.Block> routine = AbapStructureScanner.routineAt(fixed, offsetOfLine(fixed, first));
+		if (routine.isPresent() && routine.get().kind() == AbapStructureScanner.Kind.METHOD
+				&& routine.get().contains(offsetOfLine(fixed, last))) {
+			return ToolResult.ok(sb.append("\nApply it with adt_write_source, 'method' ").append(routine.get().name())
+					.append(", and this body:\n```abap\n").append(routine.get().body(fixed).strip()).append("\n```")
+					.toString());
+		}
+		return ToolResult.ok(sb.append("\nApply it with adt_write_source and this complete source:\n```abap\n")
+				.append(fixed).append("\n```").toString());
+	}
+
+	private static int offsetOfLine(String text, int line) {
+		int offset = 0;
+		for (int i = 1; i < line && offset >= 0; i++) {
+			offset = text.indexOf('\n', offset) + 1;
+			if (offset == 0) {
+				return text.length();
+			}
+		}
+		return offset;
+	}
+
+	private ToolResult format(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		String action = Json.str(in, "action");
+		if ("get_settings".equalsIgnoreCase(action)) {
+			AdtQuickfix.Settings st = AdtQuickfix.settings(c, cancel);
+			return ToolResult.ok("Pretty printer: indentation " + (st.indentation() ? "on" : "off") + ", keywords "
+					+ st.style() + ".");
+		}
+		String source = Json.str(in, "source");
+		if (source == null || source.isBlank()) {
+			String name = Json.str(in, "name");
+			if (name == null || name.isBlank()) {
+				return ToolResult.error("Give 'source' or 'name'.");
+			}
+			AdtObjectRef ref = resolve(c, in, cancel);
+			source = c.readSource(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "include"), cancel);
+		}
+		String formatted = AdtQuickfix.prettyPrint(c, source, cancel);
+		return ToolResult.ok(formatted.equals(source) ? "Already formatted; nothing changes."
+				: "Formatted (not saved):\n```abap\n" + formatted + "\n```");
+	}
+
+	private ToolResult writeSettings(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		String style = Json.str(in, "style");
+		if (style == null || !AdtQuickfix.STYLES.contains(style.trim())) {
+			return ToolResult.error("style is one of " + String.join(", ", AdtQuickfix.STYLES) + ".");
+		}
+		boolean indentation = !in.has("indentation") || !in.get("indentation").isJsonPrimitive()
+				|| in.get("indentation").getAsBoolean();
+		AdtQuickfix.writeSettings(client(s), new AdtQuickfix.Settings(indentation, style.trim()), cancel);
+		return ToolResult.ok("Pretty printer settings of " + s.label() + ": indentation " + (indentation ? "on" : "off")
+				+ ", keywords " + style.trim() + ".");
+	}
+
 	private ToolResult textElements(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		AdtObjectRef ref = resolve(c, in, cancel);
@@ -787,7 +967,7 @@ public final class AdtToolProvider implements ToolProvider {
 		try {
 			List<AdtClient.Message> msgs = c.syntaxCheck(objectUri, null, true, cancel);
 			sb.append(msgs.isEmpty() ? "\n\nSyntax check: no errors."
-					: "\n\nSyntax check of the saved version:\n" + format(msgs));
+					: "\n\nSyntax check of the saved version:\n" + format(msgs) + QUICKFIX_HINT);
 		} catch (IOException | RuntimeException e) {
 			sb.append("\n\nSyntax check could not run: ").append(e.getMessage());
 		}
@@ -1144,7 +1324,7 @@ public final class AdtToolProvider implements ToolProvider {
 			return "ATC findings:\n" + formatAtc(msgs, refs.size() > 1)
 					+ "Fix priority 1 and 2 findings now, then save, activate and check again; fix priority 3 where it "
 					+ "is simple. For each finding you leave, tell the developer why (e.g. a false positive that needs "
-					+ "an exemption).";
+					+ "an exemption)." + QUICKFIX_HINT;
 		} catch (IOException e) {
 			return "ATC could not run: " + e.getMessage();
 		}

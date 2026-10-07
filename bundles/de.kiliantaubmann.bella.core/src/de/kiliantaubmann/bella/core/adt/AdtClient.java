@@ -62,6 +62,11 @@ public final class AdtClient {
 		return URLEncoder.encode(s, StandardCharsets.UTF_8);
 	}
 
+	/** Sends a request through this client's transport and returns the response whatever its status. */
+	AdtResponse exchange(AdtRequest r, CancelToken cancel) throws IOException {
+		return exchange(transport, r, cancel);
+	}
+
 	private AdtResponse send(AdtRequest r, CancelToken cancel) throws IOException {
 		AdtResponse response = exchange(transport, r, cancel);
 		if (!response.ok()) {

@@ -54,8 +54,10 @@ public final class LintToolProvider implements ToolProvider {
 		return List.of(ToolSpec.of("abap_lint",
 				"Bella's style check for ABAP code, without SAP access: obsolete statements (MOVE, CALL METHOD, "
 						+ "CREATE OBJECT, header lines, FORM …), SELECT *, SELECT in loops, SELECT … ENDSELECT, unchecked "
-						+ "SELECT SINGLE, CATCH cx_root, empty CATCH, break-points and aborting messages, and the project's "
-						+ "naming rules. Run it on code you write and fix the findings that apply.",
+						+ "SELECT SINGLE, CATCH cx_root, empty CATCH, break-points and aborting messages, texts without text "
+						+ "symbols, unused variables, unreachable code, repeated ELSEIF conditions, BEGIN/END OF names, deep "
+						+ "nesting, long or complex methods, missing @ in strict Open SQL, long lines and keyword case, and the "
+						+ "project's naming rules. Run it on code you write and fix the findings that apply.",
 				schema, null, ToolSpec.Kind.READ));
 	}
 

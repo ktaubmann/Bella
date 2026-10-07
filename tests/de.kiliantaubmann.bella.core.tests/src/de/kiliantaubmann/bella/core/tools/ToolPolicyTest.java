@@ -114,4 +114,28 @@ class ToolPolicyTest {
 		assertTrue(p.refusal(tool("adt_activate", ToolSpec.Kind.WRITE)).startsWith("Refused in suggest mode"));
 		assertFalse(ToolPolicy.defaults().editorOnly(tool("adt_write_source", ToolSpec.Kind.WRITE)));
 	}
+
+	@Test
+	void askRulesAskInEveryMode() {
+		for (ChatMode mode : ChatMode.values()) {
+			ToolPolicy p = ToolPolicy.defaults().withMode(mode);
+			Decision expected = mode == ChatMode.PLAN ? Decision.DENY : Decision.CONFIRM;
+			assertEquals(expected, p.decide(tool("adt_delete_object", ToolSpec.Kind.WRITE), new JsonObject()), mode.name());
+			assertEquals(expected, p.decide(tool("adt_settings_write", ToolSpec.Kind.WRITE), new JsonObject()));
+		}
+		ToolPolicy auto = ToolPolicy.defaults().withMode(ChatMode.AUTO);
+		// rules with an action only match that action
+		assertEquals(Decision.CONFIRM, auto.decide(tool("adt_package_manage", ToolSpec.Kind.WRITE),
+				Json.parseObject("{\"action\":\"delete\"}")));
+		assertEquals(Decision.AUTO, auto.decide(tool("adt_package_manage", ToolSpec.Kind.WRITE),
+				Json.parseObject("{\"action\":\"create\"}")));
+		assertEquals(Decision.CONFIRM, auto.decide(tool("mcp_arc1_SAPTransport", ToolSpec.Kind.UNKNOWN),
+				Json.parseObject("{\"action\":\"create\"}")));
+		assertEquals(Decision.AUTO, auto.decide(tool("mcp_arc1_SAPTransport", ToolSpec.Kind.UNKNOWN),
+				Json.parseObject("{\"action\":\"list\"}")));
+		// the developer can loosen it on purpose
+		assertEquals(Decision.AUTO, new ToolPolicy(ToolPolicy.parseRules("adt_delete_object=AUTO"))
+				.decide(tool("adt_delete_object", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(List.of(new ToolPolicy.Rule("x:delete", Decision.ASK)), ToolPolicy.parseRules("x:delete=ASK"));
+	}
 }

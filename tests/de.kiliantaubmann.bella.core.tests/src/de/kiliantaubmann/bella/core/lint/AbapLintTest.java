@@ -175,4 +175,82 @@ class AbapLintTest {
 				.content());
 		assertTrue(p.call("abap_lint", Json.parseObject("{}"), CancelToken.NONE).isError());
 	}
+
+	@Test
+	void unreachableCodeAndIdenticalConditions() {
+		assertEquals(List.of("unreachable_code"), rules("METHOD m.\n  RETURN.\n  x = 1.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  IF a = 1.\n    RETURN.\n  ENDIF.\n  x = 1.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  TRY.\n      RAISE EXCEPTION NEW zcx_x( ).\n    CATCH zcx_x.\n"
+				+ "      x = 1.\n  ENDTRY.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  RAISE EVENT changed.\n  x = 1.\nENDMETHOD."));
+		assertEquals(List.of("identical_conditions"),
+				rules("IF a = 1.\n  x = 1.\nELSEIF b = 2.\n  x = 2.\nELSEIF a = 1.\n  x = 3.\nENDIF."));
+		assertEquals(List.of(), rules("IF a = 1.\n  IF a = 1.\n  ENDIF.\nELSEIF b = 1.\nENDIF."));
+	}
+
+	@Test
+	void beginEndNames() {
+		assertEquals(List.of(), rules("TYPES: BEGIN OF ty_a,\n  f TYPE i,\nEND OF ty_a."));
+		assertEquals(List.of("begin_end_names"), rules("TYPES: BEGIN OF ty_a,\n  f TYPE i,\nEND OF ty_b."));
+		assertEquals(List.of(), rules("SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.\n"
+				+ "SELECTION-SCREEN END OF BLOCK b1."));
+		assertEquals(List.of("begin_end_names"), rules("SELECTION-SCREEN BEGIN OF BLOCK b1.\n"
+				+ "SELECTION-SCREEN END OF BLOCK b2."));
+		assertEquals(List.of(), rules("SELECTION-SCREEN BEGIN OF LINE.\nSELECTION-SCREEN END OF LINE."));
+	}
+
+	@Test
+	void unusedVariables() {
+		assertEquals(List.of("unused_variables"), rules("METHOD m.\n  DATA lv_unused TYPE i.\n  x = 1.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  DATA: lv_a TYPE i,\n        ls_b TYPE ty_b.\n"
+				+ "  lv_a = ls_b-f.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_n TYPE i.\n  out->write( |{ lv_n } rows| ).\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  FIELD-SYMBOLS <ls_row> TYPE any.\n"
+				+ "  LOOP AT lt ASSIGNING <ls_row>.\n  ENDLOOP.\nENDMETHOD."));
+		// a name that only appears in a text literal is not a use
+		assertEquals(List.of("unused_variables"), rules("METHOD m.\n  DATA lv_x TYPE i.\n"
+				+ "  out->write( 'lv_x' ).\nENDMETHOD."));
+	}
+
+	@Test
+	void sizeAndNesting() {
+		StringBuilder longMethod = new StringBuilder("METHOD m.\n");
+		for (int i = 0; i < 111; i++) {
+			longMethod.append("  x = x + 1.\n");
+		}
+		assertEquals(List.of("method_length"), rules(longMethod.append("ENDMETHOD.").toString()));
+		StringBuilder deep = new StringBuilder("METHOD m.\n");
+		for (int i = 0; i < 7; i++) {
+			deep.append("IF a = ").append(i).append(".\n");
+		}
+		for (int i = 0; i < 7; i++) {
+			deep.append("ENDIF.\n");
+		}
+		assertEquals(List.of("nesting"), rules(deep.append("ENDMETHOD.").toString()));
+		StringBuilder complex = new StringBuilder("METHOD m.\n");
+		for (int i = 0; i < 13; i++) {
+			complex.append("IF a = ").append(i).append(" OR b = 1.\nENDIF.\n");
+		}
+		assertEquals(List.of("cyclomatic_complexity"), rules(complex.append("ENDMETHOD.").toString()));
+	}
+
+	@Test
+	void linesAndKeywordCase() {
+		assertEquals(List.of("line_length"), rules("x = '" + "a".repeat(130) + "'."));
+		assertEquals(List.of("whitespace_end"), rules("x = 1.  \ny = 2."));
+		assertEquals(List.of("sequential_blank"), rules("x = 1.\n\n\n\n\ny = 2."));
+		assertEquals(List.of("keyword_case"), rules("DATA a TYPE i.\nDATA b TYPE i.\nDATA c TYPE i.\n"
+				+ "DATA d TYPE i.\nDATA e TYPE i.\ndata f type i.\na = b + c + d + e + f."));
+		assertEquals(List.of(), rules("data a type i.\ndata b type i.\na = b."));
+	}
+
+	@Test
+	void strictSqlAndObsoleteAdditions() {
+		assertEquals(List.of("sql_escape_host_variables"),
+				rules("SELECT SINGLE vbeln FROM likp WHERE vbeln = @lv INTO ls_likp.\nIF sy-subrc = 0.\nENDIF."));
+		assertEquals(List.of(), rules("SELECT SINGLE vbeln FROM likp WHERE vbeln = @lv INTO @DATA(ls).\n"
+				+ "IF sy-subrc = 0.\nENDIF."));
+		assertEquals(List.of("obsolete_statement"), rules("ON CHANGE OF x.\nENDON."));
+		assertEquals(List.of("obsolete_statement"), rules("LOCAL x."));
+	}
 }
