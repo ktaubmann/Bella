@@ -45,7 +45,8 @@ public final class SdkAdtBackend implements AdtBackend {
 			String destination = abap.getDestinationId();
 			Object data = Reflect.call(abap, "getDestinationData");
 			systems.add(new AdtSystem(destination, project.getName(), abap.getSystemId(),
-					Reflect.string(data, "getClient"), Reflect.string(data, "getUser"), loggedOn(destination)));
+					Reflect.string(data, "getClient"), Reflect.string(data, "getUser"), loggedOn(destination),
+					Reflect.string(data, "getLanguage")));
 		}
 		return systems;
 	}

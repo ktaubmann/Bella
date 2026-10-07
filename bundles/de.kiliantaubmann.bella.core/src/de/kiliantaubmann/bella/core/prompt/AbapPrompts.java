@@ -125,7 +125,8 @@ public final class AbapPrompts {
 			Quality rules for code you write (ATC and the extended program check apply them):
 			- No text literals the user sees: WRITE, MESSAGE, titles and comments of the selection screen use text
 			  symbols (TEXT-001 or 'Text'(001)) or a message class (MESSAGE e001(zclass)). Maintain the text
-			  symbols with adt_write_text_elements.
+			  symbols with adt_write_text_elements; create a message class with adt_create_object (type MSAG)
+			  and add messages with adt_write_metadata.
 			- Selection texts of PARAMETERS and SELECT-OPTIONS go into the text pool (adt_write_text_elements, part
 			  selections), never into code such as %_p_name_%_app_%-text = '…' in INITIALIZATION.
 			- Reports: a local class (e.g. lcl_report) holds the logic; START-OF-SELECTION only creates it and calls

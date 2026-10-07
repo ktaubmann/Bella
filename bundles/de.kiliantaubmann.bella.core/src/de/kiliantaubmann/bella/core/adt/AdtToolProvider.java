@@ -148,6 +148,73 @@ public final class AdtToolProvider implements ToolProvider {
 	private static final String NAME_DESC = "Object name, e.g. ZCL_SALES_ORDER.";
 	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD. Omit if unknown.";
 
+	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
+			+ "module, needs 'group'), MSAG (message class), DTEL, DOMA, TTYP, TABL/DT (table), TABL/DS (structure), "
+			+ "DDLS, DCLS, DDLX, BDEF, SRVD, SRVB (service binding).";
+
+	/** Fields of DDIC objects, shared by adt_create_object and adt_write_metadata. */
+	private static final String[] DDIC_PROPS = { "domain", "string", "DTEL: the domain it is based on.",
+			"data_type", "string", "DTEL without domain, or DOMA: built-in type such as CHAR, NUMC, DEC, INT4.",
+			"length", "integer", "DTEL/DOMA: length.", "decimals", "integer", "DTEL/DOMA: decimal places.",
+			"output_length", "integer", "DOMA: output length (default the length).", "short_label", "string",
+			"DTEL: short field label (10).", "medium_label", "string", "DTEL: medium field label (20).",
+			"long_label", "string", "DTEL: long field label (40).", "heading_label", "string",
+			"DTEL: column heading (55).", "search_help", "string", "DTEL: search help.", "value_table", "string",
+			"DOMA: value table.", "lowercase", "boolean", "DOMA: lower case allowed.", "sign", "boolean",
+			"DOMA: sign allowed.", "conversion_exit", "string", "DOMA: conversion routine, e.g. ALPHA.", "row_type",
+			"string", "TTYP: row type, a built-in type (STRING, I …) or a DDIC structure.", "row_type_kind", "string",
+			"TTYP: builtin or structure (default: guessed from row_type).", "service_definition", "string",
+			"SRVB: the service definition.", "binding_type", "string", "SRVB: e.g. ODATA V4 UI or ODATA V2 Web API.",
+			"odata_version", "string", "SRVB: V2 or V4.", "category", "string", "SRVB: 0 UI, 1 Web API." };
+
+	private static String[] createProps() {
+		List<String> p = new ArrayList<>(List.of(objectProps("description", "string",
+				"Short description (max. 60 characters).", "package", "string",
+				"Package, e.g. $TMP or ZSALES; not needed for FUNC, which belongs to the package of its group.",
+				"transport", "string", "Transport request (not a task) for non-local packages.", "source", "string",
+				"Optional initial source code for source-based types. For FUNC the interface goes into the FUNCTION "
+						+ "statement, without the *\" comment block.",
+				"group", "string", "FUNC, and INCL of a function group: the function group.", "processing_type",
+				"string", "FUNC: normal (default), rfc or update.", "update_task_kind", "string",
+				"FUNC with processing_type update: startImmediate, immediateStartNoRestart or startDelayed.",
+				"language", "string", "Original language (2 letters); default the logon language.")));
+		p.addAll(List.of(DDIC_PROPS));
+		return p.toArray(String[]::new);
+	}
+
+	private static String[] metadataProps() {
+		List<String> p = new ArrayList<>(List.of(objectProps("description", "string", "New short description.",
+				"transport", "string", "Transport request, required for non-local objects unless already assigned.")));
+		p.addAll(List.of(DDIC_PROPS));
+		return p.toArray(String[]::new);
+	}
+
+	/** The array fields: MSAG messages and DOMA fixed values. */
+	private static void addArrays(JsonObject schema) {
+		JsonObject props = schema.getAsJsonObject("properties");
+		props.add("messages", arrayOf("MSAG: messages as {number, text} (number 000-999, text up to 73 characters).",
+				"number", "string", "text", "string"));
+		props.add("fixed_values", arrayOf("DOMA: fixed values as {low, high, text}; replaces all fixed values.",
+				"low", "string", "high", "string", "text", "string"));
+	}
+
+	private static JsonObject arrayOf(String description, String... itemProps) {
+		JsonObject a = new JsonObject();
+		a.addProperty("type", "array");
+		a.addProperty("description", description);
+		JsonObject item = new JsonObject();
+		item.addProperty("type", "object");
+		JsonObject ip = new JsonObject();
+		for (int i = 0; i + 1 < itemProps.length; i += 2) {
+			JsonObject f = new JsonObject();
+			f.addProperty("type", itemProps[i + 1]);
+			ip.add(itemProps[i], f);
+		}
+		item.add("properties", ip);
+		a.add("items", item);
+		return a;
+	}
+
 	private static String[] objectProps(String... extra) {
 		List<String> p = new ArrayList<>(List.of("name", "string", NAME_DESC, "type", "string", TYPE_DESC, "system",
 				"string", SYSTEM_DESC));
@@ -264,13 +331,29 @@ public final class AdtToolProvider implements ToolProvider {
 						"include", "string", "Class include, default main.", "transport", "string",
 						"Transport request, required for non-local objects unless already assigned.")),
 				Capability.WRITE_SOURCE, ToolSpec.Kind.WRITE));
+		JsonObject createSchema = schema(new String[] { "name", "type", "description" }, createProps());
+		addArrays(createSchema);
+		createSchema.getAsJsonObject("properties").getAsJsonObject("type").addProperty("description", CREATE_TYPE_DESC);
 		t.add(ToolSpec.of("adt_create_object",
-				"Create a new class (CLAS), interface (INTF) or program (PROG), optionally with initial source. Does not activate.",
-				schema(new String[] { "name", "type", "description", "package" }, objectProps("description", "string",
-						"Short description (max. 60 characters).", "package", "string", "Package, e.g. $TMP or ZSALES.",
-						"transport", "string", "Transport request for non-local packages.", "source", "string",
-						"Optional initial source code.")),
-				Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
+				"Create a new object, optionally with initial source; does not activate. Types: " + CREATE_TYPE_DESC
+						+ " Message classes take 'messages', data elements 'domain' or 'data_type' and labels, domains "
+						+ "'data_type' and 'length', table types 'row_type', service bindings 'service_definition'.",
+				createSchema, Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
+		JsonObject metadataSchema = schema(new String[] { "name", "type" }, metadataProps());
+		addArrays(metadataSchema);
+		JsonObject remove = new JsonObject();
+		remove.addProperty("type", "array");
+		remove.addProperty("description", "MSAG: numbers of messages to delete.");
+		JsonObject str = new JsonObject();
+		str.addProperty("type", "string");
+		remove.add("items", str);
+		metadataSchema.getAsJsonObject("properties").add("remove_numbers", remove);
+		t.add(ToolSpec.of("adt_write_metadata",
+				"Change the metadata of a data element (DTEL), domain (DOMA), table type (TTYP) or the messages of a "
+						+ "message class (MSAG). Only the given fields change; Bella reads the object first and keeps "
+						+ "everything else. Message classes: 'messages' adds or replaces messages by number, "
+						+ "'remove_numbers' deletes some. Does not activate (message classes need no activation).",
+				metadataSchema, null, ToolSpec.Kind.WRITE));
 		t.add(ToolSpec.of("adt_write_text_elements",
 				"Replace one part of the text pool of a program (PROG), class (CLAS, symbols only) or function group "
 						+ "(FUGR). Use it for the selection texts of PARAMETERS and SELECT-OPTIONS and for the text symbols "
@@ -305,16 +388,22 @@ public final class AdtToolProvider implements ToolProvider {
 	@Override
 	public Optional<String> refuse(String name, JsonObject in, CancelToken cancel) {
 		List<String> patterns = packagePatterns(writePackages.get());
-		if (patterns.isEmpty() || !List.of("adt_write_source", "adt_create_object", "adt_activate", "adt_write_text_elements")
-				.contains(name)) {
+		if (patterns.isEmpty() || !WRITES.contains(name)) {
 			return Optional.empty();
 		}
 		try {
-			if (name.equals("adt_create_object")) {
+			String group = Json.str(in, "group");
+			boolean inGroup = group != null && !group.isBlank()
+					&& List.of("FUNC", "INCL").contains(AdtDdic.normalizeType(Json.str(in, "type")));
+			if (name.equals("adt_create_object") && !inGroup) {
 				String pkg = Json.str(in, "package");
 				return checkPackage(Json.str(in, "name"), pkg == null ? "" : pkg.trim(), patterns);
 			}
 			AdtClient c = client(system(in));
+			if (name.equals("adt_create_object")) {
+				// a function module or group include belongs to the package of its group
+				return checkPackage(Json.str(in, "name"), c.packageOf(AdtDdic.groupUri(group), cancel), patterns);
+			}
 			List<JsonObject> objects = new ArrayList<>();
 			if (name.equals("adt_activate")) {
 				JsonArray arr = Json.arr(in, "objects");
@@ -338,6 +427,10 @@ public final class AdtToolProvider implements ToolProvider {
 			return Optional.of("Could not check the package before writing: " + e.getMessage());
 		}
 	}
+
+	/** Tools that change objects and are bound to the allowed packages. */
+	private static final List<String> WRITES = List.of("adt_write_source", "adt_create_object", "adt_activate",
+			"adt_write_text_elements", "adt_write_metadata");
 
 	private static Optional<String> checkPackage(String object, String pkg, List<String> patterns) {
 		if (pkg.isEmpty()) {
@@ -373,6 +466,7 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_table_contents" -> tableContents(in, cancel);
 			case "adt_write_source" -> writeSource(in, cancel);
 			case "adt_create_object" -> create(in, cancel);
+			case "adt_write_metadata" -> writeMetadata(in, cancel);
 			case "adt_activate" -> activate(in, cancel);
 			default -> ToolResult.error("Unknown ADT tool " + name);
 			};
@@ -847,21 +941,162 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult create(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem s = system(in);
 		AdtClient c = client(s);
-		AdtObjectRef ref = c.create(Json.str(in, "type"), Json.str(in, "name"), Json.str(in, "description"),
-				Json.str(in, "package"), Json.str(in, "transport"), s.user(), cancel);
-		String source = Json.str(in, "source");
-		boolean written = source != null && !source.isBlank();
-		if (written) {
-			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-				AdtClient.writeSource(session, ref.uri(), null, source, Json.str(in, "transport"), cancel);
-			} finally {
-				c.invalidate(ref.uri());
-				inactive.remove(s.destinationId());
-			}
+		String type = AdtDdic.normalizeType(Json.str(in, "type"));
+		String name = Json.str(in, "name");
+		String pkg = Json.str(in, "package");
+		String transport = Json.str(in, "transport");
+		boolean inGroup = Json.str(in, "group") != null && !Json.str(in, "group").isBlank();
+		if ((pkg == null || pkg.isBlank()) && !(type.equals("FUNC") || type.equals("INCL") && inGroup)) {
+			return ToolResult.error("Give 'package', e.g. $TMP.");
 		}
-		return ToolResult.ok("Created " + ref.name() + " (" + ref.type() + ") in package "
-				+ Json.str(in, "package").toUpperCase(Locale.ROOT) + " on " + s.label() + ". Not activated yet."
-				+ (written ? checksAfterWrite(c, AdtObjectRef.objectUri(ref.uri()), source, false, cancel) : ""));
+		if (type.equals("MSAG") && transport != null && !transport.isBlank()
+				&& c.transport(transport, cancel).isEmpty()) {
+			// some releases drop the messages silently when given a task instead of a request
+			return ToolResult.error(transport.trim().toUpperCase(Locale.ROOT) + " is not a transport request. Message "
+					+ "classes need the request number, not the number of a task (adt_list_transports).");
+		}
+		String processing = Json.str(in, "processing_type");
+		String updateKind = Json.str(in, "update_task_kind");
+		if (type.equals("FUNC") && processing != null && !List.of("normal", "rfc", "update").contains(processing)) {
+			return ToolResult.error("processing_type is normal, rfc or update.");
+		}
+		if ("update".equals(processing) == (updateKind == null || updateKind.isBlank()) && type.equals("FUNC")
+				&& processing != null) {
+			return ToolResult.error("update_task_kind goes with processing_type update, and only with it.");
+		}
+		String language = Json.str(in, "language");
+		AdtDdic.CreateRequest req = AdtDdic.create(type, name, Json.str(in, "description"), pkg, transport,
+				language == null || language.isBlank() ? s.language() : language, s.user(), in);
+		List<AdtDdic.Message> messages = type.equals("MSAG") ? AdtDdic.messages(in) : List.of();
+		AdtObjectRef ref = c.create(req, name, pkg, Json.str(in, "description"), cancel);
+		String source = Json.str(in, "source");
+		boolean written = source != null && !source.isBlank() && !AdtDdic.METADATA_ONLY.contains(type);
+		if (type.equals("FUNC") && written) {
+			source = AdtDdic.stripParameterComments(source);
+		}
+		StringBuilder notes = new StringBuilder();
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			// SAP stores only a shell for these on the POST; the metadata follows with a PUT
+			String lang = AdtDdic.language(language == null || language.isBlank() ? s.language() : language);
+			switch (type) {
+			case "DTEL", "TTYP" -> AdtClient.writeMetadata(session, ref.uri(), req.body(),
+					type.equals("DTEL") ? AdtDdic.DATAELEMENT_TYPE : AdtDdic.TABLETYPE_TYPE, transport, cancel);
+			case "MSAG" -> {
+				if (!messages.isEmpty()) {
+					AdtClient.writeMetadata(session, ref.uri(), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+							+ AdtDdic.messageClassXml(ref.name(), Json.str(in, "description"),
+									pkg.trim().toUpperCase(Locale.ROOT), lang, messages),
+							AdtDdic.MESSAGECLASS_TYPE, transport, cancel);
+					notes.append(" ").append(messages.size()).append(" messages written.");
+				}
+			}
+			case "FUNC" -> {
+				if (processing != null && !processing.equals("normal")) {
+					String meta = c.readMetadata(ref.uri() + "?version=inactive", cancel);
+					AdtClient.writeMetadata(session, ref.uri(),
+							AdtDdic.withProcessingType(meta, processing, updateKind), AdtDdic.FUNCTION_MODULE_TYPE,
+							transport, cancel);
+					String stored = AdtDdic.processingType(c.readMetadata(ref.uri() + "?version=inactive", cancel));
+					notes.append(stored.equals(processing) ? " Processing type " + processing + "."
+							: " SAP kept processing type " + stored + " instead of " + processing
+									+ "; set it in the function module's properties.");
+				}
+			}
+			default -> {
+				// nothing to add
+			}
+			}
+			if (written) {
+				AdtClient.writeSource(session, ref.uri(), null, source, transport, cancel);
+			}
+		} finally {
+			c.invalidate(ref.uri());
+			inactive.remove(s.destinationId());
+		}
+		String where = type.equals("FUNC") || type.equals("INCL") && inGroup
+				? "function group " + Json.str(in, "group").trim().toUpperCase(Locale.ROOT)
+				: "package " + pkg.trim().toUpperCase(Locale.ROOT);
+		String checks = !written ? ""
+				: AdtDdic.ABAP_SOURCE.contains(type) ? checksAfterWrite(c, ref.uri(), source, false, cancel)
+						: syntaxAfterWrite(c, ref.uri(), cancel);
+		return ToolResult.ok("Created " + ref.name() + " (" + type + ") in " + where + " on " + s.label() + "."
+				+ notes + (type.equals("MSAG") ? "" : " Not activated yet.") + checks);
+	}
+
+	/** Changes DDIC metadata or the messages of a message class, keeping all fields not given. */
+	private ToolResult writeMetadata(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String type = AdtDdic.normalizeType(Json.str(in, "type"));
+		if (!List.of("DTEL", "DOMA", "TTYP", "MSAG").contains(type)) {
+			return ToolResult.error("adt_write_metadata changes DTEL, DOMA, TTYP and MSAG; use adt_write_source for "
+					+ "source-based objects.");
+		}
+		String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
+		String uri = AdtDdic.objectUri(type, name, null);
+		String current = c.readMetadata(uri, cancel);
+		AdtDdic.Header h = AdtDdic.header(current);
+		String description = Json.str(in, "description") == null ? h.description() : Json.str(in, "description");
+		String lang = AdtDdic.language(h.language().isEmpty() ? s.language() : h.language());
+		String body;
+		String contentType;
+		String summary;
+		switch (type) {
+		case "DTEL" -> {
+			body = AdtDdic.dataElementXml(name, description, h.pkg(), lang, null,
+					AdtDdic.dataElementFields(in, AdtDdic.parseDataElement(current)));
+			contentType = AdtDdic.DATAELEMENT_TYPE;
+			summary = "data element";
+		}
+		case "DOMA" -> {
+			body = AdtDdic.domainXml(name, description, h.pkg(), lang, null,
+					AdtDdic.domainFields(in, AdtDdic.parseDomain(current)));
+			contentType = AdtDdic.DOMAIN_TYPE;
+			summary = "domain";
+		}
+		case "TTYP" -> {
+			String rowType = Json.str(in, "row_type");
+			if (rowType == null || rowType.isBlank()) {
+				return ToolResult.error("Give 'row_type'; it is the only table type field Bella changes.");
+			}
+			body = AdtDdic.tableTypeXml(name, description, h.pkg(), lang, null, rowType, Json.str(in, "row_type_kind"));
+			contentType = AdtDdic.TABLETYPE_TYPE;
+			summary = "table type";
+		}
+		default -> {
+			AdtDdic.MessageClass mc = AdtDdic.parseMessageClass(current);
+			List<String> remove = new ArrayList<>();
+			JsonArray arr = Json.arr(in, "remove_numbers");
+			if (arr != null) {
+				arr.forEach(e -> remove.add(e.getAsString().trim()));
+			}
+			List<AdtDdic.Message> merged = AdtDdic.mergeMessages(mc.messages(), AdtDdic.messages(in), remove);
+			body = AdtDdic.messageClassXml(name, description, h.pkg(), lang, merged);
+			contentType = AdtDdic.MESSAGECLASS_TYPE;
+			summary = "message class (" + merged.size() + " messages)";
+		}
+		}
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeMetadata(session, uri, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + body,
+					contentType, Json.str(in, "transport"), cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Saved the " + summary + " " + name + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")")
+				+ (type.equals("MSAG") ? "." : ". Not activated yet."));
+	}
+
+	/** Syntax check of a saved source that Bella's style check does not understand (CDS, RAP, DDIC sources). */
+	private static String syntaxAfterWrite(AdtClient c, String objectUri, CancelToken cancel) {
+		try {
+			List<AdtClient.Message> msgs = c.syntaxCheck(objectUri, null, true, cancel);
+			return msgs.isEmpty() ? "\n\nSyntax check: no errors." : "\n\nSyntax check of the saved version:\n" + format(msgs);
+		} catch (IOException | RuntimeException e) {
+			return "\n\nSyntax check could not run: " + e.getMessage();
+		}
 	}
 
 	private ToolResult activate(JsonObject in, CancelToken cancel) throws IOException {

@@ -74,6 +74,7 @@ A model that does not know your system guesses field names and signatures. Bella
 - **Style check**: `abap_lint` checks code without SAP access for obsolete statements (`MOVE`, `CALL METHOD`, `CREATE OBJECT`, header lines, `FORM` …), `SELECT *`, `SELECT` in loops, `SELECT … ENDSELECT`, unchecked `SELECT SINGLE`, `CATCH cx_root`, empty `CATCH` blocks, break-points, aborting messages, texts the user sees as literals instead of text symbols, and selection texts set in code (`%_p_name_%_app_%-text`). The diff preview shows its findings for generated code. It is a small rule set of Bella's own, not abaplint and no replacement for ATC.
 - **Checks after writing, as with ARC-1**: `adt_write_source` and `adt_create_object` add the style check of the code written and a syntax check of the saved version to their result, so the model fixes them before activating. `adt_activate` with `run_atc` runs ATC on the activated objects in the same call, because ATC checks the active version; findings are listed by priority. *Write and activate* and *Automode* run ATC once when a change is complete (not on every activation), fix priority 1 and 2 and explain what they leave.
 - **Text elements**: `adt_text_elements` reads and `adt_write_text_elements` writes the text pool of a program, class or function group through ADT's textelements service, as ARC-1's `SAPWrite edit_text_symbols` does: selection texts of `PARAMETERS` and `SELECT-OPTIONS`, text symbols (`TEXT-001`) and list headings. They are active at once.
+- **Creating objects**: `adt_create_object` creates classes, interfaces, programs, includes, function groups and function modules (with processing type normal, RFC or update), message classes with their messages, data elements, domains (with fixed values), table types, tables, structures, CDS views, access controls, metadata extensions, behavior definitions, service definitions and service bindings, as ARC-1's `SAPWrite create` does. `adt_write_metadata` changes data elements, domains, table types and the messages of a message class; it reads the object first and changes only the fields given.
 
 Tables and structures are read as source on newer ABAP releases (7.52 and later). On older releases, and for data elements, domains, table types and message classes, Bella summarizes the object's ADT description.
 
@@ -114,7 +115,7 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 |---|---|
 | Read and check (`adt_search_objects`, `adt_read_source`, `adt_context`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, `adt_text_elements`, `adt_transport_info`, `adt_short_dumps`, `adt_list_transports`, `adt_transport_review`, `abap_lint`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
 | Table contents (`adt_table_contents`; ARC-1: SAPQuery) | asks first |
-| Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_write_text_elements`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
+| Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_write_metadata`, `adt_write_text_elements`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
 | Release transports | always refused |
 
 The chat mode can tighten or loosen this (see *Chat modes*); refusals stay refusals in every mode.

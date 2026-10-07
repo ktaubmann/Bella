@@ -1050,45 +1050,50 @@ public final class AdtClient {
 	}
 
 	/**
-	 * Creates an empty class, interface or program.
+	 * Creates an object without source (see {@link AdtDdic#create}). Metadata
+	 * that SAP ignores on the create POST is written afterwards by the caller
+	 * ({@link #writeMetadata}).
 	 *
 	 * @return the new object
 	 */
-	public AdtObjectRef create(String type, String name, String description, String packageName, String transport,
-			String responsible, CancelToken cancel) throws IOException {
-		String t = type.toUpperCase(Locale.ROOT);
-		String upperName = name.toUpperCase(Locale.ROOT);
-		String common = " adtcore:description=\"" + AdtXml.escape(description) + "\" adtcore:name=\""
-				+ AdtXml.escape(upperName) + "\""
-				+ (responsible == null ? "" : " adtcore:responsible=\"" + AdtXml.escape(responsible) + "\"");
-		String pkg = "<adtcore:packageRef adtcore:name=\"" + AdtXml.escape(packageName.toUpperCase(Locale.ROOT))
-				+ "\"/>";
-		String path;
-		String xml;
-		switch (t.contains("/") ? t.substring(0, t.indexOf('/')) : t) {
-		case "CLAS" -> {
-			path = "/sap/bc/adt/oo/classes";
-			xml = "<class:abapClass xmlns:class=\"http://www.sap.com/adt/oo/classes\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
-					+ common + " adtcore:type=\"CLAS/OC\" class:final=\"true\" class:visibility=\"public\">" + pkg
-					+ "<class:include adtcore:name=\"CLAS/OC\" adtcore:type=\"CLAS/OC\" class:includeType=\"testclasses\"/>"
-					+ "<class:superClassRef/></class:abapClass>";
+	AdtObjectRef create(AdtDdic.CreateRequest r, String name, String packageName, String description,
+			CancelToken cancel) throws IOException {
+		AdtResponse resp = exchange(transport, AdtRequest.post(r.collection() + r.query(), "application/*", r.body(),
+				r.contentType()), cancel);
+		if (resp.status() == 415 && AdtDdic.DATAELEMENT_TYPE.equals(r.contentType())) {
+			// releases before data element v2
+			resp = exchange(transport, AdtRequest.post(r.collection() + r.query(), "application/*", r.body(),
+					AdtDdic.DATAELEMENT_TYPE_V1), cancel);
 		}
-		case "INTF" -> {
-			path = "/sap/bc/adt/oo/interfaces";
-			xml = "<intf:abapInterface xmlns:intf=\"http://www.sap.com/adt/oo/interfaces\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
-					+ common + " adtcore:type=\"INTF/OI\">" + pkg + "</intf:abapInterface>";
+		if (!resp.ok()) {
+			throw new AdtException(resp.status(), "Could not create " + name.toUpperCase(Locale.ROOT) + ": "
+					+ AdtErrors.message(resp));
 		}
-		case "PROG" -> {
-			path = "/sap/bc/adt/programs/programs";
-			xml = "<program:abapProgram xmlns:program=\"http://www.sap.com/adt/programs/programs\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
-					+ common + " adtcore:type=\"PROG/P\">" + pkg + "</program:abapProgram>";
-		}
-		default -> throw new AdtException(400, "Creating objects of type " + type
-				+ " is not supported; supported are CLAS, INTF and PROG.");
-		}
-		String query = transport == null || transport.isBlank() ? "" : "?corrNr=" + enc(transport);
-		send(AdtRequest.post(path + query, "application/*", "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + xml,
-				"application/*"), cancel);
-		return new AdtObjectRef(AdtObjectRef.uriFor(upperName, t), upperName, t, packageName, description);
+		String upper = name.trim().toUpperCase(Locale.ROOT);
+		return new AdtObjectRef(r.objectUri(), upper, r.type(), packageName == null ? "" : packageName, description);
+	}
+
+	/** The metadata XML of an object (data element, domain, message class …). */
+	public String readMetadata(String objectUri, CancelToken cancel) throws IOException {
+		return send(AdtRequest.get(objectUri, "application/*"), cancel).body();
+	}
+
+	/**
+	 * Replaces the metadata XML of an object: lock, PUT, unlock.
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	public static String writeMetadata(AdtTransport.Session session, String objectUri, String body, String contentType,
+			String transport, CancelToken cancel) throws IOException {
+		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
+			String path = objectUri + "?lockHandle=" + enc(handle) + (tr.isBlank() ? "" : "&corrNr=" + enc(tr));
+			AdtResponse put = exchange(session, AdtRequest.put(path, body, contentType), cancel);
+			if (put.status() == 415 && AdtDdic.DATAELEMENT_TYPE.equals(contentType)) {
+				put = exchange(session, AdtRequest.put(path, body, AdtDdic.DATAELEMENT_TYPE_V1), cancel);
+			}
+			if (!put.ok()) {
+				throw new AdtException(put.status(), "Could not write the metadata: " + AdtErrors.message(put));
+			}
+		});
 	}
 }
