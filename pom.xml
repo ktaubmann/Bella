@@ -40,9 +40,6 @@
     -->
     <profile>
       <id>adt</id>
-      <properties>
-        <eclipse.release>2026-06</eclipse.release>
-      </properties>
       <modules>
         <module>bundles/de.kiliantaubmann.bella.adt</module>
         <module>features/de.kiliantaubmann.bella.adt.feature</module>
