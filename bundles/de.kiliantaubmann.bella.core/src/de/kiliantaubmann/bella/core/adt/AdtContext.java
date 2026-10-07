@@ -40,9 +40,10 @@ public final class AdtContext {
 	 * @param notFound candidates that do not exist in the system
 	 * @param skipped  candidates left out because a limit was reached
 	 * @param failed   candidates that could not be read, e.g. because the connection broke; as {@code NAME: error}
+	 * @param error    why loading stopped early (connection lost), otherwise {@code null}
 	 */
 	public record Result(String text, List<String> used, List<String> notFound, List<String> skipped,
-			List<String> failed) {
+			List<String> failed, String error) {
 
 		public boolean isEmpty() {
 			return used.isEmpty();
@@ -74,6 +75,7 @@ public final class AdtContext {
 		List<String> notFound = new ArrayList<>();
 		List<String> skipped = new ArrayList<>();
 		List<String> failed = new ArrayList<>();
+		String error = null;
 		for (Reference ref : candidates) {
 			cancel.throwIfCancelled();
 			if (used.size() >= limits.maxObjects() || text.length() >= limits.maxChars()
@@ -99,6 +101,11 @@ public final class AdtContext {
 				}
 				text.append(block);
 				used.add(obj.name());
+			} catch (AdtConnectionException e) {
+				// every further request would fail the same way
+				error = e.getMessage();
+				failed.add(ref.name() + ": " + error);
+				break;
 			} catch (IOException | RuntimeException e) {
 				cancel.throwIfCancelled();
 				Log.info("adt", "context: " + ref.name() + " not readable: " + e.getMessage());
@@ -117,10 +124,10 @@ public final class AdtContext {
 		}
 		Log.info("adt", "context: " + candidates.size() + " candidates, used " + used + ", not found " + notFound
 				+ (skipped.isEmpty() ? "" : ", skipped " + skipped)
-				+ (failed.isEmpty() ? "" : ", failed " + failed.size()) + ", " + text.length() + " chars ("
-				+ Log.millisSince(start) + " ms)");
+				+ (failed.isEmpty() ? "" : ", failed " + failed.size()) + (error == null ? "" : ", stopped: " + error)
+				+ ", " + text.length() + " chars (" + Log.millisSince(start) + " ms)");
 		return new Result(text.toString(), List.copyOf(used), List.copyOf(notFound), List.copyOf(skipped),
-				List.copyOf(failed));
+				List.copyOf(failed), error);
 	}
 
 	/** Exact-name search; among several hits the object type the code position suggests wins. */

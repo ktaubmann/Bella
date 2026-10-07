@@ -56,9 +56,8 @@ public final class McpToolProvider implements ToolProvider {
 
 	@Override
 	public List<ToolSpec> listTools() throws IOException {
-		client.initialize(clientVersion);
 		List<ToolSpec> specs = new ArrayList<>();
-		for (McpClient.Tool t : client.listTools()) {
+		for (McpClient.Tool t : inSession(client::listTools)) {
 			specs.add(ToolSpec.of(t.name(), t.description(), t.inputSchema(), ARC1_CAPABILITIES.get(t.name()),
 					kindOf(t)));
 		}
@@ -82,9 +81,27 @@ public final class McpToolProvider implements ToolProvider {
 
 	@Override
 	public ToolResult call(String remoteName, JsonObject input, CancelToken cancel) throws IOException {
-		client.initialize(clientVersion);
-		McpClient.CallResult r = client.callTool(remoteName, input, cancel);
+		McpClient.CallResult r = inSession(() -> client.callTool(remoteName, input, cancel));
 		return new ToolResult(r.text(), r.isError());
+	}
+
+	private interface Request<T> {
+		T run() throws IOException;
+	}
+
+	/**
+	 * Runs a request in an initialized session. When the server has forgotten
+	 * the session (e.g. it was restarted), a new one is started once; the
+	 * server rejected the request unseen, so repeating it is safe.
+	 */
+	private <T> T inSession(Request<T> request) throws IOException {
+		client.initialize(clientVersion);
+		try {
+			return request.run();
+		} catch (McpSessionExpiredException e) {
+			client.initialize(clientVersion);
+			return request.run();
+		}
 	}
 
 	public void close() {

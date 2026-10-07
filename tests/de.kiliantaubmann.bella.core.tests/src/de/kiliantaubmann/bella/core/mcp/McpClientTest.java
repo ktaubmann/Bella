@@ -2,9 +2,12 @@ package de.kiliantaubmann.bella.core.mcp;
 
 import static de.kiliantaubmann.bella.core.testutil.FakeHttp.sse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +21,7 @@ import de.kiliantaubmann.bella.core.testutil.FakeHttp;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
+import de.kiliantaubmann.bella.core.util.HttpTransport;
 import de.kiliantaubmann.bella.core.util.Json;
 
 class McpClientTest {
@@ -101,6 +105,40 @@ class McpClientTest {
 		assertEquals("Bearer tok", http.sent.get(0).headers().get("authorization"));
 		assertEquals("abc", http.sent.get(2).headers().get("mcp-session-id"));
 		assertEquals("2025-06-18", http.sent.get(2).headers().get("mcp-protocol-version"));
+	}
+
+	@Test
+	void unreachableHttpServerGetsReadableMessage() {
+		HttpTransport down = (uri, headers, body, cancel) -> {
+			throw new ConnectException();
+		};
+		McpToolProvider p = new McpToolProvider("demo", "Demo", new McpClient(
+				new StreamableHttpTransport(URI.create("http://localhost:1/mcp?token=secret"), null, down)), "0.1");
+		IOException e = assertThrows(IOException.class, p::listTools);
+		assertTrue(e.getMessage().contains("not reachable at http://localhost:1/mcp (connection refused)"),
+				e.getMessage());
+		assertFalse(e.getMessage().contains("secret"), e.getMessage());
+	}
+
+	@Test
+	void startsNewSessionAfterServerRestart() throws Exception {
+		String init = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\"}}";
+		String list = "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"tools\":[{\"name\":\"DemoTool\"}]}}";
+		FakeHttp http = new FakeHttp()
+				.respond(200, Map.of("content-type", "application/json", "mcp-session-id", "s1"), init)
+				.respond(202, "application/json", "")
+				.respond(404, "application/json", "")
+				.respond(200, Map.of("content-type", "application/json", "mcp-session-id", "s2"), init)
+				.respond(202, "application/json", "")
+				.respond(200, "application/json", list);
+		McpToolProvider p = new McpToolProvider("demo", "Demo",
+				new McpClient(new StreamableHttpTransport(URI.create("http://localhost:1/mcp"), null, http)), "0.1");
+		List<ToolSpec> tools = p.listTools();
+		assertEquals(List.of("DemoTool"), tools.stream().map(ToolSpec::remoteName).toList());
+		assertEquals("s1", http.sent.get(2).headers().get("mcp-session-id"));
+		assertTrue(http.sent.get(3).body().contains("\"initialize\""));
+		assertFalse(http.sent.get(3).headers().containsKey("mcp-session-id"));
+		assertEquals("s2", http.sent.get(5).headers().get("mcp-session-id"));
 	}
 
 	@Test

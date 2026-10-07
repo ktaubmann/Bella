@@ -64,6 +64,17 @@ class AdtToolProviderTest {
 	}
 
 	@Test
+	void contextReportsLostConnection() {
+		FakeAdt adt = twoSystems();
+		adt.down = new AdtConnectionException("dev", "connection broken");
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").call("adt_context",
+				Json.parseObject("{\"names\":[\"ZCL_DEMO_A\",\"ZCL_DEMO_B\"]}"), CancelToken.NONE);
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("Connection to SAP system dev lost"), r.content());
+		assertFalse(r.content().contains("exist"), r.content());
+	}
+
+	@Test
 	void activationReportsErrors() {
 		FakeAdt adt = twoSystems().route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(
 				"<chkl:messages xmlns:chkl=\"http://www.sap.com/abapxml/checklist\"><msg type=\"E\" href=\"/sap/bc/adt/oo/classes/zcl_a/source/main#start=3,1\"><shortText><txt>Syntax error</txt></shortText></msg></chkl:messages>"));

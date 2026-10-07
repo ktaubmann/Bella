@@ -233,7 +233,8 @@ public final class AdtToolProvider implements ToolProvider {
 		List<ToolSpec> t = new ArrayList<>();
 		t.add(ToolSpec.of("adt_list_systems",
 				"List the ABAP projects (SAP systems) in the workspace, whether they are logged on, and their release "
-						+ "(SAP_BASIS) or whether they are ABAP Cloud systems. Check it before writing code that depends on the release.",
+						+ "(SAP_BASIS) or whether they are ABAP Cloud systems. Check it before writing code that depends on the release. "
+						+ "The logon state does not test the network connection.",
 				schema(new String[0]), null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_search_objects",
 				"Search repository objects by name pattern (wildcard *), e.g. ZCL_SALES*. Returns name, type, package and description.",
@@ -832,6 +833,9 @@ public final class AdtToolProvider implements ToolProvider {
 		} catch (CancelToken.CancelledException e) {
 			return ToolResult.error("Cancelled.");
 		}
+		if (r.error() != null && r.isEmpty()) {
+			return ToolResult.error(r.error());
+		}
 		if (r.isEmpty()) {
 			if (!r.failed().isEmpty()) {
 				return ToolResult.error("Could not read from the SAP system (this does not mean the objects are "
@@ -845,6 +849,9 @@ public final class AdtToolProvider implements ToolProvider {
 		String text = r.text();
 		if (!r.skipped().isEmpty()) {
 			text += "Not loaded (limit reached, use adt_read_source): " + String.join(", ", r.skipped()) + "\n";
+		}
+		if (r.error() != null) {
+			text += "Loading stopped: " + r.error() + "\n";
 		}
 		return ToolResult.ok(text);
 	}

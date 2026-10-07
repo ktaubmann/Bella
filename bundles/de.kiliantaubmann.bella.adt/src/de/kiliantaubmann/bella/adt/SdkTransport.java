@@ -25,6 +25,7 @@ import com.sap.adt.communication.resources.ResourceException;
 import com.sap.adt.communication.session.AdtSystemSessionFactory;
 import com.sap.adt.communication.session.ISystemSession;
 
+import de.kiliantaubmann.bella.core.adt.AdtConnectionException;
 import de.kiliantaubmann.bella.core.adt.AdtRequest;
 import de.kiliantaubmann.bella.core.adt.AdtResponse;
 import de.kiliantaubmann.bella.core.adt.AdtTransport;
@@ -89,8 +90,56 @@ final class SdkTransport implements AdtTransport.Session {
 		throw new IOException("This ADT version cannot create resources for a stateful session.");
 	}
 
+	/**
+	 * Sends the request. A broken connection becomes an
+	 * {@link AdtConnectionException} with a short message; a stateless GET is
+	 * tried once more first, since the communication layer opens a new
+	 * connection then. Writes are never repeated.
+	 */
 	@Override
 	public AdtResponse send(AdtRequest request, CancelToken cancel) throws IOException {
+		try {
+			return sendOnce(request, cancel);
+		} catch (IOException first) {
+			if (!connectionLost(first)) {
+				throw first;
+			}
+			IOException last = first;
+			if (session == null && "GET".equals(request.method()) && !cancel.isCancelled()) {
+				Log.info("adt", "connection to " + destinationId + " lost, trying " + request.path() + " once more");
+				try {
+					return sendOnce(request, cancel);
+				} catch (IOException second) {
+					if (!connectionLost(second)) {
+						throw second;
+					}
+					last = second;
+				}
+			}
+			throw new AdtConnectionException(destinationId, AdtConnectionException.shortDetail(rootMessage(last)));
+		}
+	}
+
+	/** The ADT communication layer reports a broken connection as a CommunicationException. */
+	static boolean connectionLost(Throwable e) {
+		for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+			if (t.getClass().getName().endsWith("CommunicationException")) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String rootMessage(Throwable e) {
+		for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+			if (t.getClass().getName().endsWith("CommunicationException") && t.getMessage() != null) {
+				return t.getMessage();
+			}
+		}
+		return e.getMessage();
+	}
+
+	private AdtResponse sendOnce(AdtRequest request, CancelToken cancel) throws IOException {
 		URI uri = URI.create(request.path());
 		IRestResource resource = resource(uri);
 		IHeaders headers = HeadersFactory.newHeaders();

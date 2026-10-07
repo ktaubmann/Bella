@@ -95,6 +95,8 @@ public class ChatView extends ViewPart {
 	private Conversation session;
 	private volatile CancelToken running;
 	private int nextMessageId = 1;
+	/** Tool problems last shown in this chat; the same problem is not repeated on every question. */
+	private volatile List<String> shownToolErrors = List.of();
 	/** "messageId_segment" → code blocks of that text segment. */
 	private final Map<String, List<String>> codeBlocks = new HashMap<>();
 	/** Scripts issued before the page finished loading. */
@@ -423,6 +425,7 @@ public class ChatView extends ViewPart {
 		}
 		session = plugin.newConversation(this::confirmTool, new OpenEditorRouter(),
 				() -> turnOverride != null ? turnOverride : mode);
+		shownToolErrors = List.of();
 	}
 
 	private void newChat() {
@@ -558,7 +561,12 @@ public class ChatView extends ViewPart {
 		Renderer renderer = new Renderer(botId);
 		Job job = Job.create(Messages.get("chat.jobName"), (IProgressMonitor monitor) -> {
 			try {
-				BellaPlugin.getDefault().tools().refresh(err -> renderer.notice("warn", Markdown.escape(err)));
+				List<String> toolErrors = new ArrayList<>();
+				BellaPlugin.getDefault().tools().refresh(toolErrors::add);
+				if (!toolErrors.equals(shownToolErrors)) {
+					toolErrors.forEach(err -> renderer.notice("warn", Markdown.escape(err)));
+				}
+				shownToolErrors = List.copyOf(toolErrors);
 				session.ask(turnMode.apply(prompt), renderer, cancel);
 				answered.set(!cancel.isCancelled() && !renderer.incomplete);
 			} catch (CancelToken.CancelledException e) {

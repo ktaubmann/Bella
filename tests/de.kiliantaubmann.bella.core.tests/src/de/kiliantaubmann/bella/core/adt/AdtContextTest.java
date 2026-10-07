@@ -138,6 +138,32 @@ class AdtContextTest {
 	}
 
 	@Test
+	void stopsAtLostConnectionInsteadOfReportingNotFound() throws Exception {
+		FakeAdt adt = system();
+		adt.down = new AdtConnectionException("DEMO", "connection broken");
+		AdtContext.Result r = AdtContext.build(new AdtClient(adt.stateless("DEMO")),
+				List.of(new Reference("ZCL_DEMO_A", Hint.CLASS), new Reference("ZCL_DEMO_B", Hint.CLASS),
+						new Reference("ZDEMO_TABLE", Hint.TABLE)),
+				AdtContext.Limits.DEFAULT, CancelToken.NONE);
+		assertTrue(r.isEmpty());
+		assertEquals(List.of(), r.notFound());
+		assertTrue(r.error().contains("Connection to SAP system DEMO lost"), r.error());
+		assertEquals(1, adt.log.size(), "no further requests after the connection broke");
+	}
+
+	@Test
+	void shortensSdkMessages() {
+		String sdk = "com.example.CommunicationException: connection to partner 'host:1' broken; Destination data=DEMO"
+				+ " {client=000, user=USER}\r\n------------ Request -----------------------\r\nPOST /x HTTP/1.1";
+		assertEquals("connection to partner broken", AdtConnectionException.shortDetail(sdk));
+		assertEquals("", AdtConnectionException.shortDetail(null));
+		String msg = new AdtConnectionException("DEMO", AdtConnectionException.shortDetail(sdk)).getMessage();
+		assertFalse(msg.contains("USER"), msg);
+		assertFalse(msg.contains("Request"), msg);
+		assertFalse(msg.contains("host"), msg);
+	}
+
+	@Test
 	void candidatesPutInstructionFirst() {
 		List<Reference> c = AdtContext.candidates("DATA x TYPE matnr.", "select mara");
 		assertEquals(List.of("MARA", "MATNR"), c.stream().map(Reference::name).toList());
