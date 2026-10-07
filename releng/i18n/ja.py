@@ -41,6 +41,7 @@ MESSAGES = {
  "chat.plan.accept": "計画を承認",
  "chat.plan.change": "計画を変更",
  "chat.plan.cancel": "キャンセル",
+ "chat.plan.inputHint": "Bella に何を計画させますか？（Enter で送信、Planning Mode を解除すると終了）",
  "chat.plan.changeHint": "計画の何を変えますか？（Enter で送信）",
  "chat.plan.cancelled": "計画を破棄しました。何も変更していません。",
  "chat.mode.suggest": "提案のみ（差分）",

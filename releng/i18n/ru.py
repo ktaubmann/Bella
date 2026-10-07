@@ -41,6 +41,7 @@ MESSAGES = {
  "chat.plan.accept": "Принять план",
  "chat.plan.change": "Изменить план",
  "chat.plan.cancel": "Отмена",
+ "chat.plan.inputHint": "Что спланировать Bella? (Enter отправляет; отожмите Planning Mode, чтобы выйти)",
  "chat.plan.changeHint": "Что изменить в плане? (Enter отправляет)",
  "chat.plan.cancelled": "План отклонён; ничего не изменено.",
  "chat.mode.suggest": "Только предлагать (diff)",

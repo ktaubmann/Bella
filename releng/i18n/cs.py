@@ -41,6 +41,7 @@ MESSAGES = {
  "chat.plan.accept": "Přijmout plán",
  "chat.plan.change": "Změnit plán",
  "chat.plan.cancel": "Zrušit",
+ "chat.plan.inputHint": "Co má Bella naplánovat? (Enter odešle; uvolněním Planning Mode skončíte)",
  "chat.plan.changeHint": "Co se má v plánu změnit? (Enter odešle)",
  "chat.plan.cancelled": "Plán zahozen; nic se nezměnilo.",
  "chat.mode.suggest": "Jen navrhovat (diff)",

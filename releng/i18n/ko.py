@@ -41,6 +41,7 @@ MESSAGES = {
  "chat.plan.accept": "계획 수락",
  "chat.plan.change": "계획 변경",
  "chat.plan.cancel": "취소",
+ "chat.plan.inputHint": "Bella가 무엇을 계획할까요? (Enter로 보내기, Planning Mode를 해제하면 종료)",
  "chat.plan.changeHint": "계획에서 무엇을 바꿀까요? (Enter로 보내기)",
  "chat.plan.cancelled": "계획을 버렸습니다. 아무것도 변경하지 않았습니다.",
  "chat.mode.suggest": "제안만(차이)",

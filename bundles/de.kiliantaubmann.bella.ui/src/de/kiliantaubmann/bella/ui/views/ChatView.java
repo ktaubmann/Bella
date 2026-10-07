@@ -86,6 +86,8 @@ public class ChatView extends ViewPart {
 	private volatile ChatMode turnOverride;
 	/** The next message from the input changes the last plan. */
 	private boolean revisingPlan;
+	/** The Planning Mode button is pressed: from its click until the plan is accepted or cancelled. */
+	private boolean planActive;
 	private int lastAnswerId;
 	/** Read on the job thread at every tool call, so unticking takes effect at once. */
 	private volatile ChatMode mode = ChatMode.NORMAL;
@@ -209,13 +211,23 @@ public class ChatView extends ViewPart {
 		stop.setToolTipText(Messages.get("chat.stop"));
 		stop.setEnabled(false);
 		stop.addListener(SWT.Selection, e -> cancel());
-		planning = new Button(bottom, SWT.PUSH);
+		planning = new Button(bottom, SWT.TOGGLE);
 		planning.setImage(BellaPlugin.image("plan"));
 		planning.setText(Messages.get("chat.plan.button"));
 		planning.setToolTipText(Messages.get("chat.plan.buttonTip"));
 		// as wide as Send and Stop together, normal button height
 		GridDataFactory.swtDefaults().span(2, 1).align(SWT.FILL, SWT.BEGINNING).applyTo(planning);
-		planning.addListener(SWT.Selection, e -> sendFromInput(true));
+		planning.addListener(SWT.Selection, e -> {
+			if (planning.getSelection()) {
+				setPlanning(true);
+				sendFromInput(); // plans what is typed; with an empty input the next message is planned
+			} else {
+				if (running != null && turnOverride == ChatMode.PLAN) {
+					cancel(); // unpressed while Bella plans: stop planning
+				}
+				cancelPlan();
+			}
+		});
 		// context, mode and status in one row below, so the button columns stay narrow
 		Composite options = new Composite(bottom, SWT.NONE);
 		GridDataFactory.fillDefaults().span(3, 1).grab(true, false).applyTo(options);
@@ -322,10 +334,27 @@ public class ChatView extends ViewPart {
 		return planBar != null && planBar.getVisible();
 	}
 
+	/** Whether the Planning Mode button is pressed. */
+	public boolean isPlanning() {
+		return planActive;
+	}
+
+	/** Presses or releases the Planning Mode button; while pressed, messages from the input are planned. UI thread. */
+	public void setPlanning(boolean active) {
+		planActive = active;
+		if (!active) {
+			revisingPlan = false;
+			showPlanBar(false);
+		}
+		planning.setSelection(active);
+		input.setMessage(Messages.get(!active ? "chat.inputHint"
+				: revisingPlan ? "chat.plan.changeHint" : "chat.plan.inputHint"));
+		updateStatus();
+	}
+
 	/** Carries the plan out in the mode chosen in the drop-down. UI thread. */
 	public void acceptPlan() {
-		showPlanBar(false);
-		revisingPlan = false;
+		setPlanning(false);
 		ask(Messages.get("chat.plan.accept"), ACCEPT_PLAN, false);
 	}
 
@@ -333,16 +362,18 @@ public class ChatView extends ViewPart {
 	public void changePlan() {
 		showPlanBar(false);
 		revisingPlan = true;
-		input.setMessage(Messages.get("chat.plan.changeHint"));
+		setPlanning(true);
 		input.setFocus();
 	}
 
-	/** Drops the plan; nothing is carried out. UI thread. */
+	/** Drops the plan and releases the Planning Mode button; nothing is carried out. UI thread. */
 	public void cancelPlan() {
-		showPlanBar(false);
-		revisingPlan = false;
-		input.setMessage(Messages.get("chat.inputHint"));
-		js("notice(" + lastAnswerId + ",\"warn\"," + str(Markdown.escape(Messages.get("chat.plan.cancelled"))) + ")");
+		boolean hadPlan = isPlanPending() || revisingPlan;
+		setPlanning(false);
+		if (hadPlan) {
+			js("notice(" + lastAnswerId + ",\"warn\"," + str(Markdown.escape(Messages.get("chat.plan.cancelled")))
+					+ ")");
+		}
 	}
 
 	static final String ACCEPT_PLAN = "The developer accepted the plan above. Carry it out now, step by step and in "
@@ -396,9 +427,7 @@ public class ChatView extends ViewPart {
 
 	private void newChat() {
 		cancel();
-		showPlanBar(false);
-		revisingPlan = false;
-		input.setMessage(Messages.get("chat.inputHint"));
+		setPlanning(false);
 		newSession();
 		codeBlocks.clear();
 		js("showEmpty()");
@@ -414,7 +443,7 @@ public class ChatView extends ViewPart {
 				? Optional.ofNullable(EditorBridge.systemLabel(activeEditor())).orElse("")
 				: "";
 		String text = Messages.fmt("chat.status", plugin.chatModelLabel(), system.isEmpty() ? "–" : system);
-		if (turnOverride == ChatMode.PLAN) {
+		if (planActive || turnOverride == ChatMode.PLAN) {
 			text += " · " + Messages.get("chat.plan.button");
 		} else if (mode != ChatMode.NORMAL) {
 			text += " · " + Messages.get(modeKey(mode));
@@ -449,24 +478,18 @@ public class ChatView extends ViewPart {
 
 	// ---- sending ------------------------------------------------------------------------
 
+	/** Sends the input; while the Planning Mode button is pressed, as a planning turn. */
 	private void sendFromInput() {
-		sendFromInput(false);
-	}
-
-	/** @param planning answer with a plan only (the Planning Mode button) */
-	private void sendFromInput(boolean planning) {
 		String text = input.getText().trim();
 		if (text.isEmpty() || running != null) {
-			if (planning) {
-				input.setFocus(); // the button plans what is typed
-			}
+			input.setFocus();
 			return;
 		}
+		boolean planning = planActive;
 		input.setText("");
 		if (revisingPlan) {
-			planning = true;
 			revisingPlan = false;
-			input.setMessage(Messages.get("chat.inputHint"));
+			input.setMessage(Messages.get("chat.plan.inputHint"));
 			text = REVISE_PLAN + text;
 		}
 		String prompt = text;
@@ -512,10 +535,9 @@ public class ChatView extends ViewPart {
 			return;
 		}
 		showPlanBar(false);
-		if (revisingPlan) {
-			// e.g. an editor action sent to the chat: the plan change is not what comes next any more
-			revisingPlan = false;
-			input.setMessage(Messages.get("chat.inputHint"));
+		if (!planning && planActive) {
+			// e.g. an editor action sent to the chat: another task, so planning ends
+			setPlanning(false);
 		}
 		if (!BellaPlugin.getDefault().conversationType().isInstance(session.unwrap())) {
 			newSession(); // provider switched in the preferences: the old chat cannot continue
@@ -567,7 +589,7 @@ public class ChatView extends ViewPart {
 			return;
 		}
 		send.setEnabled(!busy);
-		planning.setEnabled(!busy);
+		planning.setEnabled(!busy || planActive); // releasing it stops a running plan
 		stop.setEnabled(busy);
 	}
 

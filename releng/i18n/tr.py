@@ -41,6 +41,7 @@ MESSAGES = {
  "chat.plan.accept": "Planı kabul et",
  "chat.plan.change": "Planı değiştir",
  "chat.plan.cancel": "İptal",
+ "chat.plan.inputHint": "Bella neyi planlasın? (Enter gönderir; çıkmak için Planning Mode’u bırakın)",
  "chat.plan.changeHint": "Planda ne değişmeli? (Enter gönderir)",
  "chat.plan.cancelled": "Plan atıldı; hiçbir şey değiştirilmedi.",
  "chat.mode.suggest": "Yalnızca öner (diff)",

@@ -41,6 +41,7 @@ MESSAGES = {
  "chat.plan.accept": "接受计划",
  "chat.plan.change": "修改计划",
  "chat.plan.cancel": "取消",
+ "chat.plan.inputHint": "Bella 要计划什么？（按 Enter 发送；松开 Planning Mode 即退出）",
  "chat.plan.changeHint": "计划需要改什么？（按 Enter 发送）",
  "chat.plan.cancelled": "计划已放弃；未做任何更改。",
  "chat.mode.suggest": "仅建议（差异）",

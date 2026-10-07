@@ -176,16 +176,35 @@ class WorkbenchSmokeTest {
 		Button planning = find(root, Button.class).stream()
 				.filter(b -> b.getText().equals(Messages.get("chat.plan.button"))).findFirst().orElseThrow();
 		assertTrue(planning.isEnabled());
-		for (String key : List.of("accept", "change", "cancel", "question", "changeHint", "cancelled")) {
+		assertTrue((planning.getStyle() & SWT.TOGGLE) != 0, "the button stays pressed while planning");
+		for (String key : List.of("accept", "change", "cancel", "question", "inputHint", "changeHint", "cancelled")) {
 			assertFalse(Messages.get("chat.plan." + key).startsWith("!"), key);
 		}
 		assertFalse(view.isPlanPending(), "the plan choice appears only after a plan");
 		Text input = find(root, Text.class).stream().filter(t -> (t.getStyle() & SWT.MULTI) != 0).findFirst()
 				.orElseThrow();
+		Label status = find(root, Label.class).stream().filter(l -> l.getText().startsWith("Model") || l.getText()
+				.contains("·")).findFirst().orElseThrow();
+		// pressed with an empty input: stays pressed, the next message is planned
+		input.setText("");
+		planning.setSelection(true);
+		planning.notifyListeners(SWT.Selection, new Event());
+		assertTrue(view.isPlanning());
+		assertTrue(planning.getSelection());
+		assertEquals(Messages.get("chat.plan.inputHint"), input.getMessage());
+		assertTrue(status.getText().contains(Messages.get("chat.plan.button")), status.getText());
 		view.changePlan();
+		assertTrue(planning.getSelection(), "changing the plan keeps the button pressed");
 		assertEquals(Messages.get("chat.plan.changeHint"), input.getMessage());
-		view.cancelPlan();
+		// released by clicking it again
+		planning.setSelection(false);
+		planning.notifyListeners(SWT.Selection, new Event());
+		assertFalse(view.isPlanning());
 		assertEquals(Messages.get("chat.inputHint"), input.getMessage());
+		assertFalse(status.getText().contains(Messages.get("chat.plan.button")), status.getText());
+		view.setPlanning(true);
+		view.cancelPlan();
+		assertFalse(planning.getSelection(), "cancel releases the button");
 		assertFalse(view.isPlanPending());
 		page().hideView(view);
 	}

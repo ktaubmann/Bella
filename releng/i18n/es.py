@@ -41,6 +41,7 @@ MESSAGES = {
  "chat.plan.accept": "Aceptar plan",
  "chat.plan.change": "Cambiar plan",
  "chat.plan.cancel": "Cancelar",
+ "chat.plan.inputHint": "¿Qué debe planificar Bella? (Intro envía; suelte Planning Mode para salir)",
  "chat.plan.changeHint": "¿Qué debe cambiar en el plan? (Intro envía)",
  "chat.plan.cancelled": "Plan descartado; no se cambió nada.",
  "chat.mode.suggest": "Solo proponer (diff)",
