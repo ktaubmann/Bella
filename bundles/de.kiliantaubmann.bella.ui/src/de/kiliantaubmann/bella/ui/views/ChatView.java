@@ -275,6 +275,9 @@ public class ChatView extends ViewPart {
 
 	/** Selects a mode in the drop-down and uses it from the next tool call on. UI thread. */
 	public void setMode(ChatMode newMode) {
+		if (!MODES.contains(newMode)) {
+			throw new IllegalArgumentException(newMode + " is not a drop-down mode; use ask(…, true) to plan");
+		}
 		mode = newMode;
 		modeChoice.select(MODES.indexOf(newMode));
 		modeChoice.setToolTipText(Messages.get(modeKey(newMode) + ".tip"));
@@ -505,6 +508,11 @@ public class ChatView extends ViewPart {
 			return;
 		}
 		showPlanBar(false);
+		if (revisingPlan) {
+			// e.g. an editor action sent to the chat: the plan change is not what comes next any more
+			revisingPlan = false;
+			input.setMessage(Messages.get("chat.inputHint"));
+		}
 		if (!BellaPlugin.getDefault().conversationType().isInstance(session.unwrap())) {
 			newSession(); // provider switched in the preferences: the old chat cannot continue
 			updateStatus();
@@ -526,7 +534,7 @@ public class ChatView extends ViewPart {
 			try {
 				BellaPlugin.getDefault().tools().refresh(err -> renderer.notice("warn", Markdown.escape(err)));
 				session.ask(turnMode.apply(prompt), renderer, cancel);
-				answered.set(!cancel.isCancelled());
+				answered.set(!cancel.isCancelled() && !renderer.incomplete);
 			} catch (CancelToken.CancelledException e) {
 				renderer.notice("warn", Messages.get("chat.cancelled"));
 			} catch (Exception e) {
@@ -609,7 +617,13 @@ public class ChatView extends ViewPart {
 	// ---- streaming into the browser ----------------------------------------------------------
 
 	/** Turns session callbacks into throttled browser updates. Called on the job thread. */
+	/** Notices after which the answer is no complete plan (declined, cut off, limit, error). */
+	static final java.util.Set<String> INCOMPLETE = java.util.Set.of("refusal", "max_tokens", "max_tokens_tool",
+			"max_rounds", "cc_limit", "cc_error", "cc_login", "cp_limit", "cp_error", "cp_login");
+
 	private final class Renderer implements ConversationListener {
+		/** The answer was declined, cut off or ended by an error notice. */
+		volatile boolean incomplete;
 		private final int id;
 		private int segment;
 		private String kind = "";
@@ -681,9 +695,13 @@ public class ChatView extends ViewPart {
 
 		@Override
 		public void onNotice(String message) {
-				// "key" or "key:detail", e.g. "refusal:…" or "cc_limit:…"
+			// "key" or "key:detail", e.g. "refusal:…" or "cc_limit:…"
 			int colon = message.indexOf(':');
-			String key = "chat.notice." + (colon < 0 ? message : message.substring(0, colon));
+			String bare = colon < 0 ? message : message.substring(0, colon);
+			if (INCOMPLETE.contains(bare)) {
+				incomplete = true;
+			}
+			String key = "chat.notice." + bare;
 			String detail = colon < 0 ? "" : message.substring(colon + 1);
 			notice("warn", Markdown.escape(Messages.fmt(key, detail)));
 		}

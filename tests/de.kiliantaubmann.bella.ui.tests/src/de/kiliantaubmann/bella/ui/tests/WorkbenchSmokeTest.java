@@ -164,6 +164,14 @@ class WorkbenchSmokeTest {
 		assertEquals(ChatMode.READ_DATA, view.mode(), "no confirmation for reading data");
 		view.setMode(ChatMode.NORMAL);
 		assertEquals(Messages.get("chat.mode.normal"), modes.getText());
+		boolean refused = false;
+		try {
+			view.setMode(ChatMode.PLAN);
+		} catch (IllegalArgumentException e) {
+			refused = true;
+		}
+		assertTrue(refused, "plan mode belongs to the Planning Mode button");
+		assertEquals(ChatMode.NORMAL, view.mode());
 
 		Button planning = find(root, Button.class).stream()
 				.filter(b -> b.getText().equals(Messages.get("chat.plan.button"))).findFirst().orElseThrow();
