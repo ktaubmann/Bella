@@ -54,7 +54,7 @@ A drop-down below the chat input sets how freely Bella may act, from careful to 
 | **Ask before changes** (default) | runs | asks | diff preview | asks |
 | **Read data without asking** | runs | runs | diff preview | asks |
 | **Write and activate** | runs | asks | diff preview | runs |
-| **Automode** | runs | runs | diff preview | runs, plus ABAP Unit after each activation (`adt_activate` with `run_unit_tests`); Bella carries the task out and fixes errors and failing tests |
+| **Automode** | runs | runs | diff preview | runs, plus ABAP Unit after each activation (`adt_activate` with `run_unit_tests`); Bella carries the task out and fixes errors, ATC priority 1 and 2 findings and failing tests |
 
 - Choosing one of the two modes that write without asking asks once for confirmation.
 - **Planning Mode** (button next to *Send*): Bella reads and analyses what you typed and answers with a numbered plan; nothing is changed, also not in the editor. Below the plan you then choose:
@@ -71,7 +71,9 @@ A model that does not know your system guesses field names and signatures. Bella
 
 - **Editor actions** (*Generate code here…*, *Rework selection…*, *Implement method*) first collect the objects the code and your instruction mention: tables in `SELECT`, types after `TYPE`, classes before `=>` or after `NEW`, function modules in `CALL FUNCTION`, and names such as `MARA` in "select mara and show". Bella loads their definitions (at most 12 objects, 8 seconds), adds them to the request and lists them in the diff preview under *SAP definitions used*. You can switch this off under *Preferences → Bella → Editor*. It needs ADT and an ABAP editor of a logged-on system; the completion (`Ctrl+↑`) stays without it so that it stays fast.
 - **In the chat** the model calls `adt_context` or `adt_read_source` itself. To save tokens, `adt_read_source` can return a single method (`method`) or only the matching lines (`grep`), and `adt_write_source` can replace a single method. Sources are cached and revalidated with SAP (ETag), and a note tells the model when an object has saved changes that are not activated yet. `adt_context` takes an object name, a piece of code or a list of names and returns in one call: the public section of classes, interfaces, table and structure fields, CDS views, function module signatures, data elements and table types.
-- **Style check**: `abap_lint` checks code without SAP access for obsolete statements (`MOVE`, `CALL METHOD`, `CREATE OBJECT`, header lines, `FORM` …), `SELECT *`, `SELECT` in loops, `SELECT … ENDSELECT`, unchecked `SELECT SINGLE`, `CATCH cx_root`, empty `CATCH` blocks, break-points and aborting messages. The diff preview shows its findings for generated code. It is a small rule set of Bella's own, not abaplint and no replacement for ATC.
+- **Style check**: `abap_lint` checks code without SAP access for obsolete statements (`MOVE`, `CALL METHOD`, `CREATE OBJECT`, header lines, `FORM` …), `SELECT *`, `SELECT` in loops, `SELECT … ENDSELECT`, unchecked `SELECT SINGLE`, `CATCH cx_root`, empty `CATCH` blocks, break-points, aborting messages, texts the user sees as literals instead of text symbols, and selection texts set in code (`%_p_name_%_app_%-text`). The diff preview shows its findings for generated code. It is a small rule set of Bella's own, not abaplint and no replacement for ATC.
+- **Checks after writing, as with ARC-1**: `adt_write_source` and `adt_create_object` add the style check of the code written and a syntax check of the saved version to their result, so the model fixes them before activating. `adt_activate` runs ATC on the activated objects (on by default, `run_atc`), because ATC checks the active version; findings are listed by priority, and the model fixes priority 1 and 2 and explains what it leaves.
+- **Text elements**: `adt_text_elements` reads and `adt_write_text_elements` writes the text pool of a program, class or function group through ADT's textelements service, as ARC-1's `SAPWrite edit_text_symbols` does: selection texts of `PARAMETERS` and `SELECT-OPTIONS`, text symbols (`TEXT-001`) and list headings. They are active at once.
 
 Tables and structures are read as source on newer ABAP releases (7.52 and later). On older releases, and for data elements, domains, table types and message classes, Bella summarizes the object's ADT description.
 
@@ -79,7 +81,7 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 - **System knowledge**: `adt_list_systems` shows each system's SAP_BASIS release or whether it is an ABAP Cloud system, and the editor actions tell the model the release. `adt_transport_info` asks SAP which transport request a change needs, `adt_short_dumps` lists and reads runtime errors (ST22).
 - **Transport review**: `adt_list_transports` lists requests, `adt_transport_review` collects a review dossier for one: per source the diff between the version in the request and the version before it (version choice as in ARC-1's transport diff), syntax check, ATC and ABAP Unit in one run each, objects not activated, and customer objects the changed code uses that are missing, inactive or held in another open request. The review answer starts with the verdict and at most five blocking and five should-fix points, then an overview table per object, then the details.
 
-**Compared with ARC-1:** Bella's tools now cover what ARC-1's `SAPRead` (incl. single methods, grep and active/inactive versions), `SAPContext`, `SAPQuery` (table contents and SQL), read-only `SAPTransport` (incl. the transport diff) and the dumps of `SAPDiagnose` offer, plus a package allowlist for writes. With *Automode*, writing, creating, activating and testing run without confirmation as with ARC-1. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log and rate limits, Git (gCTS/abapGit), or when the tools should run on a server instead of in Eclipse.
+**Compared with ARC-1:** Bella's tools now cover what ARC-1's `SAPRead` (incl. single methods, grep and active/inactive versions), `SAPContext`, `SAPQuery` (table contents and SQL), read-only `SAPTransport` (incl. the transport diff) and the dumps of `SAPDiagnose` offer, the text elements of `SAPWrite`, plus a package allowlist for writes. With *Automode*, writing, creating, activating and testing run without confirmation as with ARC-1. ARC-1 is still worth adding for the real abaplint rule set (`SAPLint`), a central audit log and rate limits, Git (gCTS/abapGit), or when the tools should run on a server instead of in Eclipse.
 
 ### Ground rule: open objects are only changed in the editor
 
@@ -110,9 +112,9 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 
 | Tool | Default |
 |---|---|
-| Read and check (`adt_search_objects`, `adt_read_source`, `adt_context`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, `adt_transport_info`, `adt_short_dumps`, `adt_list_transports`, `adt_transport_review`, `abap_lint`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
+| Read and check (`adt_search_objects`, `adt_read_source`, `adt_context`, `adt_where_used`, `adt_syntax_check`, `adt_run_unit_tests`, `adt_atc_check`, `adt_text_elements`, `adt_transport_info`, `adt_short_dumps`, `adt_list_transports`, `adt_transport_review`, `abap_lint`; ARC-1: SAPRead, SAPSearch, …) | runs automatically |
 | Table contents (`adt_table_contents`; ARC-1: SAPQuery) | asks first |
-| Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
+| Write, create, activate (`adt_write_source`, `adt_create_object`, `adt_write_text_elements`, `adt_activate`; ARC-1: SAPWrite, SAPActivate, …) | asks first |
 | Release transports | always refused |
 
 The chat mode can tighten or loosen this (see *Chat modes*); refusals stay refusals in every mode.

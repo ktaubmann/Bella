@@ -131,10 +131,28 @@ class AbapLintTest {
 		assertEquals(List.of("empty_catch"), rules("TRY.\n x( ).\nCATCH zcx_a.\nENDTRY."));
 		assertEquals(List.of("break_point"), rules("BREAK-POINT."));
 		assertEquals(List.of("break_point"), rules("BREAK kilian."));
-		assertEquals(List.of("message_abort"), rules("MESSAGE 'Stop' TYPE 'A'."));
+		assertEquals(List.of("message_abort"), rules("MESSAGE 'Stop'(001) TYPE 'A'."));
 		assertEquals(List.of("message_abort"), rules("MESSAGE x001(zmsg)."));
-		assertEquals(List.of(), rules("MESSAGE 'Hint' TYPE 'I'."));
+		assertEquals(List.of(), rules("MESSAGE TEXT-002 TYPE 'I'."));
 		assertEquals(List.of("read_table"), rules("READ TABLE lt INTO ls WITH KEY matnr = lv."));
+	}
+
+	@Test
+	void textsBelongInTheTextPool() {
+		assertEquals(List.of("internal_screen_text"), rules("%_s_vbeln_%_app_%-text = TEXT-001."));
+		assertEquals(List.of("internal_screen_text"), rules("%_p_test_%_app_%-text = 'Test run (no deletion)'."));
+		assertEquals(List.of("text_literal"), rules("WRITE: / 'Deleted deliveries:', lv_count."));
+		assertEquals(List.of("text_literal"), rules("WRITE / |{ lv_count } deliveries deleted|."));
+		assertEquals(List.of("text_literal"), rules("MESSAGE 'No deliveries found' TYPE 'S'."));
+		assertEquals(List.of("text_literal"), rules("MESSAGE |Delivery { lv_vbeln } locked| TYPE 'E'."));
+		assertEquals(List.of("text_literal"), rules("SELECTION-SCREEN COMMENT 1(20) 'Delivery'."));
+		assertEquals(List.of(), rules("WRITE: / TEXT-001, lv_count."));
+		assertEquals(List.of(), rules("WRITE / 'Deleted deliveries:'(002)."));
+		assertEquals(List.of(), rules("WRITE: / sy-uline, '|', '-', |{ lv_count }|."));
+		assertEquals(List.of(), rules("MESSAGE e001(zsd) WITH lv_vbeln."));
+		assertEquals(List.of(), rules("MESSAGE lx TYPE 'E'."));
+		assertEquals(List.of(), rules("SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01."));
+		assertEquals(List.of(), rules("lv_text = 'Not shown here'."));
 	}
 
 	@Test

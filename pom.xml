@@ -11,7 +11,7 @@
   <name>Bella - AI assistant for ABAP in Eclipse ADT</name>
 
   <properties>
-    <tycho.version>4.0.13</tycho.version>
+    <tycho.version>5.0.4</tycho.version>
     <eclipse.release>2026-09</eclipse.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>

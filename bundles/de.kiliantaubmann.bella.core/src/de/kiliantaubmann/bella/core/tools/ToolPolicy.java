@@ -50,6 +50,7 @@ public final class ToolPolicy {
 			new Rule("adt_write_source", Decision.CONFIRM),
 			new Rule("adt_create_object", Decision.CONFIRM),
 			new Rule("adt_activate", Decision.CONFIRM),
+			new Rule("adt_write_text_elements", Decision.CONFIRM),
 			// table contents leave the system for the model provider: ask first
 			new Rule("adt_table_contents", Decision.CONFIRM),
 			new Rule("mcp_*SAPQuery", Decision.CONFIRM),

@@ -21,10 +21,13 @@ import de.kiliantaubmann.bella.core.abap.AbapEdit;
 import de.kiliantaubmann.bella.core.abap.AbapSlices;
 import de.kiliantaubmann.bella.core.abap.ObjectTarget;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
+import de.kiliantaubmann.bella.core.conventions.NamingRules;
+import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.tools.WriteGuard;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
 
 /**
@@ -72,6 +75,7 @@ public final class OpenEditorRouter implements WriteGuard {
 		}
 		IDocument doc = EditorBridge.document(editor.get());
 		String before = doc.get();
+		String written = source;
 		if (method != null && !method.isBlank()) {
 			Optional<String> updated = AbapEdit.replaceMethod(before, method, source);
 			if (updated.isEmpty()) {
@@ -97,7 +101,20 @@ public final class OpenEditorRouter implements WriteGuard {
 		}
 		return Optional.of(ToolResult.ok(target.name()
 				+ " is open in the developer's editor, so the new source was written into the editor buffer. "
-				+ "It is NOT saved and NOT activated; the developer reviews it and saves/activates in ADT."));
+				+ "It is NOT saved and NOT activated; the developer reviews it and saves/activates in ADT."
+				+ styleCheck(written, method != null && !method.isBlank())));
+	}
+
+	/** Bella's style check of the code written, as the ADT tools add it to a write in the SAP system. */
+	private static String styleCheck(String written, boolean methodBody) {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		List<AbapLint.Finding> findings = AbapLint.check(written,
+				plugin == null ? NamingRules.NONE : plugin.activeConventions().naming());
+		if (findings.isEmpty()) {
+			return "";
+		}
+		return "\n\nBella's style check of the code written" + (methodBody ? " (line numbers count within the method body)" : "")
+				+ "; fix the findings that apply:\n" + AbapLint.format(findings);
 	}
 
 	/**

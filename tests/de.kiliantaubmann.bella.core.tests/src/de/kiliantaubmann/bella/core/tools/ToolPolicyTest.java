@@ -25,6 +25,10 @@ class ToolPolicyTest {
 		assertEquals(Decision.AUTO, p.decide(tool("adt_read_source", ToolSpec.Kind.READ), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("adt_write_source", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("adt_activate", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_write_text_elements", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_text_elements", ToolSpec.Kind.READ), new JsonObject()));
+		assertEquals(Decision.DENY, p.withMode(ChatMode.PLAN)
+				.decide(tool("adt_write_text_elements", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(Decision.AUTO, p.decide(tool("mcp_arc1_SAPRead", ToolSpec.Kind.READ), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("mcp_arc1_SAPWrite", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("mcp_other_thing", ToolSpec.Kind.UNKNOWN), new JsonObject()));

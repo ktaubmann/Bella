@@ -41,7 +41,35 @@ public final class AbapLint {
 			"\\bINTO\\s+(?:CORRESPONDING\\s+FIELDS\\s+OF\\s+)?@?(?:DATA\\(|FINAL\\()?\\s*([A-Z0-9_<>~-]+)");
 	private static final Pattern MESSAGE_ABORT = Pattern.compile("^MESSAGE\\b.*\\bTYPE\\s+'[AX]'|^MESSAGE\\s+[AX]\\d{3}\\b");
 
+	private static final Pattern INTERNAL_SCREEN_TEXT = Pattern.compile("%_\\S+_%_APP_%");
+	/** Statements whose literals the user sees: WRITE, MESSAGE with a text, selection screen comments and titles. */
+	private static final Pattern TEXT_OUTPUT = Pattern.compile(
+			"^(?:WRITE\\b|MESSAGE\\s+''|SELECTION-SCREEN\\b.*\\b(?:COMMENT|TITLE)\\b)");
+	/** A character literal with a letter that is not followed by a text symbol id {@code (nnn)}. */
+	private static final Pattern BARE_TEXT_LITERAL = Pattern.compile(
+			"(?:'(?:[^']|'')*\\p{L}(?:[^']|'')*'|`(?:[^`]|``)*\\p{L}(?:[^`]|``)*`)(?!\\s*\\(\\w{1,3}\\))");
+
+	private static final Pattern MESSAGE_TYPE = Pattern.compile("(?i)\\b(?:TYPE|LIKE)\\s+'[A-Z]'");
+
 	private AbapLint() {
+	}
+
+	/** Whether the statement shows a text literal (or a string template with text) without a text symbol. */
+	static boolean hasTextLiteral(String statement) {
+		// the message type of MESSAGE … TYPE 'E' DISPLAY LIKE 'W' is no text
+		statement = MESSAGE_TYPE.matcher(statement).replaceAll("");
+		if (BARE_TEXT_LITERAL.matcher(statement).find()) {
+			return true;
+		}
+		String templates = statement.replaceAll("'(?:[^']|'')*'|`(?:[^`]|``)*`", "''");
+		Matcher m = Pattern.compile("\\|((?:[^|\\\\]|\\\\.)*)\\|").matcher(templates);
+		while (m.find()) {
+			// the fixed text of a template, without its embedded expressions
+			if (m.group(1).replaceAll("\\{[^}]*\\}", "").matches("(?s).*\\p{L}.*")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static List<Finding> check(String source) {
@@ -110,6 +138,16 @@ public final class AbapLint {
 					&& raw.matches("(?s).*\\b(?:IF|ELSEIF|CHECK|WHILE)\\b.*")) {
 				out.add(new Finding(line, "boolean_literal", Severity.INFO,
 						"Use abap_true / abap_false (and xsdbool( )) instead of 'X' and space for booleans (Clean ABAP)."));
+			}
+			if (INTERNAL_SCREEN_TEXT.matcher(raw).find()) {
+				out.add(new Finding(line, "internal_screen_text", Severity.ERROR,
+						"Selection texts are set through SAP's internal screen fields %_…_%_APP_%; maintain them as "
+								+ "selection texts in the text pool instead (adt_write_text_elements, part selections)."));
+			}
+			if (TEXT_OUTPUT.matcher(code).find() && hasTextLiteral(st.text())) {
+				out.add(new Finding(line, "text_literal", Severity.WARNING,
+						"Text literal shown to the user without a text symbol; use TEXT-nnn or 'text'(nnn) and maintain "
+								+ "the text symbol (adt_write_text_elements), so it can be translated."));
 			}
 			if (first.equals("CONCATENATE")) {
 				out.add(new Finding(line, "concatenate", Severity.INFO,

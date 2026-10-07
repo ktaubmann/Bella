@@ -551,6 +551,33 @@ public final class AdtClient {
 	 */
 	public static String writeSource(AdtTransport.Session session, String objectUri, String include, String source,
 			String transport, CancelToken cancel) throws IOException {
+		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
+			StringBuilder path = new StringBuilder(AdtObjectRef.sourceUri(objectUri, include)).append("?lockHandle=")
+					.append(enc(handle));
+			if (!tr.isBlank()) {
+				path.append("&corrNr=").append(enc(tr));
+			}
+			AdtResponse put = exchange(session, AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8"),
+					cancel);
+			if (!put.ok()) {
+				throw new AdtException(put.status(), "Could not write source: " + AdtErrors.message(put));
+			}
+		});
+	}
+
+	/** A change made while an object is locked. */
+	private interface LockedChange {
+		void apply(String lockHandle, String transport) throws IOException;
+	}
+
+	/**
+	 * Locks {@code objectUri}, runs {@code change} with the lock handle and the
+	 * transport request to use, and unlocks, all in one stateful session.
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	private static String withLock(AdtTransport.Session session, String objectUri, String transport,
+			CancelToken cancel, LockedChange change) throws IOException {
 		AdtRequest lockReq = AdtRequest.post(objectUri + "?_action=LOCK&accessMode=MODIFY",
 				"application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result", null,
 				null);
@@ -565,16 +592,7 @@ public final class AdtClient {
 				throw new AdtException(400,
 						"The object is not local ($TMP) and has no transport request. Ask the developer for one.");
 			}
-			StringBuilder path = new StringBuilder(AdtObjectRef.sourceUri(objectUri, include)).append("?lockHandle=")
-					.append(enc(lock.handle()));
-			if (tr != null && !tr.isBlank()) {
-				path.append("&corrNr=").append(enc(tr));
-			}
-			AdtResponse put = exchange(session, AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8"),
-					cancel);
-			if (!put.ok()) {
-				throw new AdtException(put.status(), "Could not write source: " + AdtErrors.message(put));
-			}
+			change.apply(lock.handle(), tr == null ? "" : tr);
 			return tr == null ? "" : tr;
 		} finally {
 			// an unlock failure must not hide the outcome of the write; the lock ends with the session anyway
@@ -585,6 +603,74 @@ public final class AdtClient {
 				Log.warn("adt", "unlock of " + objectUri + " failed: " + e.getMessage());
 			}
 		}
+	}
+
+	// ---- text elements ---------------------------------------------------------
+
+	/** Parts of a text pool: text symbols, selection texts, list headings. */
+	public static final List<String> TEXT_PARTS = List.of("symbols", "selections", "headings");
+
+	/**
+	 * URI of the text pool of a program, class or function group on ADT's
+	 * textelements service; the pool is locked and written on its own, apart
+	 * from the source.
+	 */
+	static String textElementsUri(String type, String name) throws AdtException {
+		String t = type == null ? "" : type.toUpperCase(Locale.ROOT);
+		String collection = switch (t.contains("/") ? t.substring(0, t.indexOf('/')) : t) {
+		case "PROG" -> "programs";
+		case "CLAS" -> "classes";
+		case "FUGR" -> "functiongroups";
+		default -> throw new AdtException(400,
+				"Text elements exist for programs (PROG), classes (CLAS) and function groups (FUGR), not for " + type
+						+ ".");
+		};
+		return "/sap/bc/adt/textelements/" + collection + "/" + enc(name.trim().toLowerCase(Locale.ROOT));
+	}
+
+	private static String textMediaType(String part) throws AdtException {
+		if (!TEXT_PARTS.contains(part)) {
+			throw new AdtException(400, "Unknown text element part '" + part + "'; use one of " + TEXT_PARTS + ".");
+		}
+		return "application/vnd.sap.adt.textelements." + part + ".v1";
+	}
+
+	/**
+	 * One part of a text pool as ADT sends it: {@code @MaxLength:20} and
+	 * {@code 001=Text} lines for symbols, {@code P_NAME=Text} for selection
+	 * texts, {@code listHeader=…} and {@code columnHeader_1=…} for headings.
+	 */
+	public String textElements(String type, String name, String part, CancelToken cancel) throws IOException {
+		String mediaType = textMediaType(part);
+		return send(AdtRequest.get(textElementsUri(type, name) + "/source/" + part, mediaType), cancel).body();
+	}
+
+	/**
+	 * Replaces one part of a text pool. The texts are active right away; the
+	 * object itself needs no activation for them.
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	public static String writeTextElements(AdtTransport.Session session, String type, String name, String part,
+			String texts, String transport, CancelToken cancel) throws IOException {
+		String mediaType = textMediaType(part);
+		if (type.toUpperCase(Locale.ROOT).startsWith("CLAS") && !part.equals("symbols")) {
+			throw new AdtException(400, "Classes only have text symbols; selection texts and headings belong to programs.");
+		}
+		String uri = textElementsUri(type, name);
+		return withLock(session, uri, transport, cancel, (handle, tr) -> {
+			StringBuilder path = new StringBuilder(uri).append("/source/").append(part).append("?lockHandle=")
+					.append(enc(handle));
+			if (!tr.isBlank()) {
+				path.append("&corrNr=").append(enc(tr));
+			}
+			// SAP wants the part's media type as Accept as well, else it answers 400
+			AdtResponse put = exchange(session,
+					AdtRequest.put(path.toString(), texts, mediaType).withHeader("Accept", mediaType), cancel);
+			if (!put.ok()) {
+				throw new AdtException(put.status(), "Could not write the text elements: " + AdtErrors.message(put));
+			}
+		});
 	}
 
 	// ---- checks --------------------------------------------------------------

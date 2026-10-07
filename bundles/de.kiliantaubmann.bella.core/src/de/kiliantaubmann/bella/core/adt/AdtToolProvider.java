@@ -18,6 +18,8 @@ import com.google.gson.JsonObject;
 import de.kiliantaubmann.bella.core.abap.AbapEdit;
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.abap.AbapSlices;
+import de.kiliantaubmann.bella.core.conventions.NamingRules;
+import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolProvider;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -36,6 +38,7 @@ public final class AdtToolProvider implements ToolProvider {
 	private final Supplier<String> defaultDestination;
 	private final Supplier<String> writePackages;
 	private final Function<String, String> atcVariants;
+	private final Supplier<NamingRules> naming;
 	private final SourceCache cache = new SourceCache();
 	/** Inactive objects per destination, kept briefly so a turn with many reads asks once. */
 	private final Map<String, Inactive> inactive = new ConcurrentHashMap<>();
@@ -68,10 +71,20 @@ public final class AdtToolProvider implements ToolProvider {
 	 */
 	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages,
 			Function<String, String> atcVariants) {
+		this(backend, defaultDestination, writePackages, atcVariants, () -> NamingRules.NONE);
+	}
+
+	/**
+	 * @param naming the project's naming rules, checked with Bella's style check
+	 *               on the code a write or create saves
+	 */
+	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages,
+			Function<String, String> atcVariants, Supplier<NamingRules> naming) {
 		this.backend = backend;
 		this.defaultDestination = defaultDestination;
 		this.writePackages = writePackages;
 		this.atcVariants = atcVariants;
+		this.naming = naming;
 	}
 
 	/** Package patterns from a comma, semicolon or space separated list; {@code *} is a wildcard. */
@@ -129,6 +142,8 @@ public final class AdtToolProvider implements ToolProvider {
 		return s;
 	}
 
+	private static final String TEXT_PART_DESC = "symbols (text symbols TEXT-nnn), selections (selection texts) or "
+			+ "headings (list and column headings).";
 	private static final String SYSTEM_DESC = "ABAP project / system id to use. Omit to use the system of the active editor.";
 	private static final String NAME_DESC = "Object name, e.g. ZCL_SALES_ORDER.";
 	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD. Omit if unknown.";
@@ -190,10 +205,17 @@ public final class AdtToolProvider implements ToolProvider {
 				Capability.SYNTAX_CHECK, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_run_unit_tests", "Run the ABAP Unit tests of an object and report failures.",
 				schema(new String[] { "name" }, objectProps()), Capability.UNIT_TEST, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_atc_check", "Run ATC (ABAP Test Cockpit) checks on an object and list findings.",
+		t.add(ToolSpec.of("adt_atc_check",
+				"Run ATC (ABAP Test Cockpit) checks on an object and list the findings by priority. ATC checks the "
+						+ "active version: activate first (adt_activate runs ATC itself after a successful activation).",
 				schema(new String[] { "name" }, objectProps("check_variant", "string",
 						"ATC check variant; omit for the one set in Bella's preferences, else the system default.")),
 				Capability.ATC, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_text_elements",
+				"Read the text pool of a program, class or function group: text symbols (TEXT-001), selection texts "
+						+ "(labels of PARAMETERS and SELECT-OPTIONS) or list headings.",
+				schema(new String[] { "name", "part" }, objectProps("part", "string", TEXT_PART_DESC)), null,
+				ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_transport_info",
 				"Which transport request a change needs: whether the object's package records changes, the request the object "
 						+ "is already locked in, and the developer's open requests that fit. Use it before writing a non-local object. "
@@ -249,9 +271,24 @@ public final class AdtToolProvider implements ToolProvider {
 						"transport", "string", "Transport request for non-local packages.", "source", "string",
 						"Optional initial source code.")),
 				Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_write_text_elements",
+				"Replace one part of the text pool of a program (PROG), class (CLAS, symbols only) or function group "
+						+ "(FUGR). Use it for the selection texts of PARAMETERS and SELECT-OPTIONS and for the text symbols "
+						+ "behind TEXT-nnn, instead of setting texts in code. Read the part first with adt_text_elements "
+						+ "and keep the other entries. Saved directly in the SAP system (also when the object is open in "
+						+ "the editor) and active at once; no activation needed.",
+				schema(new String[] { "name", "type", "part", "texts" }, objectProps("part", "string", TEXT_PART_DESC,
+						"texts", "string", "The complete new part, one entry per line. selections: S_VBELN=Delivery "
+								+ "(name of the parameter or select-option, text up to 30 characters). symbols: 001=Text, "
+								+ "optionally preceded by a line @MaxLength:40. headings: listHeader=Title, "
+								+ "columnHeader_1=Column titles.",
+						"transport", "string", "Transport request, required for non-local objects unless already assigned.")),
+				null, ToolSpec.Kind.WRITE));
 		JsonObject activateSchema = schema(new String[] { "objects" }, "system", "string", SYSTEM_DESC,
 				"run_unit_tests", "boolean", "After a successful activation run the ABAP Unit tests of the activated "
-						+ "classes, programs and function groups and add the result (default false).");
+						+ "classes, programs and function groups and add the result (default false).",
+				"run_atc", "boolean", "After a successful activation run ATC on the activated objects and add the "
+						+ "findings (default true).");
 		JsonObject objects = new JsonObject();
 		objects.addProperty("type", "array");
 		objects.addProperty("description", "Objects to activate together.");
@@ -268,7 +305,8 @@ public final class AdtToolProvider implements ToolProvider {
 	@Override
 	public Optional<String> refuse(String name, JsonObject in, CancelToken cancel) {
 		List<String> patterns = packagePatterns(writePackages.get());
-		if (patterns.isEmpty() || !List.of("adt_write_source", "adt_create_object", "adt_activate").contains(name)) {
+		if (patterns.isEmpty() || !List.of("adt_write_source", "adt_create_object", "adt_activate", "adt_write_text_elements")
+				.contains(name)) {
 			return Optional.empty();
 		}
 		try {
@@ -326,6 +364,8 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_syntax_check" -> syntaxCheck(in, cancel);
 			case "adt_run_unit_tests" -> unitTests(in, cancel);
 			case "adt_atc_check" -> atc(in, cancel);
+			case "adt_text_elements" -> textElements(in, cancel);
+			case "adt_write_text_elements" -> writeTextElements(in, cancel);
 			case "adt_transport_info" -> transportInfo(in, cancel);
 			case "adt_short_dumps" -> shortDumps(in, cancel);
 			case "adt_list_transports" -> listTransports(in, cancel);
@@ -563,7 +603,101 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtObjectRef ref = resolve(c, in, cancel);
 		List<AdtClient.Message> msgs = c.atcCheck(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "check_variant"),
 				cancel);
-		return ToolResult.ok(msgs.isEmpty() ? "No ATC findings." : format(msgs));
+		return ToolResult.ok(msgs.isEmpty() ? "No ATC findings." : formatAtc(msgs, false));
+	}
+
+	/** ATC findings by priority (1 = error, 2 = warning, 3 = information), with the object when several were checked. */
+	static String formatAtc(List<AdtClient.Message> msgs, boolean withObject) {
+		StringBuilder sb = new StringBuilder();
+		for (AdtClient.Message m : msgs) {
+			String priority = switch (m.severity()) {
+			case "Error" -> "1";
+			case "Warning" -> "2";
+			default -> "3";
+			};
+			sb.append("Priority ").append(priority);
+			if (withObject && m.uri() != null && !m.uri().isEmpty()) {
+				String uri = AdtObjectRef.objectUri(m.uri());
+				sb.append(' ').append(uri.substring(uri.lastIndexOf('/') + 1).toUpperCase(Locale.ROOT));
+			}
+			if (m.line() > 0) {
+				sb.append(" line ").append(m.line());
+			}
+			if (!m.include().isEmpty()) {
+				sb.append(" in include ").append(m.include());
+			}
+			sb.append(": ").append(m.text()).append('\n');
+		}
+		return sb.toString();
+	}
+
+	private ToolResult textElements(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String part = textPart(in);
+		String texts = c.textElements(ref.type(), ref.name(), part, cancel);
+		return ToolResult.ok(texts.isBlank() ? "No " + part + " maintained for " + ref.name() + "." : texts);
+	}
+
+	private static final Pattern SELECTION_TEXT = Pattern.compile("[A-Za-z0-9_]{1,8}=.*");
+
+	private ToolResult writeTextElements(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String part = textPart(in);
+		String texts = Json.str(in, "texts");
+		if (texts == null) {
+			return ToolResult.error("Give 'texts', the complete new " + part + ", one entry per line.");
+		}
+		texts = texts.replace("\r\n", "\n");
+		if (part.equals("selections")) {
+			for (String line : texts.split("\n")) {
+				if (!line.isBlank() && !SELECTION_TEXT.matcher(line.strip()).matches()) {
+					return ToolResult.error("Selection texts go one per line as NAME=Text, with the name of the "
+							+ "parameter or select-option (up to 8 characters); not understood: " + line.strip());
+				}
+			}
+		}
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			String tr = AdtClient.writeTextElements(session, ref.type(), ref.name(), part, texts,
+					Json.str(in, "transport"), cancel);
+			return ToolResult.ok("Saved the " + part + " of " + ref.name() + " in " + s.label()
+					+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Text elements are active at once.");
+		}
+	}
+
+	private static String textPart(JsonObject in) {
+		String part = Json.str(in, "part");
+		part = part == null || part.isBlank() ? "symbols" : part.trim().toLowerCase(Locale.ROOT);
+		if (!AdtClient.TEXT_PARTS.contains(part)) {
+			throw new IllegalArgumentException("Unknown part '" + part + "'; use symbols, selections or headings.");
+		}
+		return part;
+	}
+
+	/**
+	 * Bella's style check of the code just saved and a syntax check of the
+	 * saved (inactive) version, appended to a write's result so the model
+	 * fixes them before activating, as ARC-1 does on SAPWrite.
+	 */
+	private String checksAfterWrite(AdtClient c, String objectUri, String written, boolean methodBody,
+			CancelToken cancel) {
+		StringBuilder sb = new StringBuilder();
+		List<AbapLint.Finding> lint = AbapLint.check(written, naming.get());
+		if (!lint.isEmpty()) {
+			sb.append("\n\nBella's style check of the code written")
+					.append(methodBody ? " (line numbers count within the method body)" : "")
+					.append("; fix the findings that apply before activating:\n").append(AbapLint.format(lint));
+		}
+		try {
+			List<AdtClient.Message> msgs = c.syntaxCheck(objectUri, null, true, cancel);
+			sb.append(msgs.isEmpty() ? "\n\nSyntax check: no errors."
+					: "\n\nSyntax check of the saved version:\n" + format(msgs));
+		} catch (IOException | RuntimeException e) {
+			sb.append("\n\nSyntax check could not run: ").append(e.getMessage());
+		}
+		return sb.toString();
 	}
 
 	private ToolResult transportInfo(JsonObject in, CancelToken cancel) throws IOException {
@@ -697,14 +831,17 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			source = updated.get();
 		}
+		String tr;
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-			String tr = AdtClient.writeSource(session, uri, include, source, Json.str(in, "transport"), cancel);
-			return ToolResult.ok("Saved " + (method == null || method.isBlank() ? "" : "method " + method.toUpperCase(Locale.ROOT) + " of ")
-					+ ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
+			tr = AdtClient.writeSource(session, uri, include, source, Json.str(in, "transport"), cancel);
 		} finally {
 			c.invalidate(uri);
 			inactive.remove(s.destinationId());
 		}
+		boolean oneMethod = method != null && !method.isBlank();
+		return ToolResult.ok("Saved " + (oneMethod ? "method " + method.toUpperCase(Locale.ROOT) + " of " : "")
+				+ ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet."
+				+ checksAfterWrite(c, uri, oneMethod ? Json.str(in, "source") : source, oneMethod, cancel));
 	}
 
 	private ToolResult create(JsonObject in, CancelToken cancel) throws IOException {
@@ -713,7 +850,8 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtObjectRef ref = c.create(Json.str(in, "type"), Json.str(in, "name"), Json.str(in, "description"),
 				Json.str(in, "package"), Json.str(in, "transport"), s.user(), cancel);
 		String source = Json.str(in, "source");
-		if (source != null && !source.isBlank()) {
+		boolean written = source != null && !source.isBlank();
+		if (written) {
 			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
 				AdtClient.writeSource(session, ref.uri(), null, source, Json.str(in, "transport"), cancel);
 			} finally {
@@ -722,7 +860,8 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 		}
 		return ToolResult.ok("Created " + ref.name() + " (" + ref.type() + ") in package "
-				+ Json.str(in, "package").toUpperCase(Locale.ROOT) + " on " + s.label() + ". Not activated yet.");
+				+ Json.str(in, "package").toUpperCase(Locale.ROOT) + " on " + s.label() + ". Not activated yet."
+				+ (written ? checksAfterWrite(c, AdtObjectRef.objectUri(ref.uri()), source, false, cancel) : ""));
 	}
 
 	private ToolResult activate(JsonObject in, CancelToken cancel) throws IOException {
@@ -754,7 +893,26 @@ public final class AdtToolProvider implements ToolProvider {
 		String done = "Activated " + names + " on " + s.label() + (msgs.isEmpty() ? "." : ":\n" + format(msgs));
 		boolean test = in.has("run_unit_tests") && in.get("run_unit_tests").isJsonPrimitive()
 				&& in.get("run_unit_tests").getAsBoolean();
-		return ToolResult.ok(test ? done + "\n\n" + unitTestsAfterActivation(c, refs, cancel) : done);
+		boolean atc = !in.has("run_atc") || !in.get("run_atc").isJsonPrimitive() || in.get("run_atc").getAsBoolean();
+		return ToolResult.ok(done + (test ? "\n\n" + unitTestsAfterActivation(c, refs, cancel) : "")
+				+ (atc ? "\n\n" + atcAfterActivation(c, refs, cancel) : ""));
+	}
+
+	/** One ATC run over the activated objects, with what to do about the findings. */
+	private static String atcAfterActivation(AdtClient c, List<AdtObjectRef> refs, CancelToken cancel) {
+		try {
+			List<AdtClient.Message> msgs = c.atcCheck(
+					refs.stream().map(r -> AdtObjectRef.objectUri(r.uri())).toList(), null, cancel);
+			if (msgs.isEmpty()) {
+				return "ATC: no findings.";
+			}
+			return "ATC findings:\n" + formatAtc(msgs, refs.size() > 1)
+					+ "Fix priority 1 and 2 findings now, then save, activate and check again; fix priority 3 where it "
+					+ "is simple. For each finding you leave, tell the developer why (e.g. a false positive that needs "
+					+ "an exemption).";
+		} catch (IOException e) {
+			return "ATC could not run: " + e.getMessage();
+		}
 	}
 
 	/** Object types that can hold ABAP Unit tests. */

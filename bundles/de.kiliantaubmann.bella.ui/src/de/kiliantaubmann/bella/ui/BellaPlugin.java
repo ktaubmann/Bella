@@ -87,7 +87,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 				AdtBackend backend = super.addingService(reference);
 				Log.info("bella", "ADT integration available");
 				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination,
-						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant));
+						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant,
+						() -> conventions(activeDestination).naming()));
 				return backend;
 			}
 
@@ -461,6 +462,11 @@ public class BellaPlugin extends AbstractUIPlugin {
 		return ProjectConventions.merge(general, ProjectConventions.of(
 				prefs().getString(Prefs.CONVENTIONS_TEXT + destinationId),
 				prefs().getString(Prefs.CONVENTIONS_NAMING + destinationId)));
+	}
+
+	/** The conventions for the system of the active editor. */
+	public ProjectConventions activeConventions() {
+		return conventions(activeDestination);
 	}
 
 	/**
