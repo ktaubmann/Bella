@@ -9,9 +9,15 @@ package de.kiliantaubmann.bella.core.adt;
  * @param client        client, may be {@code null} for cloud systems
  * @param user          logon user, may be {@code null}
  * @param loggedOn      whether a logon exists (Bella never opens a logon dialog on its own)
+ * @param language      logon language, e.g. {@code DE}; {@code null} when unknown
  */
 public record AdtSystem(String destinationId, String projectName, String systemId, String client, String user,
-		boolean loggedOn) {
+		boolean loggedOn, String language) {
+
+	public AdtSystem(String destinationId, String projectName, String systemId, String client, String user,
+			boolean loggedOn) {
+		this(destinationId, projectName, systemId, client, user, loggedOn, null);
+	}
 
 	public String label() {
 		StringBuilder sb = new StringBuilder(projectName);

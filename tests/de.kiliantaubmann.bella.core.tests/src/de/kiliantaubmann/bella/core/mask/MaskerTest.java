@@ -47,6 +47,20 @@ class MaskerTest {
 	}
 
 	@Test
+	void cdsAnnotationsAreNoAddressesAndUrlsAreMasked() {
+		Masker m = objectsOnly();
+		String json = "\"source\":\"@AbapCatalog.viewEnhancementCategory: [#NONE]\\n@EndUserText.label: 'x'\\n"
+				+ "define view entity ZI_X as select from mara { key matnr, amount@Semantics.amount }\"";
+		String masked = m.mask(json);
+		assertTrue(masked.contains("\\n@EndUserText.label"), masked);
+		assertTrue(masked.contains("amount@Semantics.amount"), masked);
+		assertFalse(masked.contains("example.invalid"), masked);
+		assertEquals("GET /sap/bc/adt/textelements/programs/zsd_mask2/source/symbols",
+				m.mask("GET /sap/bc/adt/textelements/programs/zsd_outb_delivery_delete/source/symbols"));
+		assertTrue(m.mask("mail max.muster@firma.de").contains("maskmail"));
+	}
+
+	@Test
 	void standardObjectsAndWordsStay() {
 		Masker m = objectsOnly();
 		String text = "SELECT FROM mara, CL_ABAP_TYPEDESCR, YES or ZERO, Yoga and your zone.";
@@ -73,6 +87,43 @@ class MaskerTest {
 		}
 		assertTrue(masked.contains("/mask"), "namespace keeps its shape: " + masked);
 		assertTrue(masked.contains("muellers"), "only whole words: " + masked);
+	}
+
+	@Test
+	void namesAfterEscapedLineBreaksInJsonAreMasked() {
+		Masker m = new Masker(() -> all(List.of(), List.of("S4H"), List.of("MUELLER")));
+		// a tool result as the CLI's stream-json carries it: line breaks escaped as \n
+		String line = """
+				{"text":"ZAPI_ACME_ONE (IWSG) package $TMP\\nZSD_ACME_DELETE (PROG/P)\\r\\nZ1ACME_MSG\\tS4H\\nMUELLER\\nanna@acme.de\\nDE89 3704 0044 0532 0130 00"}""";
+		String masked = m.mask(line);
+		for (String secret : List.of("ACME", "S4H", "MUELLER", "anna", "DE89")) {
+			assertFalse(masked.contains(secret), secret + " in " + masked);
+		}
+		assertTrue(masked.contains("\\nZSD_MASK"), "the escape stays: " + masked);
+		assertTrue(masked.contains("\\nmaskmail"), "the escape stays: " + masked);
+	}
+
+	@Test
+	void encodedPathsTransportNumbersAndNamedUsersAreMasked() {
+		Masker m = new Masker(() -> all(List.of(), List.of("S4H"), List.of("MUELLER")));
+		String masked = m.mask("POST /usageReferences?uri=%2Fsap%2Fbc%2Fadt%2Fddic%2Fddl%2Fsources%2Fzc_acme_material "
+				+ "with corrNr=S4HK903503: Object R3TR DDLS ZI_ACME is already locked in request S4HK902998 of user "
+				+ "SCHMIDT; Benutzer MUELLER; user ID");
+		for (String secret : List.of("acme", "ACME", "S4H", "SCHMIDT", "MUELLER")) {
+			assertFalse(masked.contains(secret), secret + " in " + masked);
+		}
+		assertTrue(masked.contains("K903503"), "the request number keeps its shape: " + masked);
+		assertTrue(masked.contains("user ID"), "too short for a user: " + masked);
+		assertEquals(masked, m.mask(masked), "placeholders are not masked again");
+		assertEquals("S4HANA and S4H2", m.mask("S4HANA and S4H2"), "no other words");
+	}
+
+	@Test
+	void abapCodeAboutUsersStaysIntact() {
+		Masker m = new Masker(() -> new Masker.Settings(true, false, true, List.of(), List.of(), List.of()));
+		String code = "DATA user TYPE syuname. ls_x-user = me->user. user LIKE sy-uname. user VALUE 'X'.";
+		assertEquals(code, m.mask(code));
+		assertFalse(m.mask("locked by user SCHMIDT").contains("SCHMIDT"));
 	}
 
 	@Test

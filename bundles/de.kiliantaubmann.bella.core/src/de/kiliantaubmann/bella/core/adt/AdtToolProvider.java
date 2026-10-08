@@ -2,13 +2,16 @@ package de.kiliantaubmann.bella.core.adt;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.google.gson.JsonArray;
@@ -18,6 +21,12 @@ import com.google.gson.JsonObject;
 import de.kiliantaubmann.bella.core.abap.AbapEdit;
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.abap.AbapSlices;
+import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
+import de.kiliantaubmann.bella.core.abap.ClassSurgery;
+import de.kiliantaubmann.bella.core.abap.CodeEdits;
+import de.kiliantaubmann.bella.core.abap.TextDeltas;
+import de.kiliantaubmann.bella.core.conventions.NamingRules;
+import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolProvider;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -25,6 +34,8 @@ import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.LineDiff;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * Bella's own SAP tools, executed through the developer's ADT logon. No
@@ -36,6 +47,9 @@ public final class AdtToolProvider implements ToolProvider {
 	private final Supplier<String> defaultDestination;
 	private final Supplier<String> writePackages;
 	private final Function<String, String> atcVariants;
+	private final Supplier<NamingRules> naming;
+	/** Development package and transport request of the chat; {@code null} binds nothing. */
+	private final DevScope scope;
 	private final SourceCache cache = new SourceCache();
 	/** Inactive objects per destination, kept briefly so a turn with many reads asks once. */
 	private final Map<String, Inactive> inactive = new ConcurrentHashMap<>();
@@ -68,10 +82,31 @@ public final class AdtToolProvider implements ToolProvider {
 	 */
 	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages,
 			Function<String, String> atcVariants) {
+		this(backend, defaultDestination, writePackages, atcVariants, () -> NamingRules.NONE);
+	}
+
+	/**
+	 * @param naming the project's naming rules, checked with Bella's style check
+	 *               on the code a write or create saves
+	 */
+	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages,
+			Function<String, String> atcVariants, Supplier<NamingRules> naming) {
+		this(backend, defaultDestination, writePackages, atcVariants, naming, null);
+	}
+
+	/**
+	 * @param scope the chat's development package and transport request:
+	 *              customer objects of other packages are ignored, writes need
+	 *              the package and the request the developer chose
+	 */
+	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages,
+			Function<String, String> atcVariants, Supplier<NamingRules> naming, DevScope scope) {
+		this.scope = scope;
 		this.backend = backend;
 		this.defaultDestination = defaultDestination;
 		this.writePackages = writePackages;
 		this.atcVariants = atcVariants;
+		this.naming = naming;
 	}
 
 	/** Package patterns from a comma, semicolon or space separated list; {@code *} is a wildcard. */
@@ -129,9 +164,78 @@ public final class AdtToolProvider implements ToolProvider {
 		return s;
 	}
 
+	private static final String TEXT_PART_DESC = "symbols (text symbols TEXT-nnn), selections (selection texts) or "
+			+ "headings (list and column headings).";
 	private static final String SYSTEM_DESC = "ABAP project / system id to use. Omit to use the system of the active editor.";
 	private static final String NAME_DESC = "Object name, e.g. ZCL_SALES_ORDER.";
 	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD. Omit if unknown.";
+
+	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
+			+ "module, needs 'group'), MSAG (message class), DTEL, DOMA, TTYP, TABL/DT (table), TABL/DS (structure), "
+			+ "DDLS, DCLS, DDLX, BDEF, SRVD, SRVB (service binding).";
+
+	/** Fields of DDIC objects, shared by adt_create_object and adt_write_metadata. */
+	private static final String[] DDIC_PROPS = { "domain", "string", "DTEL: the domain it is based on.",
+			"data_type", "string", "DTEL without domain, or DOMA: built-in type such as CHAR, NUMC, DEC, INT4.",
+			"length", "integer", "DTEL/DOMA: length.", "decimals", "integer", "DTEL/DOMA: decimal places.",
+			"output_length", "integer", "DOMA: output length (default the length).", "short_label", "string",
+			"DTEL: short field label (10).", "medium_label", "string", "DTEL: medium field label (20).",
+			"long_label", "string", "DTEL: long field label (40).", "heading_label", "string",
+			"DTEL: column heading (55).", "search_help", "string", "DTEL: search help.", "value_table", "string",
+			"DOMA: value table.", "lowercase", "boolean", "DOMA: lower case allowed.", "sign", "boolean",
+			"DOMA: sign allowed.", "conversion_exit", "string", "DOMA: conversion routine, e.g. ALPHA.", "row_type",
+			"string", "TTYP: row type, a built-in type (STRING, I …) or a DDIC structure.", "row_type_kind", "string",
+			"TTYP: builtin or structure (default: guessed from row_type).", "service_definition", "string",
+			"SRVB: the service definition.", "binding_type", "string", "SRVB: e.g. ODATA V4 UI or ODATA V2 Web API.",
+			"odata_version", "string", "SRVB: V2 or V4.", "category", "string", "SRVB: 0 UI, 1 Web API." };
+
+	private static String[] createProps() {
+		List<String> p = new ArrayList<>(List.of(objectProps("description", "string",
+				"Short description (max. 60 characters).", "package", "string",
+				"Package, e.g. $TMP or ZSALES; not needed for FUNC, which belongs to the package of its group.",
+				"transport", "string", "Transport request (not a task) for non-local packages.", "source", "string",
+				"Optional initial source code for source-based types. For FUNC the interface goes into the FUNCTION "
+						+ "statement, without the *\" comment block.",
+				"group", "string", "FUNC, and INCL of a function group: the function group.", "processing_type",
+				"string", "FUNC: normal (default), rfc or update.", "update_task_kind", "string",
+				"FUNC with processing_type update: startImmediate, immediateStartNoRestart or startDelayed.",
+				"language", "string", "Original language (2 letters); default the logon language.")));
+		p.addAll(List.of(DDIC_PROPS));
+		return p.toArray(String[]::new);
+	}
+
+	private static String[] metadataProps() {
+		List<String> p = new ArrayList<>(List.of(objectProps("description", "string", "New short description.",
+				"transport", "string", "Transport request, required for non-local objects unless already assigned.")));
+		p.addAll(List.of(DDIC_PROPS));
+		return p.toArray(String[]::new);
+	}
+
+	/** The array fields: MSAG messages and DOMA fixed values. */
+	private static void addArrays(JsonObject schema) {
+		JsonObject props = schema.getAsJsonObject("properties");
+		props.add("messages", arrayOf("MSAG: messages as {number, text} (number 000-999, text up to 73 characters).",
+				"number", "string", "text", "string"));
+		props.add("fixed_values", arrayOf("DOMA: fixed values as {low, high, text}; replaces all fixed values.",
+				"low", "string", "high", "string", "text", "string"));
+	}
+
+	private static JsonObject arrayOf(String description, String... itemProps) {
+		JsonObject a = new JsonObject();
+		a.addProperty("type", "array");
+		a.addProperty("description", description);
+		JsonObject item = new JsonObject();
+		item.addProperty("type", "object");
+		JsonObject ip = new JsonObject();
+		for (int i = 0; i + 1 < itemProps.length; i += 2) {
+			JsonObject f = new JsonObject();
+			f.addProperty("type", itemProps[i + 1]);
+			ip.add(itemProps[i], f);
+		}
+		item.add("properties", ip);
+		a.add("items", item);
+		return a;
+	}
 
 	private static String[] objectProps(String... extra) {
 		List<String> p = new ArrayList<>(List.of("name", "string", NAME_DESC, "type", "string", TYPE_DESC, "system",
@@ -143,15 +247,38 @@ public final class AdtToolProvider implements ToolProvider {
 	@Override
 	public List<ToolSpec> listTools() {
 		List<ToolSpec> t = new ArrayList<>();
+		if (scope != null) {
+			t.add(ToolSpec.of("adt_dev_package",
+					"The development package of this chat and the transport request for its changes. Customer "
+							+ "objects (Z*, Y*) are used only from this package; objects of other packages are "
+							+ "ignored, and every write needs the package. 'get' (default) shows both. 'set' records "
+							+ "what the developer answered: 'package' (not when the chat works on an editor object, "
+							+ "whose package it is) and/or 'transport', one of the developer's own open requests. "
+							+ "Ask the developer first; never choose a package or request yourself.",
+					schema(new String[0], "action", "string", "get (default) or set.", "package", "string",
+							"set: the package the developer named.", "transport", "string",
+							"set: the transport request the developer named (a request, not a task).", "system",
+							"string", SYSTEM_DESC),
+					null, ToolSpec.Kind.READ));
+		}
 		t.add(ToolSpec.of("adt_list_systems",
 				"List the ABAP projects (SAP systems) in the workspace, whether they are logged on, and their release "
-						+ "(SAP_BASIS) or whether they are ABAP Cloud systems. Check it before writing code that depends on the release.",
+						+ "(SAP_BASIS) or whether they are ABAP Cloud systems. Check it before writing code that depends on the release. "
+						+ "The logon state does not test the network connection.",
 				schema(new String[0]), null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_search_objects",
-				"Search repository objects by name pattern (wildcard *), e.g. ZCL_SALES*. Returns name, type, package and description.",
-				schema(new String[] { "query" }, "query", "string", "Name pattern, * as wildcard.", "type", "string",
-						"Optional object type filter, e.g. CLAS.", "max_results", "integer", "Default 50.", "system",
-						"string", SYSTEM_DESC),
+				"Search repository objects by name pattern (wildcard *), e.g. ZCL_SALES*; returns name, type, package "
+						+ "and description. Use a specific pattern: Z* or Y* alone is refused, a system has thousands "
+						+ "of customer objects; to see what a package holds, give 'package'. A cut list says so. "
+						+ "With 'search_in' 'source' it searches the text of ABAP sources instead "
+						+ "(e.g. a literal, a field or a statement) and returns the objects with their matching lines; "
+						+ "narrow it with 'package' and 'type'.",
+				schema(new String[] { "query" }, "query", "string",
+						"Name pattern with * as wildcard, or with search_in 'source' the text to find.", "search_in",
+						"string", "names (default) or source.", "type", "string",
+						"Optional object type filter, e.g. CLAS.", "package", "string",
+						"Only objects of this package.", "max_results", "integer",
+						"Default 50 (objects).", "system", "string", SYSTEM_DESC),
 				Capability.SEARCH, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_read_source",
 				"Read the saved source or definition of a repository object: classes, interfaces, programs, CDS views, function modules, "
@@ -166,7 +293,10 @@ public final class AdtToolProvider implements ToolProvider {
 						"auto (default: newest saved version, with a note if it is not activated), active or inactive.")),
 				Capability.READ_SOURCE, ToolSpec.Kind.READ));
 		JsonObject contextSchema = schema(new String[0], "name", "string",
-				"Object whose used objects should be looked up, e.g. ZCL_SALES_ORDER.", "type", "string", TYPE_DESC,
+				"Object whose used objects should be looked up, e.g. ZCL_SALES_ORDER.", "type", "string",
+				"Type of 'name'. Without 'name' it applies to every entry of 'names', e.g. DOMA for the domains "
+						+ "instead of the data elements of the same name; look up names of other types in a second "
+						+ "call. " + TYPE_DESC,
 				"source", "string", "ABAP code whose used objects should be looked up (e.g. code you are about to change).",
 				"system", "string", SYSTEM_DESC);
 		JsonObject names = new JsonObject();
@@ -182,31 +312,79 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "Give 'name' (an object), 'source' (code) and/or 'names'. Call before writing code that uses tables, "
 						+ "structures, classes or function modules, so you use real field names and signatures.",
 				contextSchema, null, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_where_used", "Where-used list of a repository object.",
-				schema(new String[] { "name" }, objectProps()), Capability.WHERE_USED, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_syntax_check",
 				"Syntax check of an object. Pass 'source' to check code that is not saved yet (e.g. a proposed change) without writing it.",
 				schema(new String[] { "name" }, objectProps("source", "string", "Optional full source to check instead of the saved version.")),
 				Capability.SYNTAX_CHECK, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_run_unit_tests", "Run the ABAP Unit tests of an object and report failures.",
 				schema(new String[] { "name" }, objectProps()), Capability.UNIT_TEST, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_atc_check", "Run ATC (ABAP Test Cockpit) checks on an object and list findings.",
+		t.add(ToolSpec.of("adt_atc_check",
+				"Run ATC (ABAP Test Cockpit) checks on an object and list the findings by priority. ATC checks the "
+						+ "active version: activate first (or activate with run_atc, which runs ATC after a successful activation).",
 				schema(new String[] { "name" }, objectProps("check_variant", "string",
 						"ATC check variant; omit for the one set in Bella's preferences, else the system default.")),
 				Capability.ATC, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_transport_info",
-				"Which transport request a change needs: whether the object's package records changes, the request the object "
-						+ "is already locked in, and the developer's open requests that fit. Use it before writing a non-local object. "
-						+ "Releasing transports is not possible.",
-				schema(new String[] { "name" }, objectProps("package", "string",
-						"Package, needed when the object does not exist yet.", "create", "boolean",
-						"true if the object is about to be created; default false (change).")),
+		t.add(ToolSpec.of("adt_quickfix",
+				"SAP's quick fixes (Ctrl+1 in ADT) for a syntax or ATC finding. action 'list' shows the fixes for a "
+						+ "line (and column, if known); 'preview' runs one fix ('proposal': its number or uri from the list) "
+						+ "and returns the changed code without saving it. Apply the result with adt_write_source.",
+				schema(new String[] { "name", "line" }, objectProps("action", "string", "list (default) or preview.",
+						"line", "integer", "Line of the finding (from 1).", "column", "integer",
+						"Column of the finding (from 0); omit to try the tokens of the line.", "include", "string",
+						"Class include, default main.", "proposal", "string",
+						"preview: number of the fix in the list (1, 2 …) or its uri.")),
 				null, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_list_transports",
-				"Transport requests of a user with their tasks and number of objects: modifiable ones by default, "
-						+ "released ones with status R.",
-				schema(new String[0], "user", "string", "Owner; default the logged-on user, '*' for all users.", "status",
-						"string", "D modifiable (default) or R released.", "system", "string", SYSTEM_DESC),
+		t.add(ToolSpec.of("adt_format",
+				"SAP's pretty printer with the system's settings. action 'format' (default) returns 'source' (or the "
+						+ "saved source of 'name') formatted, without saving it; 'get_settings' shows indentation and "
+						+ "keyword case.",
+				schema(new String[0], objectProps("action", "string", "format (default) or get_settings.", "source",
+						"string", "Code to format.", "include", "string", "Class include, default main.")),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_format_settings",
+				"Change the pretty printer settings for everybody on the system (indentation, keyword case). Bella "
+						+ "always asks first.",
+				schema(new String[] { "indentation", "style" }, "indentation", "boolean", "Indent code.", "style",
+						"string", "keywordUpper, keywordLower, keywordAuto or none.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_object_info",
+				"More about one object, read only. action 'api_state': release state of an SAP object (C0 extend, C1 "
+						+ "use in cloud and key user apps, C2 remote API …) and its successor, before using it in ABAP "
+						+ "Cloud or clean core code; 'versions': version history of the source; 'version_source': the "
+						+ "source of one version ('version': its number); 'variants': variants of a program.",
+				schema(new String[] { "name", "action" }, objectProps("action", "string",
+						"api_state, versions, version_source or variants.", "version", "string",
+						"version_source: version number from 'versions'.", "include", "string",
+						"Class include for versions, default main.")),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_navigate",
+				"Code navigation, read only. 'definition': where the symbol at line/column is defined; 'references': "
+						+ "where-used list of the object (without line), or the uses of the symbol at line/column; 'completion': ADT's code "
+						+ "completion at line/column; 'hierarchy': superclass, interfaces and subclasses of a class. "
+						+ "Lines count from 1, columns from 0.",
+				schema(new String[] { "name", "action" }, objectProps("action", "string",
+						"definition, references, completion or hierarchy.", "line", "integer", "Line (from 1).",
+						"column", "integer", "Column (from 0).", "include", "string", "Class include, default main.",
+						"source", "string", "Unsaved source to navigate in; default the saved source.")),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_text_elements",
+				"Read the text pool of a program, class or function group: text symbols (TEXT-001), selection texts "
+						+ "(labels of PARAMETERS and SELECT-OPTIONS) or list headings.",
+				schema(new String[] { "name", "part" }, objectProps("part", "string", TEXT_PART_DESC)), null,
+				ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_transports",
+				"Transport requests, read only (releasing is not possible). 'list' (default): requests of a user with "
+						+ "tasks and number of objects ('user', 'status' D modifiable or R released). 'for_object': which "
+						+ "request a change of object 'name' needs: whether its package records changes, the request it "
+						+ "is locked in and the developer's open requests that fit; use it before writing a non-local "
+						+ "object ('package' and 'create' true for a new object). 'history': the requests an object was "
+						+ "changed in, from its version history. 'layers' / 'targets': transport layers and targets.",
+				schema(new String[0], objectProps("action", "string", "list (default), for_object, history, layers or targets.",
+						"user", "string", "list: owner; default the logged-on user, '*' for all users.", "status", "string",
+						"list: D modifiable (default) or R released.", "package", "string",
+						"for_object: package, needed when the object does not exist yet.", "create", "boolean",
+						"for_object: true if the object is about to be created.", "include", "string",
+						"history: class include, default main.")),
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_transport_review",
 				"Everything needed to review a transport request, read only: header, tasks, objects, per source the diff "
@@ -216,13 +394,6 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[] { "request" }, "request", "string", "Transport request number, e.g. DEVK900123.",
 						"object", "string", "Only this object of the request, with its whole diff.", "checks", "boolean",
 						"Run syntax check, ATC and ABAP Unit (default true).", "system", "string", SYSTEM_DESC),
-				null, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_short_dumps",
-				"Runtime errors (short dumps, ST22): without 'id' a list of the newest dumps (by default the developer's own), "
-						+ "with 'id' the full dump text including the source position.",
-				schema(new String[0], "id", "string", "Dump id from the list, to read one dump.", "user", "string",
-						"Only dumps of this user; default the logged-on user, '*' for all users.", "max_results", "integer",
-						"Default 10, at most 50.", "system", "string", SYSTEM_DESC),
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_table_contents",
 				"Read rows of a database table or CDS view (data preview, like SE16 or ADT's SQL console). Give 'table' with "
@@ -235,23 +406,175 @@ public final class AdtToolProvider implements ToolProvider {
 						"integer", "Default 100, at most " + TABLE_MAX_ROWS + ".", "system", "string", SYSTEM_DESC),
 				Capability.TABLE_CONTENTS, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_write_source",
-				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system.",
+				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. "
+						+ "Works for ABAP (classes, interfaces, programs, includes, function modules) and for CDS views (DDLS), "
+						+ "access controls (DCLS), metadata extensions (DDLX), behavior definitions (BDEF) and service definitions (SRVD). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system. "
+						+ "ABAP main sources are checked by SAP before saving; a write that adds syntax errors is refused.",
 				schema(new String[] { "name", "source" }, objectProps("source", "string",
 						"Complete new source code, or with 'method' the new method body.", "method", "string",
 						"Replace only the body of this method (between METHOD and ENDMETHOD).",
 						"include", "string", "Class include, default main.", "transport", "string",
-						"Transport request, required for non-local objects unless already assigned.")),
+						"Transport request, required for non-local objects unless already assigned.", "allow_errors",
+						"boolean", "Save even though the new source adds syntax errors; only for an intended step.")),
 				Capability.WRITE_SOURCE, ToolSpec.Kind.WRITE));
+		JsonObject createSchema = schema(new String[] { "name", "type", "description" }, createProps());
+		addArrays(createSchema);
+		createSchema.getAsJsonObject("properties").getAsJsonObject("type").addProperty("description", CREATE_TYPE_DESC);
 		t.add(ToolSpec.of("adt_create_object",
-				"Create a new class (CLAS), interface (INTF) or program (PROG), optionally with initial source. Does not activate.",
-				schema(new String[] { "name", "type", "description", "package" }, objectProps("description", "string",
-						"Short description (max. 60 characters).", "package", "string", "Package, e.g. $TMP or ZSALES.",
-						"transport", "string", "Transport request for non-local packages.", "source", "string",
-						"Optional initial source code.")),
-				Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
+				"Create a new object, optionally with initial source; does not activate. Types: " + CREATE_TYPE_DESC
+						+ " Message classes take 'messages', data elements 'domain' or 'data_type' and labels, domains "
+						+ "'data_type' and 'length', table types 'row_type', service bindings 'service_definition'.",
+				createSchema, Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
+		JsonObject metadataSchema = schema(new String[] { "name", "type" }, metadataProps());
+		addArrays(metadataSchema);
+		JsonObject remove = new JsonObject();
+		remove.addProperty("type", "array");
+		remove.addProperty("description", "MSAG: numbers of messages to delete.");
+		JsonObject str = new JsonObject();
+		str.addProperty("type", "string");
+		remove.add("items", str);
+		metadataSchema.getAsJsonObject("properties").add("remove_numbers", remove);
+		t.add(ToolSpec.of("adt_write_metadata",
+				"Change the metadata of a data element (DTEL), domain (DOMA), table type (TTYP) or the messages of a "
+						+ "message class (MSAG). Only the given fields change; Bella reads the object first and keeps "
+						+ "everything else. Message classes: 'messages' adds or replaces messages by number, "
+						+ "'remove_numbers' deletes some. Does not activate (message classes need no activation).",
+				metadataSchema, null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_edit_code",
+				"Targeted change of a class, program or include that keeps the rest of the source. Classes: "
+						+ "'add_method' ('source': the METHODS clause, 'visibility'; adds an empty implementation), "
+						+ "'edit_method_signature' ('method', 'source': the new METHODS clause), 'edit_class_definition' "
+						+ "('source': CLASS … DEFINITION … ENDCLASS.), 'change_method_visibility' ('method', 'visibility'; "
+						+ "keeps the body), 'delete_method' ('method'). Programs and includes: 'edit_unit' ('unit', "
+						+ "'source': the whole FORM or MODULE), 'add_unit' ('source'). Write method bodies with "
+						+ "adt_write_source 'method'. Bella refuses a change that adds syntax errors. Like "
+						+ "adt_write_source, open objects are changed in the editor only.",
+				schema(new String[] { "name", "action" }, objectProps("action", "string",
+						String.join(", ", CodeEdits.ACTIONS) + ".", "method", "string", "Method name.", "source",
+						"string", "METHODS clause, class definition or FORM/MODULE, depending on the action.",
+						"visibility", "string", "public (default), protected or private.", "unit", "string",
+						"edit_unit: name of the FORM or MODULE.", "transport", "string",
+						"Transport request, required for non-local objects unless already assigned.")),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_delete_object",
+				"Delete an object from the SAP system. Bella checks the where-used list first and refuses while "
+						+ "other objects use it, unless 'force' is true; it always asks the developer.",
+				schema(new String[] { "name", "type" }, objectProps("transport", "string",
+						"Transport request for non-local objects.", "force", "boolean",
+						"Delete even though other objects use it.")),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_diagnose",
+				"Runtime diagnostics, read only: 'short_dumps' (ST22; the newest dumps, by default the developer's "
+						+ "own, 'user' '*' for all; with 'id' one dump in full with its source position), 'system_messages' (SM02), 'gateway_errors' (/IWFND/ERROR_LOG; with "
+						+ "'id' one error in detail), 'traces' (ABAP profiler traces; with 'id' and 'part' hitlist, "
+						+ "statements or db_accesses one analysis), 'trace_requests' (armed traces), 'sql_trace_state' "
+						+ "(ST05), 'sql_trace_directory', 'authorization_trace' (STUSERTRACE; 'user', 'auth_object', "
+						+ "'only_failures'), 'atc_variants' ('filter').",
+				schema(new String[] { "action" }, "action", "string", "One of the actions above.", "id", "string",
+						"Entry id from a list.", "part", "string", "traces: hitlist (default), statements or db_accesses.",
+						"user", "string", "User filter.", "auth_object", "string", "authorization_trace: object, e.g. S_TCODE.",
+						"only_failures", "boolean", "authorization_trace: only failed checks.", "filter", "string",
+						"atc_variants: name pattern, e.g. Z*.", "max_results", "integer", "Default 50.", "system", "string",
+						SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_trace_control",
+				"Start or stop traces; Bella always asks first. 'trace_start' arms an ABAP profiler trace for the next "
+						+ "execution ('process_type' http, dialog, batch, rfc or any; 'object_type' url, transaction, "
+						+ "report, functionmodule or any; 'user', 'sql_trace', 'max_executions', 'expires_hours'); "
+						+ "'trace_cancel' removes an armed trace ('id' from trace_requests); 'set_sql_trace' switches "
+						+ "ST05 on or off ('on', optional 'user'). Read the result with adt_diagnose.",
+				schema(new String[] { "action" }, "action", "string", "trace_start, trace_cancel or set_sql_trace.",
+						"id", "string", "trace_cancel: trace request id.", "process_type", "string", "trace_start.",
+						"object_type", "string", "trace_start.", "user", "string", "User to trace; default the developer.",
+						"sql_trace", "boolean", "trace_start: record database accesses too (default true).",
+						"max_executions", "integer", "trace_start: default 1.", "expires_hours", "integer",
+						"trace_start: default 24.", "on", "boolean", "set_sql_trace: on or off.", "system", "string",
+						SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_transport_manage",
+				"Change transport requests; Bella always asks first, and releasing stays impossible. 'create' a "
+						+ "workbench request ('description', optional 'package', 'transport_layer' or 'target'); "
+						+ "'reassign' to another 'owner' ('with_tasks'); 'delete' ('with_tasks'); 'remove_object' from a "
+						+ "request ('pgmid', 'object_type', 'object_name', e.g. R3TR CLAS ZCL_X). Transport layers and "
+						+ "targets: adt_transports 'layers' or 'targets'.",
+				schema(new String[] { "action" }, "action", "string", "create, reassign, delete or remove_object.",
+						"request", "string", "Transport request number.", "description", "string", "create.", "package",
+						"string", "create: package whose route the request follows.", "transport_layer", "string",
+						"create.", "target", "string", "create: transport target.", "owner", "string", "reassign.",
+						"with_tasks", "boolean", "reassign/delete: the open tasks too.", "pgmid", "string",
+						"remove_object, e.g. R3TR.", "object_type", "string", "remove_object, e.g. CLAS.", "object_name",
+						"string", "remove_object.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_package_manage",
+				"'create' a package ('name', 'description', 'super_package', 'software_component', "
+						+ "'transport_layer', 'package_type' development/structure/main, 'transport') or 'delete' one "
+						+ "(always asks). Bound to the allowed packages.",
+				schema(new String[] { "action", "name" }, "action", "string", "create or delete.", "name", "string",
+						"Package name.", "description", "string", "create.", "super_package", "string", "create.",
+						"software_component", "string", "create: default LOCAL.", "transport_layer", "string", "create.",
+						"package_type", "string", "create: development (default), structure or main.", "transport",
+						"string", "Transport request.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_git",
+				"Git repositories of the system, read only. provider 'abapgit' (default; abapGit's ADT backend): "
+						+ "'repos', 'check' ('repo': key or package). provider 'gcts': 'repos', 'system', 'branches', "
+						+ "'history', 'objects' ('repo': repository id).",
+				schema(new String[] { "action" }, "action", "string", "See above.", "provider", "string",
+						"abapgit (default) or gcts.", "repo", "string", "Repository key, id or package.", "limit",
+						"integer", "history: default 20.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_git_write",
+				"abapGit through ADT; Bella always asks first and passes no Git credentials. 'clone' a repository "
+						+ "into a package ('url', 'package', 'branch', 'transport'); 'pull' ('repo', 'transport'); "
+						+ "'switch_branch' ('repo', 'branch', 'create'); 'push' the changed objects ('repo', 'comment', "
+						+ "'author_name', 'author_email', optional 'objects').",
+				schema(new String[] { "action" }, "action", "string", "clone, pull, switch_branch or push.", "repo",
+						"string", "Repository key or package.", "url", "string", "clone: HTTPS URL.", "package", "string",
+						"clone: target package.", "branch", "string", "Branch.", "create", "boolean",
+						"switch_branch: create the branch.", "transport", "string", "Transport request.", "comment",
+						"string", "push: commit message.", "author_name", "string", "push.", "author_email", "string",
+						"push.", "objects", "string", "push: comma separated object names; default all changed.",
+						"system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_rap",
+				"RAP helpers. 'generate_handlers': adds the handler classes and methods a behavior definition needs "
+						+ "(actions, determinations, validations, features, authorization) to a behavior pool's local "
+						+ "types, like Eclipse's Generate Behavior Implementation ('name': the behavior pool class, "
+						+ "optional 'bdef', 'dry_run'). 'publish_srvb' / 'unpublish_srvb' a service binding ('name').",
+				schema(new String[] { "action", "name" }, "action", "string",
+						"generate_handlers, publish_srvb or unpublish_srvb.", "name", "string",
+						"Behavior pool class or service binding.", "bdef", "string",
+						"generate_handlers: behavior definition; default from FOR BEHAVIOR OF.", "dry_run", "boolean",
+						"generate_handlers: show the include without saving.", "transport", "string", "Transport request.",
+						"system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
+		t.add(ToolSpec.of("adt_ui5",
+				"UI5 and Fiori, read only. 'apps' lists BSP/UI5 apps ('filter'); 'files' lists a folder of an app "
+						+ "('app', 'path'); 'file' reads a file; 'deploy_info' shows package and description of an app; "
+						+ "'flp_catalogs', 'flp_groups', 'flp_tiles' ('catalog') read the launchpad customizing.",
+				schema(new String[] { "action" }, "action", "string", "See above.", "app", "string", "BSP application.",
+						"path", "string", "Path inside the app, e.g. webapp/manifest.json.", "filter", "string",
+						"apps: name filter.", "catalog", "string", "flp_tiles: catalog id.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_write_text_elements",
+				"Replace one part of the text pool of a program (PROG), class (CLAS, symbols only) or function group "
+						+ "(FUGR). Use it for the text symbols behind TEXT-nnn, instead of literals in code. Selection "
+						+ "texts of PARAMETERS and SELECT-OPTIONS cannot be written through ADT: list them for the "
+						+ "developer to maintain in SE38. Read the part first with adt_text_elements and keep the other "
+						+ "entries. Saved directly in the SAP system (also when the object is open in the editor) and "
+						+ "activated right away. Symbols without a @MaxLength line get one with room for translations.",
+				schema(new String[] { "name", "type", "part", "texts" }, objectProps("part", "string",
+						"symbols (text symbols TEXT-nnn) or headings (list and column headings).",
+						"texts", "string", "The complete new part, one entry per line. symbols: 001=Text, optionally "
+								+ "preceded by a line @MaxLength:40 (else Bella adds one). headings: listHeader=Title, "
+								+ "columnHeader_1=Column titles.",
+						"transport", "string", "Transport request, required for non-local objects unless already assigned.")),
+				null, ToolSpec.Kind.WRITE));
 		JsonObject activateSchema = schema(new String[] { "objects" }, "system", "string", SYSTEM_DESC,
 				"run_unit_tests", "boolean", "After a successful activation run the ABAP Unit tests of the activated "
-						+ "classes, programs and function groups and add the result (default false).");
+						+ "classes, programs and function groups and add the result (default false).",
+				"run_atc", "boolean", "After a successful activation run ATC on the activated objects and add the "
+						+ "findings (default false). Set it on the last activation of a task, not on every one.");
 		JsonObject objects = new JsonObject();
 		objects.addProperty("type", "array");
 		objects.addProperty("description", "Objects to activate together.");
@@ -267,16 +590,34 @@ public final class AdtToolProvider implements ToolProvider {
 
 	@Override
 	public Optional<String> refuse(String name, JsonObject in, CancelToken cancel) {
+		if (scope != null) {
+			Optional<String> outside = scopeRefusal(name, in, cancel);
+			if (outside.isPresent()) {
+				return outside;
+			}
+		}
 		List<String> patterns = packagePatterns(writePackages.get());
-		if (patterns.isEmpty() || !List.of("adt_write_source", "adt_create_object", "adt_activate").contains(name)) {
+		if (patterns.isEmpty() || !WRITES.contains(name)) {
 			return Optional.empty();
 		}
 		try {
-			if (name.equals("adt_create_object")) {
+			String group = Json.str(in, "group");
+			boolean inGroup = group != null && !group.isBlank()
+					&& List.of("FUNC", "INCL").contains(AdtDdic.normalizeType(Json.str(in, "type")));
+			if (name.equals("adt_package_manage")) {
+				// the package itself must be one Bella may write to
+				String pkg = Json.str(in, "name") == null ? "" : Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
+				return checkPackage(pkg, pkg, patterns);
+			}
+			if (name.equals("adt_create_object") && !inGroup) {
 				String pkg = Json.str(in, "package");
 				return checkPackage(Json.str(in, "name"), pkg == null ? "" : pkg.trim(), patterns);
 			}
 			AdtClient c = client(system(in));
+			if (name.equals("adt_create_object")) {
+				// a function module or group include belongs to the package of its group
+				return checkPackage(Json.str(in, "name"), c.packageOf(AdtDdic.groupUri(group), cancel), patterns);
+			}
 			List<JsonObject> objects = new ArrayList<>();
 			if (name.equals("adt_activate")) {
 				JsonArray arr = Json.arr(in, "objects");
@@ -287,10 +628,9 @@ public final class AdtToolProvider implements ToolProvider {
 				objects.add(in);
 			}
 			for (JsonObject o : objects) {
-				AdtObjectRef ref = c.resolve(Json.str(o, "name").trim(), Json.str(o, "type"), cancel);
-				String pkg = ref.packageName().isEmpty() ? c.packageOf(ref.uri(), cancel)
-						: ref.packageName().toUpperCase(Locale.ROOT);
-				Optional<String> refused = checkPackage(ref.name(), pkg, patterns);
+				String objectName = Json.str(o, "name").trim();
+				Optional<String> refused = checkPackage(objectName.toUpperCase(Locale.ROOT),
+						objectPackage(c, objectName, Json.str(o, "type"), cancel), patterns);
 				if (refused.isPresent()) {
 					return refused;
 				}
@@ -300,6 +640,21 @@ public final class AdtToolProvider implements ToolProvider {
 			return Optional.of("Could not check the package before writing: " + e.getMessage());
 		}
 	}
+
+	/** Package of an object (upper case, empty if unknown); a text pool counts as its program or class. */
+	private static String objectPackage(AdtClient c, String name, String type, CancelToken cancel) throws IOException {
+		AdtObjectRef ref = c.resolve(name, type, cancel);
+		if (AdtClient.TEXT_POOL.equals(ref.type())) {
+			String[] owner = AdtClient.textPoolOwnerOfUri(ref.uri());
+			ref = new AdtObjectRef(AdtObjectRef.uriFor(owner[1], owner[0]), owner[1], owner[0], "", "");
+		}
+		return ref.packageName().isEmpty() ? c.packageOf(ref.uri(), cancel) : ref.packageName().toUpperCase(Locale.ROOT);
+	}
+
+	/** Tools that change objects and are bound to the allowed packages. */
+	private static final List<String> WRITES = List.of("adt_write_source", "adt_create_object", "adt_activate",
+			"adt_write_text_elements", "adt_write_metadata", "adt_edit_code", "adt_delete_object", "adt_package_manage",
+			"adt_rap");
 
 	private static Optional<String> checkPackage(String object, String pkg, List<String> patterns) {
 		if (pkg.isEmpty()) {
@@ -314,25 +669,344 @@ public final class AdtToolProvider implements ToolProvider {
 				+ "; Preferences → Bella → SAP-Tools & ARC-1). Do not retry; tell the developer.");
 	}
 
+	// ---- development package -----------------------------------------------------
+
+	/** Tools whose 'name' is a repository object they read. */
+	private static final List<String> READS_OBJECT = List.of("adt_read_source", "adt_context", "adt_syntax_check",
+			"adt_run_unit_tests", "adt_atc_check", "adt_quickfix", "adt_format", "adt_object_info", "adt_navigate",
+			"adt_text_elements", "adt_transports");
+
+	/** Writes that record their change in a transport request ('transport'). */
+	private static final List<String> TRANSPORTED = List.of("adt_write_source", "adt_create_object",
+			"adt_write_text_elements", "adt_write_metadata", "adt_edit_code", "adt_delete_object", "adt_rap");
+
+	private static final String ASK_PACKAGE = "Ask the developer which package to develop in and record the answer "
+			+ "with adt_dev_package 'set'; do not choose one yourself.";
+
+	/**
+	 * Keeps the call inside the development package: customer objects of other
+	 * packages are not read, writes need the package and, outside local
+	 * packages, the request the developer chose (filled in when missing).
+	 */
+	private Optional<String> scopeRefusal(String tool, JsonObject in, CancelToken cancel) {
+		if (tool.equals("adt_dev_package")) {
+			return Optional.empty();
+		}
+		boolean write = WRITES.contains(tool) && !tool.equals("adt_package_manage");
+		List<JsonObject> objects = scopedObjects(tool, in, write);
+		boolean transportGiven = Json.str(in, "transport") != null && !Json.str(in, "transport").isBlank();
+		if (!write && objects.isEmpty() && !transportGiven) {
+			return Optional.empty();
+		}
+		try {
+			AdtSystem s = system(in);
+			AdtClient c = client(s);
+			String dev = scopePackage(s, c, cancel);
+			if (write || !objects.isEmpty()) {
+				if (dev == null) {
+					List<String> names = objects.stream().map(o -> Json.str(o, "name").trim().toUpperCase(Locale.ROOT))
+							.toList();
+					return Optional.of((write ? "No development package is set, so Bella does not write. "
+							: String.join(", ", names) + (names.size() == 1 ? " is a customer object" : " are customer objects")
+									+ "; customer objects are used only from the development package, which is not set. ")
+							+ ASK_PACKAGE);
+				}
+				if (tool.equals("adt_create_object")) {
+					Optional<String> refused = createOutside(c, in, dev, cancel);
+					if (refused.isPresent()) {
+						return refused;
+					}
+				}
+				for (JsonObject o : objects) {
+					String name = Json.str(o, "name").trim().toUpperCase(Locale.ROOT);
+					if (name.equals(dev)) {
+						continue; // the package itself
+					}
+					String pkg;
+					try {
+						pkg = objectPackage(c, name, Json.str(o, "type"), cancel);
+					} catch (AdtException e) {
+						if (e.status() == 404 && !write) {
+							continue; // the tool says it does not exist
+						}
+						throw e;
+					}
+					if (!pkg.equals(dev)) {
+						return Optional.of(name + " belongs to package " + (pkg.isEmpty() ? "(unknown)" : pkg)
+								+ ", outside the development package " + dev + ". Bella "
+								+ (write ? "changes only objects of the development package"
+										: "ignores customer objects of other packages")
+								+ ": do not use it. Do not retry; if it is needed, tell the developer.");
+					}
+				}
+			}
+			return transportRefusal(tool, in, s, c, write ? dev : null, cancel);
+		} catch (IOException | RuntimeException e) {
+			return Optional.of("Could not check the development package: " + e.getMessage());
+		}
+	}
+
+	/** Tables and views a SELECT reads: after FROM and JOIN, also in subqueries. */
+	private static final Pattern SQL_SOURCES = Pattern.compile("(?i)\\b(?:FROM|JOIN)\\s+([A-Za-z0-9_/]+)");
+
+	/** The objects whose package counts: for writes every object, for reads the customer objects. */
+	private static List<JsonObject> scopedObjects(String tool, JsonObject in, boolean write) {
+		List<JsonObject> out = new ArrayList<>();
+		if (tool.equals("adt_activate")) {
+			JsonArray arr = Json.arr(in, "objects");
+			if (arr != null) {
+				arr.forEach(e -> {
+					if (e.isJsonObject() && Json.str(e.getAsJsonObject(), "name") != null) {
+						out.add(e.getAsJsonObject());
+					}
+				});
+			}
+		} else if (tool.equals("adt_table_contents")) {
+			String sql = Json.str(in, "sql");
+			List<String> tables = new ArrayList<>();
+			if (sql != null && !sql.isBlank()) {
+				Matcher m = SQL_SOURCES.matcher(sql);
+				while (m.find()) {
+					tables.add(m.group(1));
+				}
+			} else if (Json.str(in, "table") != null && !Json.str(in, "table").isBlank()) {
+				tables.add(Json.str(in, "table").trim());
+			}
+			for (String table : tables) {
+				JsonObject o = new JsonObject();
+				o.addProperty("name", table);
+				out.add(o);
+			}
+		} else if (tool.equals("adt_transports")) {
+			String action = Json.str(in, "action");
+			boolean create = in.has("create") && in.get("create").isJsonPrimitive() && in.get("create").getAsBoolean();
+			if (action != null && List.of("history", "for_object").contains(action.trim().toLowerCase(Locale.ROOT))
+					&& !create && Json.str(in, "name") != null) {
+				out.add(in);
+			}
+		} else if ((write && !tool.equals("adt_create_object")) || READS_OBJECT.contains(tool)) {
+			String name = Json.str(in, "name");
+			if (name != null && !name.isBlank()) {
+				out.add(in);
+			}
+		}
+		return write ? out : out.stream().filter(o -> DevScope.customer(Json.str(o, "name"))).toList();
+	}
+
+	/** New objects go into the development package; it is filled in when the call names none. */
+	private static Optional<String> createOutside(AdtClient c, JsonObject in, String dev, CancelToken cancel)
+			throws IOException {
+		String group = Json.str(in, "group");
+		String target;
+		if (group != null && !group.isBlank()
+				&& List.of("FUNC", "INCL").contains(AdtDdic.normalizeType(Json.str(in, "type")))) {
+			target = c.packageOf(AdtDdic.groupUri(group), cancel);
+		} else {
+			String pkg = Json.str(in, "package");
+			if (pkg == null || pkg.isBlank()) {
+				in.addProperty("package", dev);
+				return Optional.empty();
+			}
+			target = pkg.trim().toUpperCase(Locale.ROOT);
+		}
+		return target.equals(dev) ? Optional.empty()
+				: Optional.of("Bella creates objects only in the development package " + dev + ", not in "
+						+ (target.isEmpty() ? "an unknown package" : target)
+						+ ". To develop in another package, the developer starts a new chat.");
+	}
+
+	/**
+	 * Only the request the developer chose: a different one is refused, a
+	 * missing one filled in; writes to a non-local package need it.
+	 *
+	 * @param writePackage package written to, {@code null} for other calls
+	 */
+	private Optional<String> transportRefusal(String tool, JsonObject in, AdtSystem s, AdtClient c,
+			String writePackage, CancelToken cancel) throws IOException {
+		String given = Json.str(in, "transport");
+		boolean hasGiven = given != null && !given.isBlank();
+		boolean needed = writePackage != null && TRANSPORTED.contains(tool) && !DevScope.local(writePackage);
+		if (!hasGiven && !needed) {
+			return Optional.empty();
+		}
+		String chosen = scope.transport(s.destinationId());
+		if (chosen == null && hasGiven && creatingFirstPackage(tool, in, s)) {
+			// a new package can be the development package only once it exists; its request is checked here and
+			// both are recorded after the creation
+			return ownOpenRequest(c, s, given.trim().toUpperCase(Locale.ROOT), cancel);
+		}
+		if (chosen == null) {
+			return Optional.of("The developer has not named a transport request yet. Ask them which of their own "
+					+ "open requests to use (adt_transports lists them) and record it with adt_dev_package 'set' "
+					+ "'transport'. Never pick a request yourself and never use another user's request.");
+		}
+		if (hasGiven && !given.trim().equalsIgnoreCase(chosen)) {
+			return Optional.of("The developer chose transport request " + chosen + "; use it, not "
+					+ given.trim().toUpperCase(Locale.ROOT) + ". Only the developer changes it.");
+		}
+		if (!hasGiven && TRANSPORTED.contains(tool)) {
+			in.addProperty("transport", chosen);
+		}
+		return Optional.empty();
+	}
+
+	/** Creating a package in a chat that has no development package on this system yet. */
+	private boolean creatingFirstPackage(String tool, JsonObject in, AdtSystem s) {
+		AdtEditorObject editor = scope.editorObject();
+		return tool.equals("adt_package_manage") && action(in).equals("create")
+				&& (editor == null || !editor.destinationId().equals(s.destinationId()))
+				&& scope.developerPackage(s.destinationId()) == null;
+	}
+
+	/** Refuses a request that does not exist, is released or belongs to another user. */
+	private static Optional<String> ownOpenRequest(AdtClient c, AdtSystem s, String id, CancelToken cancel)
+			throws IOException {
+		Optional<AdtTransportRequest> request = c.transport(id, cancel);
+		if (request.isEmpty()) {
+			return Optional.of("There is no transport request " + id + " (a task does not count; give "
+					+ "its request). Ask the developer again.");
+		}
+		if (!request.get().owner().equalsIgnoreCase(s.user())) {
+			return Optional.of(id + " belongs to " + request.get().owner().toUpperCase(Locale.ROOT)
+					+ "; Bella only uses the developer's own requests. Ask the developer for one of theirs.");
+		}
+		if (request.get().released()) {
+			return Optional.of(id + " is released; ask the developer for an open request.");
+		}
+		return Optional.empty();
+	}
+
+	/** The development package on this system (upper case), {@code null} if not known yet. */
+	private String scopePackage(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
+		AdtEditorObject editor = scope.editorObject();
+		if (editor != null && editor.destinationId().equals(s.destinationId())) {
+			String pkg = scope.editorPackage(editor);
+			if (pkg == null) {
+				pkg = c.packageOf(editor.uri(), cancel);
+				if (pkg.isEmpty()) {
+					return null;
+				}
+				scope.editorPackage(editor, pkg);
+			}
+			return pkg.toUpperCase(Locale.ROOT);
+		}
+		return scope.developerPackage(s.destinationId());
+	}
+
+	/** Objects may be used: SAP's always, customer objects only from the development package. */
+	private Predicate<AdtObjectRef> scopeFilter(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
+		return scope == null ? r -> true : AdtContext.inPackage(c, scopePackage(s, c, cancel), cancel);
+	}
+
+	private ToolResult devPackage(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String action = Json.str(in, "action");
+		action = action == null || action.isBlank() ? "get" : action.trim().toLowerCase(Locale.ROOT);
+		AdtEditorObject editor = scope.editorObject();
+		boolean fromEditor = editor != null && editor.destinationId().equals(s.destinationId());
+		if (action.equals("set")) {
+			String pkg = Json.str(in, "package");
+			String tr = Json.str(in, "transport");
+			if ((pkg == null || pkg.isBlank()) && (tr == null || tr.isBlank())) {
+				return ToolResult.error("Give 'package' and/or 'transport', as the developer named them.");
+			}
+			if (pkg != null && !pkg.isBlank()) {
+				String wanted = pkg.trim().toUpperCase(Locale.ROOT);
+				if (fromEditor) {
+					String own = scopePackage(s, c, cancel);
+					if (!wanted.equals(own)) {
+						return ToolResult.error("The chat works on " + editor.name() + " from the editor, so the "
+								+ "development package is " + own + " and stays so. For another package the "
+								+ "developer starts a new chat without editor context.");
+					}
+				} else {
+					try {
+						c.packageOf(AdtManage.packageUri(wanted), cancel);
+					} catch (AdtException e) {
+						if (e.status() == 404) {
+							return ToolResult.error("Package " + wanted + " does not exist in " + s.label()
+									+ ". Ask the developer again.");
+						}
+						throw e;
+					}
+					scope.developerPackage(s.destinationId(), wanted);
+				}
+			}
+			if (tr != null && !tr.isBlank()) {
+				String dev = scopePackage(s, c, cancel);
+				if (dev == null) {
+					return ToolResult.error("Set the package first. " + ASK_PACKAGE);
+				}
+				if (DevScope.local(dev)) {
+					return ToolResult.error(dev + " is a local package; its objects need no transport request.");
+				}
+				String id = tr.trim().toUpperCase(Locale.ROOT);
+				Optional<String> refused = ownOpenRequest(c, s, id, cancel);
+				if (refused.isPresent()) {
+					return ToolResult.error(refused.get());
+				}
+				scope.transport(s.destinationId(), id);
+			}
+		} else if (!action.equals("get")) {
+			return ToolResult.error("Unknown action " + action + "; use get or set.");
+		}
+		String dev = scopePackage(s, c, cancel);
+		StringBuilder sb = new StringBuilder();
+		if (dev == null) {
+			sb.append("No development package yet. ").append(ASK_PACKAGE);
+		} else {
+			sb.append("Development package ").append(dev)
+					.append(fromEditor ? " (of " + editor.name() + " in the editor)" : " (named by the developer)")
+					.append(". Customer objects of other packages are ignored.\n");
+			String tr = scope.transport(s.destinationId());
+			if (DevScope.local(dev)) {
+				sb.append("Local package: no transport request needed.");
+			} else if (tr == null) {
+				sb.append("No transport request yet: before the first change ask the developer which of their own "
+						+ "open requests to use, then set it here.");
+			} else {
+				sb.append("Transport request ").append(tr).append(", chosen by the developer; writes use it.");
+			}
+		}
+		return ToolResult.ok(sb.toString());
+	}
+
 	@Override
 	public ToolResult call(String name, JsonObject in, CancelToken cancel) {
 		try {
 			return switch (name) {
+			case "adt_dev_package" -> devPackage(in, cancel);
 			case "adt_list_systems" -> listSystems(cancel);
 			case "adt_search_objects" -> searchObjects(in, cancel);
 			case "adt_read_source" -> readSource(in, cancel);
 			case "adt_context" -> context(in, cancel);
-			case "adt_where_used" -> whereUsed(in, cancel);
 			case "adt_syntax_check" -> syntaxCheck(in, cancel);
 			case "adt_run_unit_tests" -> unitTests(in, cancel);
 			case "adt_atc_check" -> atc(in, cancel);
-			case "adt_transport_info" -> transportInfo(in, cancel);
-			case "adt_short_dumps" -> shortDumps(in, cancel);
-			case "adt_list_transports" -> listTransports(in, cancel);
+			case "adt_text_elements" -> textElements(in, cancel);
+			case "adt_quickfix" -> quickfix(in, cancel);
+			case "adt_object_info" -> objectInfo(in, cancel);
+			case "adt_navigate" -> navigate(in, cancel);
+			case "adt_edit_code" -> editCode(in, cancel);
+			case "adt_delete_object" -> deleteObject(in, cancel);
+			case "adt_diagnose" -> diagnose(in, cancel);
+			case "adt_trace_control" -> traceControl(in, cancel);
+			case "adt_transport_manage" -> transportManage(in, cancel);
+			case "adt_package_manage" -> packageManage(in, cancel);
+			case "adt_git" -> git(in, cancel);
+			case "adt_git_write" -> gitWrite(in, cancel);
+			case "adt_rap" -> rap(in, cancel);
+			case "adt_ui5" -> ui5(in, cancel);
+			case "adt_format" -> format(in, cancel);
+			case "adt_format_settings" -> writeSettings(in, cancel);
+			case "adt_write_text_elements" -> writeTextElements(in, cancel);
+			case "adt_transports" -> transports(in, cancel);
 			case "adt_transport_review" -> transportReview(in, cancel);
 			case "adt_table_contents" -> tableContents(in, cancel);
 			case "adt_write_source" -> writeSource(in, cancel);
 			case "adt_create_object" -> create(in, cancel);
+			case "adt_write_metadata" -> writeMetadata(in, cancel);
 			case "adt_activate" -> activate(in, cancel);
 			default -> ToolResult.error("Unknown ADT tool " + name);
 			};
@@ -398,17 +1072,66 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private AdtObjectRef resolve(AdtClient c, JsonObject in, CancelToken cancel) throws IOException {
-		return c.resolve(Json.str(in, "name").trim(), Json.str(in, "type"), cancel);
+		return c.resolve(requiredName(in), Json.str(in, "type"), cancel);
+	}
+
+	/** 'name' of the call; tools whose schema cannot require it for every action get a clear error instead of an NPE. */
+	private static String requiredName(JsonObject in) throws AdtException {
+		String name = Json.str(in, "name");
+		if (name == null || name.isBlank()) {
+			throw new AdtException(400, "Give 'name', the object, e.g. ZCL_SALES_ORDER.");
+		}
+		return name.trim();
 	}
 
 	private ToolResult searchObjects(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
 		int max = Math.max(1, Math.min(200, Json.integer(in, "max_results", 50)));
-		List<AdtObjectRef> refs = c.search(Json.str(in, "query"), Json.str(in, "type"), max, cancel);
+		String searchIn = Json.str(in, "search_in");
+		if (searchIn != null && searchIn.trim().equalsIgnoreCase("source")) {
+			return searchSource(c, in, max, scope == null ? Optional.empty()
+					: Optional.ofNullable(scopePackage(sys, c, cancel)).or(() -> Optional.of("")), cancel);
+		}
+		if (searchIn != null && !searchIn.isBlank() && !searchIn.trim().equalsIgnoreCase("names")) {
+			return ToolResult.error("search_in is names or source.");
+		}
+		String query = Json.str(in, "query");
+		String pkg = Json.str(in, "package");
+		if (query == null || query.isBlank()) {
+			return ToolResult.error("Give a name pattern in 'query', e.g. ZCL_SD_DELIV*.");
+		}
+		if ((pkg == null || pkg.isBlank()) && tooBroad(query)) {
+			return ToolResult.error("'" + query.trim() + "' matches thousands of objects in an SAP system, so a "
+					+ "list of the first hits says nothing. Search for the name you plan to use, or a pattern with "
+					+ "its prefix (e.g. ZCL_SD_DELIV*, ZSD*DELIVER*), or give 'package'.");
+		}
+		// one more than shown, to tell a complete list from a cut one
+		List<AdtObjectRef> refs = c.search(query, Json.str(in, "type"), pkg, max + 1, cancel);
+		boolean cut = refs.size() > max;
+		if (cut) {
+			refs = refs.subList(0, max);
+		}
+		List<String> hidden = new ArrayList<>();
+		if (scope != null) {
+			String dev = scopePackage(sys, c, cancel);
+			// only the package the hit names: asking each hit's package would cost a request per hit
+			hidden = refs.stream().filter(r -> DevScope.customer(r.name()) && !r.name().equalsIgnoreCase(dev)
+					&& (dev == null || !r.packageName().equalsIgnoreCase(dev))).map(AdtObjectRef::name).toList();
+			List<String> h = hidden;
+			refs = refs.stream().filter(r -> !h.contains(r.name())).toList();
+		}
+		String hiddenNote = hidden.isEmpty() ? ""
+				: "Customer objects outside the development package, ignored (their names are taken): "
+						+ String.join(", ", hidden) + "\n";
 		if (refs.isEmpty()) {
-			return ToolResult.ok("No objects found.");
+			return ToolResult.ok(hiddenNote + "No objects found" + (hidden.isEmpty() ? "." : " in the development package."));
 		}
 		StringBuilder sb = new StringBuilder();
+		if (cut) {
+			sb.append("The first ").append(max).append(" hits; there are more, so an object missing here may still "
+					+ "exist. Search with a narrower pattern, 'type' or 'package' before concluding it does not.\n");
+		}
 		for (AdtObjectRef r : refs) {
 			sb.append(r.name()).append(" (").append(r.type()).append(')');
 			if (!r.packageName().isEmpty()) {
@@ -418,6 +1141,67 @@ public final class AdtToolProvider implements ToolProvider {
 				sb.append(" – ").append(r.description());
 			}
 			sb.append('\n');
+		}
+		return ToolResult.ok(sb.append(hiddenNote).toString());
+	}
+
+	/**
+	 * Patterns that say almost nothing: Z*, Y*, *, ZS* … (fewer than three
+	 * characters besides the wildcards).
+	 */
+	static boolean tooBroad(String query) {
+		return query.replace("*", "").replace("?", "").strip().length() < 3;
+	}
+
+	/** Matching lines shown per object; the rest is only counted. */
+	static final int SOURCE_LINES_PER_OBJECT = 5;
+
+	/**
+	 * @param dev the development package when one binds the search ("" while
+	 *            unknown), empty without a scope; customer objects of other
+	 *            packages are left out
+	 */
+	private static ToolResult searchSource(AdtClient c, JsonObject in, int max, Optional<String> dev,
+			CancelToken cancel) throws IOException {
+		String text = Json.str(in, "query");
+		if (text == null || text.isBlank()) {
+			return ToolResult.error("Give the text to find in 'query'.");
+		}
+		String pkg = Json.str(in, "package");
+		pkg = pkg == null || pkg.isBlank() ? null : pkg.trim().toUpperCase(Locale.ROOT);
+		if (pkg == null && dev.isPresent() && !dev.get().isEmpty()) {
+			pkg = dev.get(); // hits carry no package, so customer code is searched in the development package only
+		}
+		List<AdtClient.SourceHit> hits;
+		try {
+			hits = c.searchSource(text, Json.str(in, "type"), pkg, max, cancel);
+		} catch (AdtException e) {
+			return ToolResult.error(e.getMessage());
+		}
+		String note = "";
+		if (dev.isPresent() && !dev.get().equals(pkg)) {
+			int all = hits.size();
+			hits = hits.stream().filter(h -> !DevScope.customer(h.name())).toList();
+			if (hits.size() < all) {
+				note = (all - hits.size()) + " customer objects outside the development package "
+						+ (dev.get().isEmpty() ? "(not set yet) " : dev.get() + " ") + "left out.\n";
+			}
+		}
+		if (hits.isEmpty()) {
+			return ToolResult.ok(note + "No source contains \"" + text + "\"" + (note.isEmpty() ? "." : " elsewhere."));
+		}
+		StringBuilder sb = new StringBuilder(note);
+		for (AdtClient.SourceHit h : hits) {
+			sb.append(h.name()).append(h.type().isEmpty() ? "" : " (" + h.type() + ")").append('\n');
+			h.lines().stream().limit(SOURCE_LINES_PER_OBJECT).forEach(l -> sb.append("  ")
+					.append(l.line() > 0 ? l.line() + ": " : "").append(l.text()).append('\n'));
+			if (h.lines().size() > SOURCE_LINES_PER_OBJECT) {
+				sb.append("  … ").append(h.lines().size() - SOURCE_LINES_PER_OBJECT)
+						.append(" more lines; read them with adt_read_source 'grep'\n");
+			}
+		}
+		if (hits.size() >= max) {
+			sb.append("Stopped at ").append(max).append(" objects; narrow the search with 'package' or 'type'.\n");
 		}
 		return ToolResult.ok(sb.toString());
 	}
@@ -478,18 +1262,21 @@ public final class AdtToolProvider implements ToolProvider {
 	static final int GREP_MAX_LINES = 200;
 
 	private ToolResult context(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
 		List<AbapReferences.Reference> candidates = new ArrayList<>();
+		String name = Json.str(in, "name");
+		// 'type' belongs to 'name'; without one it is the type of every entry in 'names'
+		String namesType = name == null || name.isBlank() ? AdtClient.searchType(Json.str(in, "type")) : null;
 		JsonArray names = Json.arr(in, "names");
 		if (names != null) {
 			for (JsonElement e : names) {
 				if (e.isJsonPrimitive() && !e.getAsString().isBlank()) {
 					candidates.add(new AbapReferences.Reference(e.getAsString().trim().toUpperCase(Locale.ROOT),
-							AbapReferences.Hint.ANY));
+							AbapReferences.Hint.ANY, namesType));
 				}
 			}
 		}
-		String name = Json.str(in, "name");
 		String self = null;
 		if (name != null && !name.isBlank()) {
 			AdtObjectRef ref = resolve(c, in, cancel);
@@ -507,17 +1294,25 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		AdtContext.Result r;
 		try {
-			r = AdtContext.build(c, candidates, AdtContext.Limits.DEFAULT, cancel);
+			r = AdtContext.build(c, candidates, AdtContext.Limits.DEFAULT, scopeFilter(sys, c, cancel), cancel);
 		} catch (CancelToken.CancelledException e) {
 			return ToolResult.error("Cancelled.");
+		}
+		if (r.error() != null && r.isEmpty()) {
+			return ToolResult.error(r.error());
 		}
 		if (r.isEmpty()) {
 			if (!r.failed().isEmpty()) {
 				return ToolResult.error("Could not read from the SAP system (this does not mean the objects are "
 						+ "missing): " + String.join("; ", r.failed()));
 			}
+			String ignored = r.ignored().isEmpty() ? "" : AdtContext.IGNORED + String.join(", ", r.ignored()) + "\n";
 			if (!r.notFound().isEmpty()) {
-				return ToolResult.ok("None of these objects exist in the system: " + String.join(", ", r.notFound()));
+				return ToolResult.ok(ignored + "None of these objects exist in the system: "
+						+ String.join(", ", r.notFound()));
+			}
+			if (!ignored.isEmpty() && r.skipped().isEmpty()) {
+				return ToolResult.ok(ignored);
 			}
 			return ToolResult.ok("Not loaded (limit reached, use adt_read_source): " + String.join(", ", r.skipped()));
 		}
@@ -525,21 +1320,10 @@ public final class AdtToolProvider implements ToolProvider {
 		if (!r.skipped().isEmpty()) {
 			text += "Not loaded (limit reached, use adt_read_source): " + String.join(", ", r.skipped()) + "\n";
 		}
+		if (r.error() != null) {
+			text += "Loading stopped: " + r.error() + "\n";
+		}
 		return ToolResult.ok(text);
-	}
-
-	private ToolResult whereUsed(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
-		AdtObjectRef ref = resolve(c, in, cancel);
-		List<AdtObjectRef> refs = c.whereUsed(AdtObjectRef.objectUri(ref.uri()), cancel);
-		if (refs.isEmpty()) {
-			return ToolResult.ok("No usages found.");
-		}
-		StringBuilder sb = new StringBuilder();
-		for (AdtObjectRef r : refs) {
-			sb.append(r.name()).append(" (").append(r.type()).append(")\n");
-		}
-		return ToolResult.ok(sb.toString());
 	}
 
 	private ToolResult syntaxCheck(JsonObject in, CancelToken cancel) throws IOException {
@@ -563,13 +1347,1068 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtObjectRef ref = resolve(c, in, cancel);
 		List<AdtClient.Message> msgs = c.atcCheck(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "check_variant"),
 				cancel);
-		return ToolResult.ok(msgs.isEmpty() ? "No ATC findings." : format(msgs));
+		String note = c.atcNote().isEmpty() ? "" : c.atcNote() + "\n\n";
+		return ToolResult.ok(note + (msgs.isEmpty() ? "No ATC findings." : formatAtc(msgs, false)));
+	}
+
+	/** ATC findings by priority (1 = error, 2 = warning, 3 = information), with the object when several were checked. */
+	static String formatAtc(List<AdtClient.Message> msgs, boolean withObject) {
+		StringBuilder sb = new StringBuilder();
+		for (AdtClient.Message m : msgs) {
+			String priority = switch (m.severity()) {
+			case "Error" -> "1";
+			case "Warning" -> "2";
+			default -> "3";
+			};
+			sb.append("Priority ").append(priority);
+			if (withObject && m.uri() != null && !m.uri().isEmpty()) {
+				String uri = AdtObjectRef.objectUri(m.uri());
+				sb.append(' ').append(uri.substring(uri.lastIndexOf('/') + 1).toUpperCase(Locale.ROOT));
+			}
+			if (m.line() > 0) {
+				sb.append(" line ").append(m.line());
+			}
+			if (!m.include().isEmpty()) {
+				sb.append(" in include ").append(m.include());
+			}
+			sb.append(": ").append(m.text()).append('\n');
+		}
+		return sb.toString();
+	}
+
+	private static final String QUICKFIX_HINT = "\nadt_quickfix lists SAP's own fixes for a finding's line.";
+
+	/** Columns tried when the model does not know the column of a finding. */
+	private static final int MAX_TOKENS_TRIED = 8;
+
+	private ToolResult quickfix(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String objectUri = AdtObjectRef.objectUri(ref.uri());
+		String include = Json.str(in, "include");
+		String sourceUri = AdtObjectRef.sourceUri(objectUri, include);
+		String source = c.readSource(objectUri, include, cancel);
+		int line = Json.integer(in, "line", 0);
+		String[] lines = source.replace("\r\n", "\n").split("\n", -1);
+		if (line < 1 || line > lines.length) {
+			return ToolResult.error("Line " + line + " is outside the source (" + lines.length + " lines).");
+		}
+		List<Integer> columns = new ArrayList<>();
+		if (in.has("column") && in.get("column").isJsonPrimitive()) {
+			columns.add(Math.max(0, Json.integer(in, "column", 0)));
+		} else {
+			Matcher m = Pattern.compile("\\S+").matcher(lines[line - 1]);
+			while (m.find() && columns.size() < MAX_TOKENS_TRIED) {
+				columns.add(m.start());
+			}
+		}
+		List<AdtQuickfix.Proposal> proposals = List.of();
+		int column = columns.isEmpty() ? 0 : columns.get(0);
+		for (int col : columns) {
+			proposals = AdtQuickfix.proposals(c, sourceUri, source, line, col, cancel);
+			if (!proposals.isEmpty()) {
+				column = col;
+				break;
+			}
+		}
+		String where = ref.name() + " line " + line + ":" + column;
+		if (proposals.isEmpty()) {
+			return ToolResult.ok("SAP has no quick fix for " + ref.name() + " line " + line + ".");
+		}
+		String action = Json.str(in, "action");
+		if (action == null || action.isBlank() || action.equalsIgnoreCase("list")) {
+			StringBuilder sb = new StringBuilder("Quick fixes for " + where + ":\n");
+			for (int i = 0; i < proposals.size(); i++) {
+				AdtQuickfix.Proposal p = proposals.get(i);
+				sb.append(i + 1).append(". ").append(p.name());
+				if (!p.description().isBlank() && !p.description().equals(p.name())) {
+					sb.append(" (").append(p.description()).append(')');
+				}
+				sb.append("  [").append(p.uri()).append("]\n");
+			}
+			return ToolResult.ok(sb.append("Preview one with action 'preview' and 'proposal'.").toString());
+		}
+		if (!action.equalsIgnoreCase("preview")) {
+			return ToolResult.error("Unknown action " + action + "; use list or preview.");
+		}
+		String wanted = Json.str(in, "proposal");
+		AdtQuickfix.Proposal chosen = null;
+		if (wanted != null && wanted.trim().matches("\\d+")) {
+			int i = Integer.parseInt(wanted.trim());
+			chosen = i >= 1 && i <= proposals.size() ? proposals.get(i - 1) : null;
+		} else if (wanted != null) {
+			chosen = proposals.stream().filter(p -> p.uri().equals(wanted.trim())).findFirst().orElse(null);
+		}
+		if (chosen == null) {
+			return ToolResult.error("Give 'proposal', the number (1-" + proposals.size() + ") or uri of a quick fix.");
+		}
+		List<AdtQuickfix.Delta> deltas = AdtQuickfix.apply(c, chosen, sourceUri, source, line, column, cancel);
+		List<TextDeltas.Delta> own = new ArrayList<>();
+		List<String> others = new ArrayList<>();
+		for (AdtQuickfix.Delta d : deltas) {
+			if (AdtQuickfix.sameSource(d.uri(), sourceUri)) {
+				own.add(d.delta());
+			} else {
+				others.add(AdtObjectRef.objectUri(d.uri()));
+			}
+		}
+		StringBuilder sb = new StringBuilder("Quick fix \"" + chosen.name() + "\" for " + where + ", not saved.");
+		if (!others.isEmpty()) {
+			sb.append("\nIt also changes other sources, which this preview leaves out: ")
+					.append(String.join(", ", others.stream().distinct().toList())).append('.');
+		}
+		if (own.isEmpty()) {
+			return ToolResult.ok(sb.append("\nIt changes nothing in this source.").toString());
+		}
+		String fixed;
+		try {
+			fixed = TextDeltas.apply(source, own);
+		} catch (IllegalArgumentException e) {
+			return ToolResult.error("SAP's quick fix returned changes Bella cannot apply: " + e.getMessage());
+		}
+		sb.append("\n```diff\n").append(LineDiff.unified(source, fixed, "before", "after", 2).text()).append("```");
+		int first = own.stream().mapToInt(TextDeltas.Delta::startLine).min().orElse(line);
+		int last = own.stream().mapToInt(TextDeltas.Delta::endLine).max().orElse(line);
+		// the delta lines count in the original source: check there that all changes are in one method, then take
+		// that method's body from the fixed source (the first changed line is at the same place in both)
+		Optional<AbapStructureScanner.Block> before = AbapStructureScanner.routineAt(source, offsetOfLine(source, first));
+		Optional<AbapStructureScanner.Block> routine = AbapStructureScanner.routineAt(fixed, offsetOfLine(fixed, first));
+		if (before.isPresent() && before.get().kind() == AbapStructureScanner.Kind.METHOD
+				&& before.get().contains(offsetOfLine(source, last)) && routine.isPresent()
+				&& routine.get().name().equalsIgnoreCase(before.get().name())) {
+			return ToolResult.ok(sb.append("\nApply it with adt_write_source, 'method' ").append(routine.get().name())
+					.append(", and this body:\n```abap\n").append(routine.get().body(fixed).strip()).append("\n```")
+					.toString());
+		}
+		return ToolResult.ok(sb.append("\nApply it with adt_write_source and this complete source:\n```abap\n")
+				.append(fixed).append("\n```").toString());
+	}
+
+	private static int offsetOfLine(String text, int line) {
+		int offset = 0;
+		for (int i = 1; i < line && offset >= 0; i++) {
+			offset = text.indexOf('\n', offset) + 1;
+			if (offset == 0) {
+				return text.length();
+			}
+		}
+		return offset;
+	}
+
+	private ToolResult objectInfo(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String objectUri = AdtObjectRef.objectUri(ref.uri());
+		String action = Json.str(in, "action");
+		switch (action == null ? "" : action.trim().toLowerCase(Locale.ROOT)) {
+		case "api_state" -> {
+			List<AdtCodeIntel.Contract> contracts = AdtCodeIntel.releaseState(c, objectUri, cancel);
+			if (contracts.isEmpty()) {
+				return ToolResult.ok(ref.name() + " has no release state (not released for any contract).");
+			}
+			StringBuilder sb = new StringBuilder("Release state of " + ref.name() + ":\n");
+			for (AdtCodeIntel.Contract k : contracts) {
+				sb.append("- ").append(k.contract()).append(": ")
+						.append(k.stateDescription().isEmpty() ? k.state() : k.stateDescription());
+				if (k.cloud() || k.keyUser()) {
+					sb.append(" (").append(k.cloud() ? "ABAP Cloud" : "").append(k.cloud() && k.keyUser() ? ", " : "")
+							.append(k.keyUser() ? "key user apps" : "").append(')');
+				}
+				if (!k.successors().isEmpty()) {
+					sb.append("; successor ").append(String.join(", ", k.successors()));
+				}
+				sb.append('\n');
+			}
+			return ToolResult.ok(sb.toString());
+		}
+		case "versions", "version_source" -> {
+			List<AdtRevisions.Revision> revisions = c.revisions(versionsUri(ref, objectUri, Json.str(in, "include")),
+					cancel);
+			if (revisions.isEmpty()) {
+				return ToolResult.ok(ref.name() + " has no version history.");
+			}
+			if (action.equalsIgnoreCase("versions")) {
+				StringBuilder sb = new StringBuilder("Versions of " + ref.name() + ", newest first:\n");
+				for (AdtRevisions.Revision r : revisions) {
+					sb.append(r.number().isEmpty() ? r.id() : r.number()).append("  ").append(r.timestamp()).append("  ")
+							.append(r.author()).append(r.transport().isEmpty() ? "" : "  " + r.transport()).append('\n');
+				}
+				return ToolResult.ok(sb.toString());
+			}
+			String wanted = Json.str(in, "version");
+			for (AdtRevisions.Revision r : revisions) {
+				if (wanted != null && (wanted.trim().equals(r.number()) || wanted.trim().equals(r.id()))) {
+					return ToolResult.ok(c.revisionText(r.uri(), cancel));
+				}
+			}
+			return ToolResult.error("Give 'version', one of the numbers from action 'versions'.");
+		}
+		case "variants" -> {
+			AdtResponse r = c.exchange(AdtRequest.get(objectUri + "/variants", "application/*"), cancel);
+			if (!r.ok()) {
+				return ToolResult.error("Could not read the variants: " + AdtErrors.message(r));
+			}
+			String body = r.body() == null ? "" : r.body();
+			return ToolResult.ok(body.isBlank() ? ref.name() + " has no variants."
+					: body.length() > DUMP_TEXT_CHARS ? body.substring(0, DUMP_TEXT_CHARS) + "\n…" : body);
+		}
+		default -> {
+			return ToolResult.error("action is api_state, versions, version_source or variants.");
+		}
+		}
+	}
+
+	private static String versionsUri(AdtObjectRef ref, String objectUri, String include) {
+		String type = ref.type() == null ? "" : ref.type().toUpperCase(Locale.ROOT);
+		if (type.startsWith("DDLS") || type.startsWith("DCLS")) {
+			return objectUri + "/versions";
+		}
+		if (include != null && !include.isBlank() && !include.equalsIgnoreCase("main")) {
+			return AdtObjectRef.sourceUri(objectUri, include) + "/versions";
+		}
+		return objectUri + "/source/main/versions";
+	}
+
+	private static final Pattern CLASS_NAME = Pattern.compile("(?:/[A-Z0-9_]+/)?[A-Z0-9_]+");
+
+	private ToolResult navigate(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
+		String action = Json.str(in, "action");
+		String a = action == null ? "" : action.trim().toLowerCase(Locale.ROOT);
+		if (a.equals("hierarchy")) {
+			String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
+			if (!CLASS_NAME.matcher(name).matches()) {
+				return ToolResult.error("Invalid class name " + name + ".");
+			}
+			AdtClient.TableData own = c.tableContents(
+					"SELECT clsname, refclsname, reltype FROM seometarel WHERE clsname = '" + name + "'", 100, cancel);
+			AdtClient.TableData sub = c.tableContents(
+					"SELECT clsname FROM seometarel WHERE refclsname = '" + name + "' AND reltype = '2'", 100, cancel);
+			String superclass = "";
+			List<String> interfaces = new ArrayList<>();
+			int refCol = own.columns().indexOf("REFCLSNAME");
+			int typeCol = own.columns().indexOf("RELTYPE");
+			for (List<String> row : own.rows()) {
+				String rel = row.get(typeCol).trim();
+				if (rel.equals("2")) {
+					superclass = row.get(refCol).trim();
+				} else if (rel.equals("1")) {
+					interfaces.add(row.get(refCol).trim());
+				}
+			}
+			List<String> subclasses = sub.rows().stream().map(r -> r.get(0).trim()).toList();
+			// customer classes of other packages are left out, as everywhere in the chat
+			Predicate<AdtObjectRef> allowed = scopeFilter(sys, c, cancel);
+			List<String> hidden = new ArrayList<>();
+			Predicate<String> keepClass = n -> keep(allowed, n, "CLAS/OC", hidden);
+			if (!superclass.isEmpty() && !keepClass.test(superclass)) {
+				superclass = "";
+			}
+			interfaces = interfaces.stream().filter(n -> keep(allowed, n, "INTF/OI", hidden)).toList();
+			subclasses = subclasses.stream().filter(keepClass).toList();
+			return ToolResult.ok(name + ": superclass " + (superclass.isEmpty() ? "none" : superclass) + "; interfaces "
+					+ (interfaces.isEmpty() ? "none" : String.join(", ", interfaces)) + "; subclasses "
+					+ (subclasses.isEmpty() ? "none" : String.join(", ", subclasses)) + "."
+					+ (hidden.isEmpty() ? "" : "\n" + OUTSIDE_PACKAGE + String.join(", ", hidden)));
+		}
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String objectUri = AdtObjectRef.objectUri(ref.uri());
+		String sourceUri = AdtObjectRef.sourceUri(objectUri, Json.str(in, "include"));
+		int line = Json.integer(in, "line", 0);
+		int column = Math.max(0, Json.integer(in, "column", 0));
+		if (a.equals("references")) {
+			String uri = line > 0 ? sourceUri + "#start=" + line + "," + column : objectUri;
+			List<AdtObjectRef> refs = c.whereUsed(uri, cancel);
+			Predicate<AdtObjectRef> allowed = scopeFilter(sys, c, cancel);
+			List<String> hidden = new ArrayList<>();
+			refs = refs.stream().filter(r -> {
+				boolean ok = allowed.test(r);
+				if (!ok) {
+					hidden.add(r.name());
+				}
+				return ok;
+			}).toList();
+			String hiddenNote = hidden.isEmpty() ? "" : OUTSIDE_PACKAGE + String.join(", ", hidden) + "\n";
+			if (refs.isEmpty()) {
+				return ToolResult.ok(hiddenNote + "No references found"
+						+ (hidden.isEmpty() ? "." : " in the development package or SAP's objects."));
+			}
+			StringBuilder sb = new StringBuilder(hiddenNote + refs.size() + " references:\n");
+			refs.stream().limit(100).forEach(r -> sb.append("- ").append(r.name()).append(" (").append(r.type())
+					.append(r.packageName().isEmpty() ? "" : ", " + r.packageName()).append(")\n"));
+			return ToolResult.ok(sb.toString());
+		}
+		if (line < 1) {
+			return ToolResult.error("Give 'line' (from 1) and 'column' (from 0).");
+		}
+		String source = Json.str(in, "source");
+		if (source == null || source.isBlank()) {
+			source = c.readSource(objectUri, Json.str(in, "include"), cancel);
+		}
+		if (a.equals("definition")) {
+			AdtCodeIntel.Target t = AdtCodeIntel.definition(c, sourceUri, source, line, column, cancel);
+			if (t == null) {
+				return ToolResult.ok("ADT finds no definition at line " + line + ":" + column + ".");
+			}
+			String where = AdtObjectRef.objectUri(t.uri());
+			return ToolResult.ok("Defined in " + (t.name().isEmpty() ? where.substring(where.lastIndexOf('/') + 1)
+					.toUpperCase(Locale.ROOT) : t.name()) + (t.type().isEmpty() ? "" : " (" + t.type() + ")")
+					+ (t.line() > 0 ? " line " + t.line() : "") + ": " + t.uri());
+		}
+		if (a.equals("completion")) {
+			List<AdtCodeIntel.Proposal> proposals = AdtCodeIntel.completion(c, sourceUri, source, line, column, cancel);
+			if (proposals.isEmpty()) {
+				return ToolResult.ok("No completion proposals.");
+			}
+			StringBuilder sb = new StringBuilder();
+			proposals.stream().limit(50).forEach(p -> sb.append(p.text())
+					.append(p.description().isEmpty() ? "" : " - " + p.description()).append('\n'));
+			return ToolResult.ok(sb.toString());
+		}
+		return ToolResult.error("action is definition, references, completion or hierarchy.");
+	}
+
+	private static final String OUTSIDE_PACKAGE = "Customer objects outside the development package, ignored: ";
+
+	/** Whether a class or interface of a navigation result may be shown; the others are collected. */
+	private static boolean keep(Predicate<AdtObjectRef> allowed, String name, String type, List<String> hidden) {
+		if (allowed.test(new AdtObjectRef(AdtObjectRef.uriFor(name, type), name, type, "", ""))) {
+			return true;
+		}
+		hidden.add(name);
+		return false;
+	}
+
+	private ToolResult editCode(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String uri = AdtObjectRef.objectUri(ref.uri());
+		String before = c.readSource(uri, null, cancel);
+		String after;
+		try {
+			after = CodeEdits.apply(before, ref.name(), in);
+		} catch (ClassSurgery.SurgeryException e) {
+			return ToolResult.error(e.getMessage());
+		}
+		if (after.equals(before)) {
+			return ToolResult.ok("Nothing to change in " + ref.name() + ".");
+		}
+		String action = Json.str(in, "action").trim().toLowerCase(Locale.ROOT);
+		// a signature change may break the body until it is rewritten; everything else must stay compilable
+		boolean signature = action.equals("edit_method_signature");
+		PreCheck pre = preWriteCheck(c, uri, before, after, !signature, cancel);
+		if (!signature && pre.added().isPresent()) {
+			return ToolResult.error("Not saved: the change would add syntax errors:\n" + pre.added().get());
+		}
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeSource(session, uri, null, after, Json.str(in, "transport"), cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Saved " + action + " in " + ref.name() + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet."
+				+ "\n```diff\n" + LineDiff.unified(before, after, "before", "after", 1).text() + "```"
+				+ (pre.after() != null ? syntaxReport(pre.after()) : syntaxAfterWrite(c, uri, cancel)));
+	}
+
+	/**
+	 * Result of SAP's syntax check before a write.
+	 *
+	 * @param after the messages for the new source, {@code null} when the check could not run
+	 * @param added errors the new source has and the old one did not
+	 */
+	record PreCheck(List<AdtClient.Message> after, Optional<String> added) {
+	}
+
+	/**
+	 * Checks the new source before it is saved. The old source is only checked when the new one has errors,
+	 * so a clean change costs one check, whose result also stands in for the check after saving.
+	 *
+	 * @param compare whether to find the errors the change adds; without, only {@code after} is filled
+	 */
+	private static PreCheck preWriteCheck(AdtClient c, String uri, String before, String after, boolean compare,
+			CancelToken cancel) {
+		List<AdtClient.Message> now;
+		try {
+			now = c.syntaxCheck(uri, after, cancel);
+		} catch (IOException | RuntimeException e) {
+			return new PreCheck(null, Optional.empty());
+		}
+		List<AdtClient.Message> errors = now.stream().filter(m -> m.severity().equals("Error")).toList();
+		if (!compare || errors.isEmpty()) {
+			return new PreCheck(now, Optional.empty());
+		}
+		try {
+			// compared by text and count: line numbers move with the change, and the same text more often than
+			// before (e.g. one more use of an unknown type) is a new error
+			Map<String, Integer> old = new HashMap<>();
+			c.syntaxCheck(uri, before, cancel).stream().filter(m -> m.severity().equals("Error"))
+					.forEach(m -> old.merge(m.text(), 1, Integer::sum));
+			List<AdtClient.Message> added = errors.stream()
+					.filter(m -> old.merge(m.text(), -1, Integer::sum) < 0).toList();
+			return new PreCheck(now, added.isEmpty() ? Optional.empty() : Optional.of(format(added)));
+		} catch (IOException | RuntimeException e) {
+			return new PreCheck(now, Optional.empty());
+		}
+	}
+
+	private static String syntaxReport(List<AdtClient.Message> msgs) {
+		return msgs.isEmpty() ? "\n\nSyntax check: no errors." : "\n\nSyntax check of the saved version:\n" + format(msgs);
+	}
+
+	private ToolResult deleteObject(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String uri = AdtObjectRef.objectUri(ref.uri());
+		boolean force = in.has("force") && in.get("force").isJsonPrimitive() && in.get("force").getAsBoolean();
+		if (!force) {
+			List<AdtObjectRef> users = c.whereUsed(uri, cancel).stream()
+					.filter(u -> !u.name().equalsIgnoreCase(ref.name())).toList();
+			if (!users.isEmpty()) {
+				return ToolResult.error(ref.name() + " is used by " + users.size() + " objects, e.g. " + String.join(", ",
+						users.stream().limit(10).map(AdtObjectRef::name).toList())
+						+ ". Not deleted; delete it anyway only if the developer wants that ('force': true).");
+			}
+		}
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.delete(session, uri, Json.str(in, "transport"), cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Deleted " + ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")")
+				+ ".");
+	}
+
+	private static String action(JsonObject in) {
+		String a = Json.str(in, "action");
+		return a == null ? "" : a.trim().toLowerCase(Locale.ROOT);
+	}
+
+	private static boolean flag(JsonObject in, String key, boolean def) {
+		return in.has(key) && in.get(key).isJsonPrimitive() ? in.get(key).getAsBoolean() : def;
+	}
+
+	private ToolResult diagnose(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		int max = Math.max(1, Math.min(200, Json.integer(in, "max_results", 50)));
+		String id = Json.str(in, "id");
+		String user = Json.str(in, "user");
+		switch (action(in)) {
+		case "short_dumps" -> {
+			return shortDumps(in, cancel);
+		}
+		case "system_messages" -> {
+			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, "/sap/bc/adt/runtime/systemmessages?maxResults="
+					+ max, AdtDiagnostics.FEED, cancel), max));
+		}
+		case "gateway_errors" -> {
+			if (id != null && !id.isBlank()) {
+				String path = id.startsWith("/sap/bc/adt/gw/errorlog/") ? id : "/sap/bc/adt/gw/errorlog/" + id.trim();
+				if (path.contains("..") || path.contains("?")) {
+					return ToolResult.error("Invalid gateway error id.");
+				}
+				String html = AdtDiagnostics.get(c, path, "text/html, application/xhtml+xml, application/xml;q=0.5", cancel);
+				return ToolResult.ok(AdtDiagnostics.cut(html.replaceAll("(?s)<script.*?</script>", "")
+						.replaceAll("<[^>]+>", " ").replaceAll("&nbsp;", " ").replaceAll("[ \\t]+", " ")
+						.replaceAll("\\s*\\n\\s*", "\n").trim()));
+			}
+			String query = "?maxResults=" + max + (user == null || user.isBlank() ? "" : "&username=" + AdtClient.enc(user));
+			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, "/sap/bc/adt/gw/errorlog" + query,
+					AdtDiagnostics.FEED, cancel), max));
+		}
+		case "traces" -> {
+			if (id == null || id.isBlank()) {
+				return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, AdtDiagnostics.TRACES,
+						AdtDiagnostics.FEED, cancel), max));
+			}
+			String traceId = id.trim().replaceFirst("^.*/abaptraces/", "");
+			if (!traceId.matches("[A-Za-z0-9_%.,-]+") || traceId.contains("..")) {
+				return ToolResult.error("Invalid trace id.");
+			}
+			String part = Json.str(in, "part");
+			String sub = part == null || part.isBlank() ? "hitlist" : part.trim().toLowerCase(Locale.ROOT);
+			sub = switch (sub) {
+			case "hitlist" -> "hitlist";
+			case "statements" -> "statements";
+			case "db_accesses", "dbaccesses" -> "dbAccesses";
+			default -> null;
+			};
+			if (sub == null) {
+				return ToolResult.error("part is hitlist, statements or db_accesses.");
+			}
+			return ToolResult.ok(AdtDiagnostics.cut(AdtDiagnostics.compact(AdtDiagnostics.get(c,
+					AdtDiagnostics.TRACES + "/" + traceId + "/" + sub, "application/xml", cancel), 300)));
+		}
+		case "trace_requests" -> {
+			String u = user == null || user.isBlank() ? s.user() : user;
+			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, AdtDiagnostics.TRACES + "/requests?user="
+					+ AdtClient.enc(u == null ? "" : u.toUpperCase(Locale.ROOT)), AdtDiagnostics.FEED, cancel), max));
+		}
+		case "sql_trace_state" -> {
+			return ToolResult.ok(AdtDiagnostics.compact(AdtDiagnostics.get(c, AdtDiagnostics.ST05_STATE,
+					AdtDiagnostics.ST05_STATE_TYPE, cancel), 100));
+		}
+		case "sql_trace_directory" -> {
+			return ToolResult.ok(AdtDiagnostics.compact(AdtDiagnostics.get(c, "/sap/bc/adt/st05/trace/directory",
+					"application/*", cancel), 50) + "SAP shows recorded SQL statements in the SQL trace analysis "
+					+ "(the URL above, or ST05 in SAP GUI); ADT has no API for them.");
+		}
+		case "authorization_trace" -> {
+			AdtClient.TableData rows = c.tableContents(AdtDiagnostics.authorizationTraceSql(user,
+					Json.str(in, "auth_object"), flag(in, "only_failures", false)), max, cancel);
+			if (rows.rows().isEmpty()) {
+				return ToolResult.ok("No authorization trace entries match. The trace must be on (profile parameter "
+						+ "auth/auth_user_trace, STUSERTRACE).");
+			}
+			StringBuilder sb = new StringBuilder(String.join(" | ", rows.columns()) + "\n");
+			rows.rows().forEach(r -> sb.append(String.join(" | ", r)).append('\n'));
+			return ToolResult.ok(sb + "RC 0 passed, 4 no authorization, 12 no authorization for the object.");
+		}
+		case "atc_variants" -> {
+			String filter = Json.str(in, "filter");
+			String xml = AdtDiagnostics.get(c, "/sap/bc/adt/atc/variants?name="
+					+ AdtClient.enc(filter == null || filter.isBlank() ? "*" : filter.trim()),
+					"application/vnd.sap.adt.nameditems.v1+xml", cancel);
+			StringBuilder sb = new StringBuilder("ATC check variants:\n");
+			for (String[] v : AdtDiagnostics.namedItems(xml)) {
+				if (!v[0].isEmpty()) {
+					sb.append("- ").append(v[0]).append(v[1].isEmpty() ? "" : "  " + v[1]).append('\n');
+				}
+			}
+			return ToolResult.ok(sb.toString());
+		}
+		default -> {
+			return ToolResult.error("Unknown action; see the tool description.");
+		}
+		}
+	}
+
+	private ToolResult traceControl(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String user = Json.str(in, "user");
+		switch (action(in)) {
+		case "trace_start" -> {
+			String u = user == null || user.isBlank() ? s.user() : user;
+			if (u == null || u.isBlank()) {
+				return ToolResult.error("Give 'user', the user whose next execution is traced.");
+			}
+			String armed = AdtDiagnostics.startTrace(c, u, s.client(), Json.str(in, "process_type"),
+					Json.str(in, "object_type"), flag(in, "sql_trace", true), Json.integer(in, "max_executions", 1),
+					Json.integer(in, "expires_hours", 24), "Bella trace", cancel);
+			return ToolResult.ok("Trace armed for " + u.toUpperCase(Locale.ROOT) + ":\n" + armed
+					+ "Run the program or request now, then read it with adt_diagnose 'traces'.");
+		}
+		case "trace_cancel" -> {
+			String path = AdtDiagnostics.traceRequestPath(Json.str(in, "id"));
+			AdtResponse r = c.exchange(AdtRequest.delete(path), cancel);
+			if (!r.ok()) {
+				return ToolResult.error("Could not cancel the trace: " + AdtErrors.message(r));
+			}
+			return ToolResult.ok("Trace request cancelled.");
+		}
+		case "set_sql_trace" -> {
+			if (!in.has("on") || !in.get("on").isJsonPrimitive()) {
+				return ToolResult.error("Give 'on': true or false.");
+			}
+			boolean on = in.get("on").getAsBoolean();
+			String state = AdtDiagnostics.get(c, AdtDiagnostics.ST05_STATE, AdtDiagnostics.ST05_STATE_TYPE, cancel);
+			AdtResponse r = c.exchange(AdtRequest.put(AdtDiagnostics.ST05_STATE,
+					AdtDiagnostics.withSqlTrace(state, on, user), AdtDiagnostics.ST05_STATE_TYPE)
+					.withHeader("Accept", AdtDiagnostics.ST05_STATE_TYPE), cancel);
+			if (!r.ok()) {
+				return ToolResult.error("Could not change the SQL trace: " + AdtErrors.message(r));
+			}
+			return ToolResult.ok("SQL trace (ST05) " + (on ? "on" : "off")
+					+ (user == null || user.isBlank() ? "" : " for " + user.toUpperCase(Locale.ROOT)) + ".");
+		}
+		default -> {
+			return ToolResult.error("action is trace_start, trace_cancel or set_sql_trace.");
+		}
+		}
+	}
+
+	private ToolResult transportManage(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String request = Json.str(in, "request");
+		boolean withTasks = flag(in, "with_tasks", false);
+		switch (action(in)) {
+		case "create" -> {
+			String id = AdtManage.createTransport(c, Json.str(in, "description"), Json.str(in, "package"),
+					Json.str(in, "transport_layer"), Json.str(in, "target"), cancel);
+			return ToolResult.ok("Created transport request " + id + " in " + s.label() + ".");
+		}
+		case "reassign" -> {
+			AdtManage.reassign(c, request, Json.str(in, "owner"), withTasks, cancel);
+			return ToolResult.ok(request.trim().toUpperCase(Locale.ROOT) + " now belongs to "
+					+ Json.str(in, "owner").trim().toUpperCase(Locale.ROOT) + (withTasks ? ", with its open tasks." : "."));
+		}
+		case "delete" -> {
+			AdtManage.deleteTransport(c, request, withTasks, cancel);
+			return ToolResult.ok("Deleted " + request.trim().toUpperCase(Locale.ROOT) + (withTasks ? " and its tasks." : "."));
+		}
+		case "remove_object" -> {
+			String pgmid = Json.str(in, "pgmid");
+			String type = Json.str(in, "object_type");
+			String name = Json.str(in, "object_name");
+			if (pgmid == null || type == null || name == null) {
+				return ToolResult.error("Give 'pgmid', 'object_type' and 'object_name', e.g. R3TR CLAS ZCL_X.");
+			}
+			String task = AdtManage.removeObject(c, request, pgmid, type, name, cancel);
+			return ToolResult.ok("Removed " + pgmid.toUpperCase(Locale.ROOT) + " " + type.toUpperCase(Locale.ROOT) + " "
+					+ name.toUpperCase(Locale.ROOT) + " from task " + task + ".");
+		}
+		default -> {
+			return ToolResult.error("action is create, reassign, delete or remove_object; releasing is not possible.");
+		}
+		}
+	}
+
+	private ToolResult packageManage(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String rawName = Json.str(in, "name");
+		if (rawName == null || rawName.isBlank()) {
+			return ToolResult.error("Give 'name', the package.");
+		}
+		String name = rawName.trim().toUpperCase(Locale.ROOT);
+		switch (action(in)) {
+		case "create" -> {
+			String description = Json.str(in, "description");
+			if (description == null || description.isBlank()) {
+				return ToolResult.error("Give 'description'.");
+			}
+			boolean first = scope != null && creatingFirstPackage("adt_package_manage", in, s);
+			String tr = Json.str(in, "transport");
+			AdtManage.createPackage(c, AdtManage.packageXml(name, description, Json.str(in, "super_package"),
+					Json.str(in, "software_component"), Json.str(in, "transport_layer"), Json.str(in, "package_type"),
+					s.user()), tr, cancel);
+			if (first) {
+				// the developer asked for it: the chat develops in the new package, with its request
+				scope.developerPackage(s.destinationId(), name);
+				if (tr != null && !tr.isBlank() && !DevScope.local(name)) {
+					scope.transport(s.destinationId(), tr);
+				}
+				return ToolResult.ok("Created package " + name + " in " + s.label() + "; it is now the development "
+						+ "package" + (tr == null || tr.isBlank() ? "" : ", with transport request "
+								+ tr.trim().toUpperCase(Locale.ROOT)) + ".");
+			}
+			return ToolResult.ok("Created package " + name + " in " + s.label() + ".");
+		}
+		case "delete" -> {
+			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+				AdtClient.delete(session, AdtManage.packageUri(name), Json.str(in, "transport"), cancel);
+			}
+			return ToolResult.ok("Deleted package " + name + ".");
+		}
+		default -> {
+			return ToolResult.error("action is create or delete.");
+		}
+		}
+	}
+
+	private ToolResult git(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		String provider = Json.str(in, "provider");
+		if ("gcts".equalsIgnoreCase(provider)) {
+			return ToolResult.ok(AdtGit.gcts(c, action(in), Json.str(in, "repo"), Json.integer(in, "limit", 20), cancel));
+		}
+		switch (action(in)) {
+		case "repos" -> {
+			List<AdtGit.Repo> repos = AdtGit.repos(c, cancel);
+			if (repos.isEmpty()) {
+				return ToolResult.ok("No abapGit repositories.");
+			}
+			StringBuilder sb = new StringBuilder();
+			repos.forEach(r -> sb.append("- ").append(r.pkg()).append("  ").append(r.url())
+					.append(r.branch().isEmpty() ? "" : "  " + r.branch()).append("  key ").append(r.key()).append('\n'));
+			return ToolResult.ok(sb.toString());
+		}
+		case "check" -> {
+			AdtGit.Repo repo = AdtGit.repo(c, Json.str(in, "repo"), cancel);
+			AdtResponse r = c.exchange(AdtRequest.post(repo.link("check"), AdtGit.REPO_V3, "", null), cancel);
+			return r.ok() && (r.body() == null || r.body().isBlank()) ? ToolResult.ok("The repository is consistent.")
+					: ToolResult.ok("abapGit reports: " + AdtDiagnostics.cut(AdtErrors.message(r)));
+		}
+		default -> {
+			return ToolResult.error("abapgit actions: repos, check; gcts actions: repos, system, branches, history, objects.");
+		}
+		}
+	}
+
+	private ToolResult gitWrite(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		List<String> patterns = packagePatterns(writePackages.get());
+		switch (action(in)) {
+		case "clone" -> {
+			String url = Json.str(in, "url");
+			String pkg = Json.str(in, "package");
+			if (url == null || !url.trim().matches("https://[^\\s@]+") || pkg == null || pkg.isBlank()) {
+				return ToolResult.error("Give 'url' (an https URL without credentials) and 'package'.");
+			}
+			Optional<String> refused = patterns.isEmpty() ? Optional.empty()
+					: checkPackage(pkg.trim().toUpperCase(Locale.ROOT), pkg.trim().toUpperCase(Locale.ROOT), patterns);
+			if (refused.isPresent()) {
+				return ToolResult.error(refused.get());
+			}
+			AdtResponse r = c.exchange(AdtRequest.post(AdtGit.ABAPGIT + "/repos", AdtGit.OBJECTS,
+					AdtGit.repoXml(pkg.trim(), url.trim(), Json.str(in, "branch"), Json.str(in, "transport")),
+					AdtGit.REPO_V3), cancel);
+			if (!r.ok()) {
+				return ToolResult.error("Clone failed: " + AdtErrors.message(r));
+			}
+			return ToolResult.ok("Cloned " + url.trim() + " into " + pkg.trim().toUpperCase(Locale.ROOT) + ". "
+					+ AdtGit.objectResult(r.body()));
+		}
+		case "pull", "switch_branch", "push" -> {
+			AdtGit.Repo repo = AdtGit.repo(c, Json.str(in, "repo"), cancel);
+			Optional<String> refused = patterns.isEmpty() ? Optional.empty() : checkPackage(repo.pkg(), repo.pkg(), patterns);
+			if (refused.isPresent()) {
+				return ToolResult.error(refused.get());
+			}
+			if (action(in).equals("pull")) {
+				AdtResponse r = c.exchange(AdtRequest.post(AdtGit.ABAPGIT + "/repos/" + AdtClient.enc(repo.key()) + "/pull",
+						AdtGit.OBJECTS, AdtGit.repoXml(repo.pkg(), repo.url(), repo.branch(), Json.str(in, "transport")),
+						AdtGit.REPO_V3), cancel);
+				if (!r.ok()) {
+					return ToolResult.error("Pull failed: " + AdtErrors.message(r));
+				}
+				return ToolResult.ok("Pulled " + repo.url() + " into " + repo.pkg() + ". " + AdtGit.objectResult(r.body()));
+			}
+			if (action(in).equals("switch_branch")) {
+				String branch = Json.str(in, "branch");
+				if (branch == null || branch.isBlank()) {
+					return ToolResult.error("Give 'branch'.");
+				}
+				AdtResponse r = c.exchange(AdtRequest.post(AdtGit.ABAPGIT + "/repos/" + AdtClient.enc(repo.key())
+						+ "/branches/" + AdtClient.enc(branch.trim()) + "?create=" + flag(in, "create", false),
+						AdtGit.REPO_V3, "", null), cancel);
+				if (!r.ok()) {
+					return ToolResult.error("Switching the branch failed: " + AdtErrors.message(r));
+				}
+				return ToolResult.ok(repo.pkg() + " is on branch " + branch.trim() + " now.");
+			}
+			String comment = Json.str(in, "comment");
+			if (comment == null || comment.isBlank()) {
+				return ToolResult.error("Give 'comment', the commit message.");
+			}
+			String stagePath = repo.link("stage");
+			AdtResponse stage = c.exchange(AdtRequest.get(stagePath, AdtGit.STAGE_V1), cancel);
+			if (!stage.ok()) {
+				return ToolResult.error("Staging failed: " + AdtErrors.message(stage));
+			}
+			String objects = Json.str(in, "objects");
+			List<String> only = objects == null || objects.isBlank() ? List.of()
+					: List.of(objects.split("\\s*,\\s*")).stream().map(String::trim).toList();
+			String payload = AdtGit.stagingPayload(stage.body(), only, comment, Json.str(in, "author_name"),
+					Json.str(in, "author_email"));
+			AdtResponse push = c.exchange(AdtRequest.post(repo.link("push"), AdtGit.STAGE_V1, payload, AdtGit.STAGE_V1),
+					cancel);
+			if (!push.ok()) {
+				return ToolResult.error("Push failed: " + AdtErrors.message(push));
+			}
+			return ToolResult.ok("Pushed the changes of " + repo.pkg() + " to " + repo.url() + ".");
+		}
+		default -> {
+			return ToolResult.error("action is clone, pull, switch_branch or push.");
+		}
+		}
+	}
+
+	private ToolResult rap(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String rawName = Json.str(in, "name");
+		if (rawName == null || rawName.isBlank()) {
+			return ToolResult.error("Give 'name': the behavior pool or the service binding.");
+		}
+		String name = rawName.trim().toUpperCase(Locale.ROOT);
+		switch (action(in)) {
+		case "generate_handlers" -> {
+			String classUri = AdtObjectRef.uriFor(name, "CLAS");
+			String main = c.readSource(classUri, null, cancel);
+			String bdef = Json.str(in, "bdef");
+			bdef = bdef == null || bdef.isBlank() ? AdtRap.behaviorOf(main) : bdef.trim().toUpperCase(Locale.ROOT);
+			if (bdef == null) {
+				return ToolResult.error(name + " is no behavior pool (no FOR BEHAVIOR OF); give 'bdef'.");
+			}
+			String bdefSource = c.readSource(AdtObjectRef.uriFor(bdef, "BDEF"), null, cancel);
+			Map<String, List<AdtRap.Handler>> handlers = AdtRap.handlers(bdefSource);
+			String include;
+			try {
+				include = c.readSource(classUri, "implementations", cancel);
+			} catch (AdtException e) {
+				include = "";
+			}
+			List<String> added = new ArrayList<>();
+			String scaffolded;
+			try {
+				scaffolded = AdtRap.scaffold(include, handlers, added);
+			} catch (ClassSurgery.SurgeryException e) {
+				return ToolResult.error("Cannot add the handlers: " + e.getMessage());
+			}
+			if (added.isEmpty()) {
+				return ToolResult.ok(name + " already has all handler methods " + bdef + " requires.");
+			}
+			if (flag(in, "dry_run", false)) {
+				return ToolResult.ok("Would add " + String.join(", ", added) + " (not saved):\n```abap\n" + scaffolded
+						+ "\n```");
+			}
+			String tr;
+			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+				tr = AdtClient.writeSource(session, classUri, "implementations", scaffolded, Json.str(in, "transport"),
+						cancel);
+			} finally {
+				c.invalidate(classUri);
+				inactive.remove(s.destinationId());
+			}
+			return ToolResult.ok("Added " + String.join(", ", added) + " to the local types of " + name
+					+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet; implement the methods with "
+					+ "adt_write_source (include implementations).");
+		}
+		case "publish_srvb", "unpublish_srvb" -> {
+			String uri = AdtDdic.objectUri("SRVB", name, null);
+			String[] versions = AdtRap.bindingVersions(c.readMetadata(uri, cancel));
+			return ToolResult.ok(AdtRap.publish(c, name, action(in).equals("publish_srvb"), versions[0], versions[1],
+					cancel));
+		}
+		default -> {
+			return ToolResult.error("action is generate_handlers, publish_srvb or unpublish_srvb.");
+		}
+		}
+	}
+
+	private static final String BSP = "/sap/bc/adt/filestore/ui5-bsp/objects";
+
+	private ToolResult ui5(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		String app = Json.str(in, "app");
+		String path = Json.str(in, "path");
+		switch (action(in)) {
+		case "apps" -> {
+			String filter = Json.str(in, "filter");
+			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, BSP + "?maxResults=200"
+					+ (filter == null || filter.isBlank() ? "" : "&name=" + AdtClient.enc(filter.trim())),
+					"application/atom+xml", cancel), 200));
+		}
+		case "files", "file" -> {
+			if (app == null || app.isBlank()) {
+				return ToolResult.error("Give 'app'.");
+			}
+			String clean = path == null ? "" : path.trim().replaceFirst("^/+", "");
+			if (clean.contains("..")) {
+				return ToolResult.error("Invalid path.");
+			}
+			String object = clean.isEmpty() ? app.trim().toUpperCase(Locale.ROOT)
+					: app.trim().toUpperCase(Locale.ROOT) + "/" + clean;
+			String body = AdtDiagnostics.get(c, BSP + "/" + AdtClient.enc(object) + "/content",
+					action(in).equals("files") ? "application/atom+xml" : "*/*", cancel);
+			return ToolResult.ok(action(in).equals("files") ? AdtDiagnostics.atom(body, 300) : AdtDiagnostics.cut(body));
+		}
+		case "deploy_info" -> {
+			if (app == null || app.isBlank()) {
+				return ToolResult.error("Give 'app'.");
+			}
+			return ToolResult.ok(AdtDiagnostics.json(AdtDiagnostics.get(c, "/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV/"
+					+ "Repositories('" + AdtClient.enc(app.trim().toUpperCase(Locale.ROOT)) + "')?$format=json",
+					"application/json", cancel)));
+		}
+		case "flp_catalogs", "flp_groups", "flp_tiles" -> {
+			String base = "/sap/opu/odata/UI2/PAGE_BUILDER_CUST";
+			String query = switch (action(in)) {
+			case "flp_catalogs" -> "/Catalogs?$format=json&$top=500&$select=id,domainId,title,type,scope,chipCount";
+			case "flp_groups" -> "/Pages?$format=json&$top=500&$select=id,title,catalogId,layout&$filter=catalogId%20eq%20'"
+					+ "%2FUI2%2FFLPD_CATALOG'";
+			default -> {
+				String catalog = Json.str(in, "catalog");
+				if (catalog == null || catalog.isBlank()) {
+					yield null;
+				}
+				String page = "X-SAP-UI2-CATALOGPAGE:" + catalog.trim().replaceFirst("^X-SAP-UI2-CATALOGPAGE:", "");
+				yield "/Pages('" + AdtClient.enc(page) + "')/PageChipInstances?$format=json&$top=500"
+						+ "&$select=pageId,instanceId,chipId,title,configuration";
+			}
+			};
+			if (query == null) {
+				return ToolResult.error("Give 'catalog'.");
+			}
+			return ToolResult.ok(AdtDiagnostics.json(AdtDiagnostics.get(c, base + query, "application/json", cancel)));
+		}
+		default -> {
+			return ToolResult.error("action is apps, files, file, deploy_info, flp_catalogs, flp_groups or flp_tiles.");
+		}
+		}
+	}
+
+	private ToolResult format(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		String action = Json.str(in, "action");
+		if ("get_settings".equalsIgnoreCase(action)) {
+			AdtQuickfix.Settings st = AdtQuickfix.settings(c, cancel);
+			return ToolResult.ok("Pretty printer: indentation " + (st.indentation() ? "on" : "off") + ", keywords "
+					+ st.style() + ".");
+		}
+		String source = Json.str(in, "source");
+		if (source == null || source.isBlank()) {
+			String name = Json.str(in, "name");
+			if (name == null || name.isBlank()) {
+				return ToolResult.error("Give 'source' or 'name'.");
+			}
+			AdtObjectRef ref = resolve(c, in, cancel);
+			source = c.readSource(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "include"), cancel);
+		}
+		String formatted = AdtQuickfix.prettyPrint(c, source, cancel);
+		return ToolResult.ok(formatted.equals(source) ? "Already formatted; nothing changes."
+				: "Formatted (not saved):\n```abap\n" + formatted + "\n```");
+	}
+
+	private ToolResult writeSettings(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		String style = Json.str(in, "style");
+		if (style == null || !AdtQuickfix.STYLES.contains(style.trim())) {
+			return ToolResult.error("style is one of " + String.join(", ", AdtQuickfix.STYLES) + ".");
+		}
+		boolean indentation = !in.has("indentation") || !in.get("indentation").isJsonPrimitive()
+				|| in.get("indentation").getAsBoolean();
+		AdtQuickfix.writeSettings(client(s), new AdtQuickfix.Settings(indentation, style.trim()), cancel);
+		return ToolResult.ok("Pretty printer settings of " + s.label() + ": indentation " + (indentation ? "on" : "off")
+				+ ", keywords " + style.trim() + ".");
+	}
+
+	private ToolResult textElements(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String part = textPart(in);
+		String texts = c.textElements(ref.type(), ref.name(), part, cancel);
+		return ToolResult.ok(texts.isBlank() ? "No " + part + " maintained for " + ref.name() + "." : texts);
+	}
+
+	private ToolResult writeTextElements(JsonObject in, CancelToken cancel) throws IOException {
+		String part = textPart(in);
+		String texts = Json.str(in, "texts");
+		if (part.equals("selections")) {
+			return selectionTextsByHand(Json.str(in, "name"), texts);
+		}
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		AdtObjectRef ref = resolve(c, in, cancel);
+		if (texts == null) {
+			return ToolResult.error("Give 'texts', the complete new " + part + ", one entry per line.");
+		}
+		texts = texts.replace("\r\n", "\n");
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeTextElements(session, ref.type(), ref.name(), part, texts, Json.str(in, "transport"),
+					cancel);
+		}
+		String saved = "Saved the " + part + " of " + ref.name() + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")");
+		// SAP answers 200 also when it stored the texts differently, so compare what it reads back
+		List<String> lost = AdtTextPool.differences(texts, c.textElements(ref.type(), ref.name(), part, cancel));
+		if (!lost.isEmpty()) {
+			return ToolResult.error(saved + ", but SAP did not keep the texts as written:\n- "
+					+ String.join("\n- ", lost) + "\nRead the part with adt_text_elements and write it again in the "
+					+ "format it shows; if that does not help, ask the developer to maintain the texts in SE38.");
+		}
+		String poolUri = AdtClient.textElementsUri(ref.type(), ref.name());
+		AdtObjectRef pool = new AdtObjectRef(poolUri, ref.name(), AdtClient.TEXT_POOL, "", "");
+		List<AdtClient.Message> msgs;
+		try {
+			msgs = c.activate(List.of(pool), cancel);
+		} catch (IOException e) {
+			return ToolResult.ok(saved + ". The texts are still inactive: activating the text pool failed ("
+					+ e.getMessage() + "); activate " + ref.name() + " with adt_activate, it takes the pool along.");
+		} finally {
+			inactive.remove(s.destinationId());
+		}
+		if (msgs.stream().anyMatch(m -> m.severity().equals("Error"))) {
+			return ToolResult.ok(saved + ". The texts are still inactive; activating the text pool reported:\n"
+					+ format(msgs));
+		}
+		return ToolResult.ok(saved + " and activated the text pool.");
+	}
+
+	/**
+	 * SAP's textelements service answers 200 to selection texts but does not
+	 * store them, so they are left to the developer: the answer lists them for
+	 * SE38 without contacting SAP.
+	 */
+	static ToolResult selectionTextsByHand(String program, String texts) {
+		StringBuilder sb = new StringBuilder("Selection texts cannot be written through ADT; SAP does not store them. "
+				+ "Nothing was saved, do not try again. Ask the developer to maintain them in SE38");
+		if (program != null && !program.isBlank()) {
+			sb.append(" for ").append(program.trim().toUpperCase(Locale.ROOT));
+		}
+		sb.append(" (Goto > Text Elements > Selection Texts)");
+		Map<String, String> entries = AdtTextPool.entries(texts);
+		if (entries.isEmpty()) {
+			return ToolResult.error(sb.append('.').toString());
+		}
+		sb.append(':');
+		entries.forEach((key, text) -> sb.append("\n- ").append(key).append(": ").append(text));
+		return ToolResult.error(sb.toString());
+	}
+
+	private static String textPart(JsonObject in) {
+		String part = Json.str(in, "part");
+		part = part == null || part.isBlank() ? "symbols" : part.trim().toLowerCase(Locale.ROOT);
+		if (!AdtClient.TEXT_PARTS.contains(part)) {
+			throw new IllegalArgumentException("Unknown part '" + part + "'; use symbols, selections or headings.");
+		}
+		return part;
+	}
+
+	/**
+	 * Bella's style check of the code just saved and a syntax check of the
+	 * saved (inactive) version, appended to a write's result so the model
+	 * fixes them before activating, as ARC-1 does on SAPWrite.
+	 */
+	private String checksAfterWrite(AdtClient c, String objectUri, String written, boolean methodBody,
+			AbapLint.Target target, List<AdtClient.Message> syntax, CancelToken cancel) {
+		StringBuilder sb = new StringBuilder();
+		List<AbapLint.Finding> lint = AbapLint.check(written, naming.get(), target);
+		if (!lint.isEmpty()) {
+			sb.append("\n\nBella's style check of the code written")
+					.append(methodBody ? " (line numbers count within the method body)" : "")
+					.append("; fix the findings that apply before activating:\n").append(AbapLint.format(lint));
+		}
+		try {
+			// the check before writing ran on exactly the saved source; no need to ask SAP again
+			List<AdtClient.Message> msgs = syntax != null ? syntax : c.syntaxCheck(objectUri, null, true, cancel);
+			sb.append(msgs.isEmpty() ? "\n\nSyntax check: no errors."
+					: "\n\nSyntax check of the saved version:\n" + format(msgs) + QUICKFIX_HINT);
+		} catch (IOException | RuntimeException e) {
+			sb.append("\n\nSyntax check could not run: ").append(e.getMessage());
+		}
+		return sb.toString();
+	}
+
+	/** Release and cloud flag of a system for the style check; asked once per system, then cached. */
+	private static AbapLint.Target lintTarget(AdtSystem s, AdtClient c, CancelToken cancel) {
+		return AdtSystemInfo.of(s.destinationId(), c, cancel).map(AdtClient.SystemInfo::lintTarget)
+				.orElse(AbapLint.Target.UNKNOWN);
+	}
+
+	/** Bella's CDS rules for a data definition just written, or an empty string. */
+	private String cdsChecks(String source, AbapLint.Target target) {
+		List<AbapLint.Finding> lint = AbapLint.check(source, naming.get(), target);
+		return lint.isEmpty() ? "" : "\n\nBella's CDS check of the code written:\n" + AbapLint.format(lint);
 	}
 
 	private ToolResult transportInfo(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		boolean create = in.has("create") && in.get("create").isJsonPrimitive() && in.get("create").getAsBoolean();
-		String name = Json.str(in, "name").trim();
+		String name = requiredName(in);
 		String pkg = Json.str(in, "package");
 		String uri;
 		if (create) {
@@ -598,14 +2437,86 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.ok(sb.append("local, no transport request needed.").toString());
 		}
 		sb.append("changes are recorded in a transport request.\n");
+		String ask = scope == null ? ""
+				: "\nWhich request to use is the developer's decision: ask them, then record it with adt_dev_package "
+						+ "'set'. Never use another user's request.";
 		if (!t.lockedIn().isEmpty()) {
-			sb.append("Already locked in request ").append(t.lockedIn()).append("; use it.\n");
+			// SAP records further changes in that request; other open requests do not matter
+			return ToolResult.ok(sb.append("Already locked in request ").append(t.lockedIn())
+					.append("; changes go there, pass it as 'transport'.").append(ask).toString());
 		}
 		if (t.candidates().isEmpty()) {
-			sb.append("No open request of the developer fits; ask them for one (Bella cannot create or release requests).");
+			sb.append("No open request of the developer fits; ask them for one or offer to create one with adt_transport_manage 'create' (Bella never releases requests).");
 		} else {
 			sb.append("Open requests that fit:\n");
 			t.candidates().forEach(r -> sb.append("- ").append(r).append('\n'));
+		}
+		return ToolResult.ok(sb.append(ask).toString());
+	}
+
+	private ToolResult transports(JsonObject in, CancelToken cancel) throws IOException {
+		String action = Json.str(in, "action");
+		switch (action == null || action.isBlank() ? "list" : action.trim().toLowerCase(Locale.ROOT)) {
+		case "list" -> {
+			return listTransports(in, cancel);
+		}
+		case "layers", "targets" -> {
+			JsonObject copy = in.deepCopy();
+			copy.addProperty("values", action.trim().toLowerCase(Locale.ROOT));
+			return listTransports(copy, cancel);
+		}
+		case "for_object" -> {
+			return transportInfo(in, cancel);
+		}
+		case "history" -> {
+			return transportHistory(in, cancel);
+		}
+		default -> {
+			return ToolResult.error("Unknown action " + action + "; use list, for_object, history, layers or targets.");
+		}
+		}
+	}
+
+	/** The requests an object was changed in, newest first, from the transport noted on each version. */
+	private ToolResult transportHistory(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String objectUri = AdtObjectRef.objectUri(ref.uri());
+		String include = Json.str(in, "include");
+		include = include == null || include.isBlank() ? null : include.trim();
+		List<AdtRevisions.Revision> revisions = c.revisions(versionsUri(ref, objectUri, include), cancel);
+		if (revisions.isEmpty()) {
+			return ToolResult.ok(ref.name() + " has no version history (objects without source, or only local).");
+		}
+		java.util.LinkedHashMap<String, List<AdtRevisions.Revision>> byTransport = new java.util.LinkedHashMap<>();
+		int withoutTransport = 0;
+		for (AdtRevisions.Revision r : revisions) {
+			if (r.transport().isEmpty()) {
+				withoutTransport++;
+			} else {
+				byTransport.computeIfAbsent(r.transport(), k -> new ArrayList<>()).add(r);
+			}
+		}
+		if (byTransport.isEmpty()) {
+			return ToolResult.ok(ref.name() + " has " + revisions.size() + " versions, none of them names a transport "
+					+ "request (local or never transported).");
+		}
+		StringBuilder sb = new StringBuilder("Transport requests of " + ref.name() + ", newest first:\n");
+		byTransport.forEach((tr, rs) -> {
+			// revisions are newest first
+			String last = rs.get(0).timestamp();
+			String first = rs.get(rs.size() - 1).timestamp();
+			sb.append(tr).append("  ").append(first.equals(last) ? last : first + " – " + last).append("  ")
+					.append(String.join(", ", rs.stream().map(AdtRevisions.Revision::author).distinct().toList()))
+					.append("  (").append(rs.size()).append(rs.size() == 1 ? " version)" : " versions)").append('\n');
+		});
+		if (withoutTransport > 0) {
+			sb.append(withoutTransport).append(withoutTransport == 1 ? " version" : " versions")
+					.append(" without a transport request (e.g. the active or a local one).\n");
+		}
+		if (ref.type().startsWith("CLAS")) {
+			sb.append("Only the ").append(include == null ? "main" : include)
+					.append(" include; other includes (testclasses, implementations) have their own history.\n");
 		}
 		return ToolResult.ok(sb.toString());
 	}
@@ -615,6 +2526,19 @@ public final class AdtToolProvider implements ToolProvider {
 		String user = Json.str(in, "user");
 		user = user == null || user.isBlank() ? s.user() : user.trim();
 		String status = Json.str(in, "status");
+		String values = Json.str(in, "values");
+		if (values != null && !values.isBlank()) {
+			boolean layers = values.trim().equalsIgnoreCase("layers");
+			String xml = AdtDiagnostics.get(client(s), layers ? "/sap/bc/adt/packages/valuehelps/transportlayers"
+					: "/sap/bc/adt/cts/transportrequests/valuehelp/target?maxItemCount=200",
+					"application/vnd.sap.adt.nameditems.v1+xml", cancel);
+			StringBuilder sb = new StringBuilder(layers ? "Transport layers:\n" : "Transport targets:\n");
+			for (String[] v : AdtDiagnostics.namedItems(xml)) {
+				sb.append("- ").append(v[0].isEmpty() ? "(local)" : v[0]).append(v[1].isEmpty() ? "" : "  " + v[1])
+						.append(v[2].isEmpty() ? "" : "  → " + v[2]).append('\n');
+			}
+			return ToolResult.ok(sb.toString());
+		}
 		List<AdtTransportRequest> list = client(s).transports(user == null ? "*" : user, status, cancel);
 		if (list.isEmpty()) {
 			return ToolResult.ok("No " + ("R".equalsIgnoreCase(status) ? "released" : "modifiable")
@@ -688,8 +2612,9 @@ public final class AdtToolProvider implements ToolProvider {
 		String include = Json.str(in, "include");
 		String source = Json.str(in, "source");
 		String method = Json.str(in, "method");
+		String current = null;
 		if (method != null && !method.isBlank()) {
-			String current = c.readSource(uri, include, cancel);
+			current = c.readSource(uri, include, cancel);
 			Optional<String> updated = AbapEdit.replaceMethod(current, method, source == null ? "" : source);
 			if (updated.isEmpty()) {
 				return ToolResult.error("Method " + method.toUpperCase(Locale.ROOT) + " is not implemented in "
@@ -697,32 +2622,213 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			source = updated.get();
 		}
+		// CDS, access controls, metadata extensions, behavior and service definitions: Bella's style check
+		// understands only ABAP
+		String kind = ref.type().replaceFirst("/.*", "");
+		boolean abap = AdtDdic.ABAP_SOURCE.contains(kind) || kind.isEmpty();
+		boolean mainSource = include == null || include.isBlank() || include.equalsIgnoreCase("main");
+		PreCheck pre = null;
+		if (abap && mainSource && source != null) {
+			// SAP's syntax check before saving: the compiler knows the real DDIC, unlike a local parser
+			if (current == null) {
+				try {
+					current = c.readSource(uri, null, cancel);
+				} catch (IOException | RuntimeException e) {
+					// without the old source the check cannot tell new errors from old ones; the write goes on
+					Log.info("adt", "no check before writing " + ref.name() + ": " + e.getMessage());
+				}
+			}
+			pre = current == null ? null : preWriteCheck(c, uri, current, source, true, cancel);
+			if (pre != null && pre.added().isPresent() && !flag(in, "allow_errors", false)) {
+				return ToolResult.error("Not saved: the new source adds syntax errors:\n" + pre.added().get()
+						+ QUICKFIX_HINT + "\nFix them and write again. Only if the errors are an intended step "
+						+ "(e.g. a method another write adds next), write with 'allow_errors': true.");
+			}
+		}
+		String tr;
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-			String tr = AdtClient.writeSource(session, uri, include, source, Json.str(in, "transport"), cancel);
-			return ToolResult.ok("Saved " + (method == null || method.isBlank() ? "" : "method " + method.toUpperCase(Locale.ROOT) + " of ")
-					+ ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
+			tr = AdtClient.writeSource(session, uri, include, source, Json.str(in, "transport"), cancel);
 		} finally {
 			c.invalidate(uri);
 			inactive.remove(s.destinationId());
 		}
+		boolean oneMethod = method != null && !method.isBlank();
+		String checks = abap
+				? checksAfterWrite(c, uri, oneMethod ? Json.str(in, "source") : source, oneMethod,
+						lintTarget(s, c, cancel), pre == null ? null : pre.after(), cancel)
+				: syntaxAfterWrite(c, uri, cancel)
+						+ (kind.equals("DDLS") ? cdsChecks(source, lintTarget(s, c, cancel)) : "");
+		return ToolResult.ok("Saved " + (oneMethod ? "method " + method.toUpperCase(Locale.ROOT) + " of " : "")
+				+ ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet."
+				+ checks);
 	}
 
 	private ToolResult create(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem s = system(in);
 		AdtClient c = client(s);
-		AdtObjectRef ref = c.create(Json.str(in, "type"), Json.str(in, "name"), Json.str(in, "description"),
-				Json.str(in, "package"), Json.str(in, "transport"), s.user(), cancel);
-		String source = Json.str(in, "source");
-		if (source != null && !source.isBlank()) {
-			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-				AdtClient.writeSource(session, ref.uri(), null, source, Json.str(in, "transport"), cancel);
-			} finally {
-				c.invalidate(ref.uri());
-				inactive.remove(s.destinationId());
-			}
+		String type = AdtDdic.normalizeType(Json.str(in, "type"));
+		String name = Json.str(in, "name");
+		String pkg = Json.str(in, "package");
+		String transport = Json.str(in, "transport");
+		boolean inGroup = Json.str(in, "group") != null && !Json.str(in, "group").isBlank();
+		if ((pkg == null || pkg.isBlank()) && !(type.equals("FUNC") || type.equals("INCL") && inGroup)) {
+			return ToolResult.error("Give 'package', e.g. $TMP.");
 		}
-		return ToolResult.ok("Created " + ref.name() + " (" + ref.type() + ") in package "
-				+ Json.str(in, "package").toUpperCase(Locale.ROOT) + " on " + s.label() + ". Not activated yet.");
+		if (type.equals("MSAG") && transport != null && !transport.isBlank()
+				&& c.transport(transport, cancel).isEmpty()) {
+			// some releases drop the messages silently when given a task instead of a request
+			return ToolResult.error(transport.trim().toUpperCase(Locale.ROOT) + " is not a transport request. Message "
+					+ "classes need the request number, not the number of a task (adt_transports).");
+		}
+		String processing = Json.str(in, "processing_type");
+		String updateKind = Json.str(in, "update_task_kind");
+		if (type.equals("FUNC") && processing != null && !List.of("normal", "rfc", "update").contains(processing)) {
+			return ToolResult.error("processing_type is normal, rfc or update.");
+		}
+		if ("update".equals(processing) == (updateKind == null || updateKind.isBlank()) && type.equals("FUNC")
+				&& processing != null) {
+			return ToolResult.error("update_task_kind goes with processing_type update, and only with it.");
+		}
+		String language = Json.str(in, "language");
+		AdtDdic.CreateRequest req = AdtDdic.create(type, name, Json.str(in, "description"), pkg, transport,
+				language == null || language.isBlank() ? s.language() : language, s.user(), in);
+		List<AdtDdic.Message> messages = type.equals("MSAG") ? AdtDdic.messages(in) : List.of();
+		AdtObjectRef ref = c.create(req, name, pkg, Json.str(in, "description"), cancel);
+		String source = Json.str(in, "source");
+		boolean written = source != null && !source.isBlank() && !AdtDdic.METADATA_ONLY.contains(type);
+		if (type.equals("FUNC") && written) {
+			source = AdtDdic.stripParameterComments(source);
+		}
+		StringBuilder notes = new StringBuilder();
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			// SAP stores only a shell for these on the POST; the metadata follows with a PUT
+			String lang = AdtDdic.language(language == null || language.isBlank() ? s.language() : language);
+			switch (type) {
+			case "DTEL", "TTYP" -> AdtClient.writeMetadata(session, ref.uri(), req.body(),
+					type.equals("DTEL") ? AdtDdic.DATAELEMENT_TYPE : AdtDdic.TABLETYPE_TYPE, transport, cancel);
+			case "MSAG" -> {
+				if (!messages.isEmpty()) {
+					AdtClient.writeMetadata(session, ref.uri(), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+							+ AdtDdic.messageClassXml(ref.name(), Json.str(in, "description"),
+									pkg.trim().toUpperCase(Locale.ROOT), lang, messages),
+							AdtDdic.MESSAGECLASS_TYPE, transport, cancel);
+					notes.append(" ").append(messages.size()).append(" messages written.");
+				}
+			}
+			case "FUNC" -> {
+				if (processing != null && !processing.equals("normal")) {
+					String meta = c.readMetadata(ref.uri() + "?version=inactive", cancel);
+					AdtClient.writeMetadata(session, ref.uri(),
+							AdtDdic.withProcessingType(meta, processing, updateKind), AdtDdic.FUNCTION_MODULE_TYPE,
+							transport, cancel);
+					String stored = AdtDdic.processingType(c.readMetadata(ref.uri() + "?version=inactive", cancel));
+					notes.append(stored.equals(processing) ? " Processing type " + processing + "."
+							: " SAP kept processing type " + stored + " instead of " + processing
+									+ "; set it in the function module's properties.");
+				}
+			}
+			default -> {
+				// nothing to add
+			}
+			}
+			if (written) {
+				try {
+					AdtClient.writeSource(session, ref.uri(), null, source, transport, cancel);
+				} catch (AdtException e) {
+					return ToolResult.error("Created " + ref.name() + " (" + type + ") on " + s.label()
+							+ ", but writing its source failed, so it exists empty and inactive: " + e.getMessage()
+							+ "\nWrite the source with adt_write_source, or remove the object with adt_delete_object.");
+				}
+			}
+		} finally {
+			c.invalidate(ref.uri());
+			inactive.remove(s.destinationId());
+		}
+		String where = type.equals("FUNC") || type.equals("INCL") && inGroup
+				? "function group " + Json.str(in, "group").trim().toUpperCase(Locale.ROOT)
+				: "package " + pkg.trim().toUpperCase(Locale.ROOT);
+		String checks = !written ? ""
+				: AdtDdic.ABAP_SOURCE.contains(type)
+						? checksAfterWrite(c, ref.uri(), source, false, lintTarget(s, c, cancel), null, cancel)
+						: syntaxAfterWrite(c, ref.uri(), cancel)
+								+ (type.equals("DDLS") ? cdsChecks(source, lintTarget(s, c, cancel)) : "");
+		return ToolResult.ok("Created " + ref.name() + " (" + type + ") in " + where + " on " + s.label() + "."
+				+ notes + (type.equals("MSAG") ? "" : " Not activated yet.") + checks);
+	}
+
+	/** Changes DDIC metadata or the messages of a message class, keeping all fields not given. */
+	private ToolResult writeMetadata(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String type = AdtDdic.normalizeType(Json.str(in, "type"));
+		if (!List.of("DTEL", "DOMA", "TTYP", "MSAG").contains(type)) {
+			return ToolResult.error("adt_write_metadata changes DTEL, DOMA, TTYP and MSAG; use adt_write_source for "
+					+ "source-based objects.");
+		}
+		String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
+		String uri = AdtDdic.objectUri(type, name, null);
+		String current = c.readMetadata(uri, cancel);
+		AdtDdic.Header h = AdtDdic.header(current);
+		String description = Json.str(in, "description") == null ? h.description() : Json.str(in, "description");
+		String lang = AdtDdic.language(h.language().isEmpty() ? s.language() : h.language());
+		String body;
+		String contentType;
+		String summary;
+		switch (type) {
+		case "DTEL" -> {
+			body = AdtDdic.dataElementXml(name, description, h.pkg(), lang, null,
+					AdtDdic.dataElementFields(in, AdtDdic.parseDataElement(current)));
+			contentType = AdtDdic.DATAELEMENT_TYPE;
+			summary = "data element";
+		}
+		case "DOMA" -> {
+			body = AdtDdic.domainXml(name, description, h.pkg(), lang, null,
+					AdtDdic.domainFields(in, AdtDdic.parseDomain(current)));
+			contentType = AdtDdic.DOMAIN_TYPE;
+			summary = "domain";
+		}
+		case "TTYP" -> {
+			String rowType = Json.str(in, "row_type");
+			if (rowType == null || rowType.isBlank()) {
+				return ToolResult.error("Give 'row_type'; it is the only table type field Bella changes.");
+			}
+			body = AdtDdic.updateTableTypeXml(current, description, rowType, Json.str(in, "row_type_kind"));
+			contentType = AdtDdic.TABLETYPE_TYPE;
+			summary = "table type";
+		}
+		default -> {
+			AdtDdic.MessageClass mc = AdtDdic.parseMessageClass(current);
+			List<String> remove = new ArrayList<>();
+			JsonArray arr = Json.arr(in, "remove_numbers");
+			if (arr != null) {
+				arr.forEach(e -> remove.add(e.getAsString().trim()));
+			}
+			List<AdtDdic.Message> merged = AdtDdic.mergeMessages(mc.messages(), AdtDdic.messages(in), remove);
+			body = AdtDdic.messageClassXml(name, description, h.pkg(), lang, merged);
+			contentType = AdtDdic.MESSAGECLASS_TYPE;
+			summary = "message class (" + merged.size() + " messages)";
+		}
+		}
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeMetadata(session, uri, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + body,
+					contentType, Json.str(in, "transport"), cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Saved the " + summary + " " + name + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")")
+				+ (type.equals("MSAG") ? "." : ". Not activated yet."));
+	}
+
+	/** Syntax check of a saved source that Bella's style check does not understand (CDS, RAP, DDIC sources). */
+	private static String syntaxAfterWrite(AdtClient c, String objectUri, CancelToken cancel) {
+		try {
+			return syntaxReport(c.syntaxCheck(objectUri, null, true, cancel));
+		} catch (IOException | RuntimeException e) {
+			return "\n\nSyntax check could not run: " + e.getMessage();
+		}
 	}
 
 	private ToolResult activate(JsonObject in, CancelToken cancel) throws IOException {
@@ -739,6 +2845,16 @@ public final class AdtToolProvider implements ToolProvider {
 		if (refs.isEmpty()) {
 			return ToolResult.error("No objects given.");
 		}
+		try {
+			// written texts stay inactive until their pool is activated, which activating the program does not do
+			for (AdtObjectRef pool : c.inactiveTextPools(refs, cancel)) {
+				if (refs.stream().noneMatch(r -> r.uri().equalsIgnoreCase(pool.uri()))) {
+					refs.add(pool);
+				}
+			}
+		} catch (IOException e) {
+			Log.warn("adt", "inactive text pools not read: " + e.getMessage());
+		}
 		List<AdtClient.Message> msgs;
 		try {
 			msgs = c.activate(refs, cancel);
@@ -747,14 +2863,35 @@ public final class AdtToolProvider implements ToolProvider {
 			inactive.remove(s.destinationId());
 		}
 		boolean errors = msgs.stream().anyMatch(m -> m.severity().equals("Error"));
-		String names = String.join(", ", refs.stream().map(AdtObjectRef::name).toList());
+		String names = String.join(", ", refs.stream()
+				.map(r -> AdtClient.TEXT_POOL.equals(r.type()) ? "text pool of " + r.name() : r.name()).toList());
 		if (errors) {
 			return ToolResult.error("Activation failed for " + names + ":\n" + format(msgs));
 		}
 		String done = "Activated " + names + " on " + s.label() + (msgs.isEmpty() ? "." : ":\n" + format(msgs));
 		boolean test = in.has("run_unit_tests") && in.get("run_unit_tests").isJsonPrimitive()
 				&& in.get("run_unit_tests").getAsBoolean();
-		return ToolResult.ok(test ? done + "\n\n" + unitTestsAfterActivation(c, refs, cancel) : done);
+		boolean atc = in.has("run_atc") && in.get("run_atc").isJsonPrimitive() && in.get("run_atc").getAsBoolean();
+		return ToolResult.ok(done + (test ? "\n\n" + unitTestsAfterActivation(c, refs, cancel) : "")
+				+ (atc ? "\n\n" + atcAfterActivation(c, refs, cancel) : ""));
+	}
+
+	/** One ATC run over the activated objects, with what to do about the findings. */
+	private static String atcAfterActivation(AdtClient c, List<AdtObjectRef> refs, CancelToken cancel) {
+		try {
+			List<AdtClient.Message> msgs = c.atcCheck(
+					refs.stream().map(r -> AdtObjectRef.objectUri(r.uri())).toList(), null, cancel);
+			String note = c.atcNote().isEmpty() ? "" : c.atcNote() + "\n";
+			if (msgs.isEmpty()) {
+				return note + "ATC: no findings.";
+			}
+			return note + "ATC findings:\n" + formatAtc(msgs, refs.size() > 1)
+					+ "Fix priority 1 and 2 findings now, then save, activate and check again; fix priority 3 where it "
+					+ "is simple. For each finding you leave, tell the developer why (e.g. a false positive that needs "
+					+ "an exemption)." + QUICKFIX_HINT;
+		} catch (IOException e) {
+			return "ATC could not run: " + e.getMessage();
+		}
 	}
 
 	/** Object types that can hold ABAP Unit tests. */

@@ -20,6 +20,7 @@ import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtClient;
 import de.kiliantaubmann.bella.core.adt.AdtContext;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
+import de.kiliantaubmann.bella.core.adt.AdtObjectRef;
 import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
@@ -75,7 +76,9 @@ abstract class EditorHandler extends AbstractHandler {
 		String objectName = EditorBridge.objectName(part);
 		Log.info("editor", target + " on " + objectName + ", SAP definitions "
 				+ (sap == null ? "off (no ADT object, not logged on or switched off)" : "on"));
-		Log.debug("editor", () -> "instruction: " + instruction);
+		if (instruction != null && !instruction.isBlank()) {
+			Log.debug("editor", () -> "instruction: " + instruction);
+		}
 		String model = plugin.chatModel();
 		var settings = plugin.chatSettings();
 		NamingRules naming = plugin.conventions(EditorBridge.adtObject(part).map(AdtEditorObject::destinationId)
@@ -102,12 +105,16 @@ abstract class EditorHandler extends AbstractHandler {
 				try {
 					Prompt p = prompt;
 					List<String> used = List.of();
+					String definitionsError = null;
 					if (sap != null) {
 						monitor.subTask(Messages.get("generate.loadingDefinitions"));
 						AdtContext.Result defs = sap.load(cancel);
 						if (defs != null && !defs.isEmpty()) {
 							p = AbapPrompts.withDefinitions(p, defs.text());
 							used = defs.used();
+						}
+						if (defs != null && defs.error() != null) {
+							definitionsError = defs.error();
 						}
 						p = AbapPrompts.withSystem(p, sap.system(cancel));
 						monitor.subTask(Messages.get("generate.jobName"));
@@ -125,10 +132,11 @@ abstract class EditorHandler extends AbstractHandler {
 						error(part, Messages.get("generate.empty"));
 						return Status.OK_STATUS;
 					}
-					List<AbapLint.Finding> findings = AbapLint.check(code, naming);
+					List<AbapLint.Finding> findings = AbapLint.check(code, naming,
+							sap == null ? AbapLint.Target.UNKNOWN : sap.lintTarget(cancel));
 					Log.info("editor", "proposal for " + objectName + ": " + code.length() + " chars, "
 							+ findings.size() + " style findings, definitions " + used);
-					String notes = CodeActions.previewNotes(used, findings);
+					String notes = CodeActions.previewNotes(used, definitionsError, findings);
 					Display.getDefault().asyncExec(() -> CodeActions.apply(part, editor, target, code, notes, anchor));
 				} catch (CancelToken.CancelledException e) {
 					return Status.CANCEL_STATUS;
@@ -146,7 +154,8 @@ abstract class EditorHandler extends AbstractHandler {
 	}
 
 	/** Where to load SAP definitions from; captured on the UI thread, used in the job. */
-	record SapContext(AdtBackend adt, String destinationId, String objectName, String code, String instruction) {
+	record SapContext(AdtBackend adt, String destinationId, String objectName, String objectUri, String code,
+			String instruction) {
 
 		/** {@code null} when switched off, ADT is missing, or the editor holds no ADT object of a logged-on system. */
 		static SapContext of(IEditorPart part, String code, String instruction) {
@@ -163,8 +172,8 @@ abstract class EditorHandler extends AbstractHandler {
 			try {
 				boolean loggedOn = adt.systems().stream()
 						.anyMatch(s -> s.destinationId().equals(dest) && s.loggedOn());
-				return loggedOn ? new SapContext(adt, dest, obj.get().name(), code == null ? "" : code, instruction)
-						: null;
+				return loggedOn ? new SapContext(adt, dest, obj.get().name(), obj.get().uri(),
+						code == null ? "" : code, instruction) : null;
 			} catch (RuntimeException | LinkageError e) {
 				return null;
 			}
@@ -180,7 +189,21 @@ abstract class EditorHandler extends AbstractHandler {
 			}
 		}
 
-		/** Loads the definitions; {@code null} when that fails, the action then runs without them. */
+		/** Release and cloud flag of the editor's system for the style check; unknown if the system does not tell. */
+		AbapLint.Target lintTarget(CancelToken cancel) {
+			try {
+				return AdtSystemInfo.of(destinationId, new AdtClient(adt.stateless(destinationId)), cancel)
+						.map(AdtClient.SystemInfo::lintTarget).orElse(AbapLint.Target.UNKNOWN);
+			} catch (RuntimeException | LinkageError e) {
+				return AbapLint.Target.UNKNOWN;
+			}
+		}
+
+		/**
+		 * Loads the definitions; {@code null} when that fails, the action then
+		 * runs without them. Customer objects of other packages than the edited
+		 * object's are left out; when that package cannot be read, none are.
+		 */
 		AdtContext.Result load(CancelToken cancel) throws CancelToken.CancelledException {
 			try {
 				// the object being edited is in the editor already
@@ -189,12 +212,29 @@ abstract class EditorHandler extends AbstractHandler {
 				if (candidates.isEmpty()) {
 					return null;
 				}
-				return AdtContext.build(new AdtClient(adt.stateless(destinationId)), candidates,
-						AdtContext.Limits.DEFAULT, cancel);
+				AdtClient client = new AdtClient(adt.stateless(destinationId));
+				return AdtContext.build(client, candidates, AdtContext.Limits.DEFAULT, inOwnPackage(client, cancel),
+						cancel);
 			} catch (RuntimeException | LinkageError e) {
 				BellaPlugin.log("Cannot load SAP definitions", e);
 				return null;
 			}
+		}
+
+		/** Customer objects of the edited object's package; all objects when its package is unknown. */
+		private java.util.function.Predicate<AdtObjectRef> inOwnPackage(AdtClient client, CancelToken cancel) {
+			try {
+				// an include's URI has no package of its own; its object has
+				String pkg = client.packageOf(AdtObjectRef.objectUri(objectUri), cancel);
+				if (!pkg.isEmpty()) {
+					return AdtContext.inPackage(client, pkg, cancel);
+				}
+				Log.info("editor", "No package for " + objectUri + "; SAP definitions are not limited to it");
+			} catch (java.io.IOException | RuntimeException e) {
+				Log.info("editor", "Cannot read the package of " + objectUri + " (" + e.getMessage()
+						+ "); SAP definitions are not limited to it");
+			}
+			return r -> true;
 		}
 	}
 

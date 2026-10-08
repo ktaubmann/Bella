@@ -15,19 +15,45 @@ import com.google.gson.JsonObject;
  * built-in defaults: reading runs automatically, writing and activating asks,
  * releasing transports is refused. The {@link ChatMode} applies last: plan
  * mode refuses everything that is not read only, the free modes run what
- * would ask (see {@link #decide}).
+ * would ask (see {@link #decide}), except for rules with {@link Decision#ASK},
+ * which ask in every mode.
  */
 public final class ToolPolicy {
 
 	public enum Decision {
-		AUTO, CONFIRM, DENY
+		AUTO, CONFIRM, DENY,
+		/**
+		 * Asks in every chat mode, also in Automode; for actions that are hard
+		 * to undo (deleting, transports, Git, system settings). {@link #decide}
+		 * reports it as {@link #CONFIRM}.
+		 */
+		ASK
 	}
 
-	/** A glob rule on the tool name; {@code *} matches any run of characters. */
+	/**
+	 * A glob rule on the tool name, optionally followed by {@code :action} to
+	 * match only calls whose action argument ({@code action}, {@code operation}
+	 * …) matches; {@code *} matches any run of characters.
+	 */
 	public record Rule(String glob, Decision decision) {
 
 		boolean matches(String toolName) {
-			return toRegex(glob).matcher(toolName).matches();
+			return matches(toolName, null);
+		}
+
+		boolean matches(String toolName, JsonObject input) {
+			int colon = glob.indexOf(':');
+			if (colon < 0) {
+				return toRegex(glob).matcher(toolName).matches();
+			}
+			if (!toRegex(glob.substring(0, colon)).matcher(toolName).matches()) {
+				return false;
+			}
+			String action = action(input);
+			if (action == null) {
+				action = DEFAULT_ACTIONS.get(toolName.toLowerCase(Locale.ROOT));
+			}
+			return action != null && toRegex(glob.substring(colon + 1)).matcher(action).matches();
 		}
 
 		private static Pattern toRegex(String glob) {
@@ -47,11 +73,34 @@ public final class ToolPolicy {
 	public static final List<Rule> DEFAULT_RULES = List.of(
 			new Rule("*transport_release*", Decision.DENY),
 			new Rule("*release_transport*", Decision.DENY),
+			// hard to undo or system wide: ask in every chat mode
+			new Rule("adt_delete_object", Decision.ASK),
+			new Rule("adt_transport_manage", Decision.ASK),
+			new Rule("adt_git_write", Decision.ASK),
+			new Rule("adt_package_manage:delete", Decision.ASK),
+			new Rule("adt_trace_control", Decision.ASK),
+			new Rule("adt_format_settings", Decision.ASK),
+			// the developer names package and transport request; the call shows what the model understood
+			new Rule("adt_dev_package:set", Decision.ASK),
+			// the same actions through ARC-1
+			new Rule("mcp_*SAPWrite:delete*", Decision.ASK),
+			new Rule("mcp_*SAPTransport:create", Decision.ASK),
+			new Rule("mcp_*SAPTransport:delete", Decision.ASK),
+			new Rule("mcp_*SAPTransport:reassign", Decision.ASK),
+			new Rule("mcp_*SAPTransport:remove_object", Decision.ASK),
+			new Rule("mcp_*SAPGit:clone", Decision.ASK),
+			new Rule("mcp_*SAPGit:pull", Decision.ASK),
+			new Rule("mcp_*SAPGit:push", Decision.ASK),
+			new Rule("mcp_*SAPGit:stage", Decision.ASK),
+			new Rule("mcp_*SAPGit:switch_branch", Decision.ASK),
+			new Rule("mcp_*SAPManage:delete_package", Decision.ASK),
 			new Rule("adt_write_source", Decision.CONFIRM),
 			new Rule("adt_create_object", Decision.CONFIRM),
 			new Rule("adt_activate", Decision.CONFIRM),
+			new Rule("adt_write_text_elements", Decision.CONFIRM),
 			// table contents leave the system for the model provider: ask first
 			new Rule("adt_table_contents", Decision.CONFIRM),
+			new Rule("adt_diagnose:authorization_trace", Decision.CONFIRM),
 			new Rule("mcp_*SAPQuery", Decision.CONFIRM),
 			new Rule("adt_*", Decision.AUTO),
 			new Rule("mcp_*SAPRead", Decision.AUTO),
@@ -62,6 +111,21 @@ public final class ToolPolicy {
 			new Rule("mcp_*SAPDiagnose", Decision.AUTO));
 
 	private static final List<String> ACTION_KEYS = List.of("action", "operation", "op", "type", "mode");
+
+	/** The action argument of a multi-purpose tool call, or {@code null}. */
+	static String action(JsonObject input) {
+		if (input == null) {
+			return null;
+		}
+		for (String key : List.of("action", "operation", "op")) {
+			JsonElement e = input.get(key);
+			if (e != null && e.isJsonPrimitive()) {
+				// the tools trim the action before dispatching, so the rules must see it the same way
+				return e.getAsString().trim();
+			}
+		}
+		return null;
+	}
 
 	private final List<Rule> userRules;
 	private final ChatMode mode;
@@ -89,8 +153,25 @@ public final class ToolPolicy {
 	}
 
 	/**
+	 * Tools that were merged or renamed, old name → the rules that match the same calls now. User rules
+	 * written for the old names keep their effect instead of silently matching nothing; a DENY on short
+	 * dumps, for example, must still hold for adt_diagnose 'short_dumps'. Each old tool maps to exactly the
+	 * actions it covered, so a rule never reaches further than it did.
+	 */
+	static final Map<String, List<String>> RENAMED = Map.of(
+			"adt_short_dumps", List.of("adt_diagnose:short_dumps"),
+			"adt_where_used", List.of("adt_navigate:references"),
+			"adt_transport_info", List.of("adt_transports:for_object"),
+			"adt_list_transports", List.of("adt_transports:list", "adt_transports:layers", "adt_transports:targets"),
+			"adt_settings_write", List.of("adt_format_settings"));
+
+	/** The action a multi-purpose tool runs when the call names none. */
+	static final Map<String, String> DEFAULT_ACTIONS = Map.of("adt_transports", "list");
+
+	/**
 	 * Parses rules from preference text, one {@code pattern=DECISION} per line;
-	 * blank lines and lines starting with {@code #} are ignored.
+	 * blank lines and lines starting with {@code #} are ignored. Rules naming merged tools, also through a
+	 * wildcard such as {@code adt_short_dump*}, get rules for the tools that do the same now.
 	 */
 	public static List<Rule> parseRules(String text) {
 		List<Rule> rules = new ArrayList<>();
@@ -108,7 +189,22 @@ public final class ToolPolicy {
 			}
 			try {
 				Decision d = Decision.valueOf(line.substring(eq + 1).trim().toUpperCase(Locale.ROOT));
-				rules.add(new Rule(line.substring(0, eq).trim(), d));
+				String glob = line.substring(0, eq).trim();
+				List<String> renamed = RENAMED.get(glob.toLowerCase(Locale.ROOT));
+				if (renamed != null) {
+					renamed.forEach(g -> rules.add(new Rule(g, d)));
+					continue;
+				}
+				rules.add(new Rule(glob, d));
+				if (glob.indexOf(':') < 0 && glob.contains("*")) {
+					// a wildcard that covered a merged tool covers its new place too
+					Pattern old = Rule.toRegex(glob);
+					RENAMED.forEach((name, now) -> {
+						if (old.matcher(name).matches()) {
+							now.forEach(g -> rules.add(new Rule(g, d)));
+						}
+					});
+				}
 			} catch (IllegalArgumentException e) {
 				// ignore malformed line
 			}
@@ -120,6 +216,9 @@ public final class ToolPolicy {
 		Decision configured = configured(tool, input);
 		if (configured == Decision.DENY || blockedByPlan(tool)) {
 			return Decision.DENY;
+		}
+		if (configured == Decision.ASK) {
+			return Decision.CONFIRM;
 		}
 		if (configured != Decision.CONFIRM) {
 			return configured;
@@ -148,12 +247,12 @@ public final class ToolPolicy {
 			return Decision.DENY;
 		}
 		for (Rule r : userRules) {
-			if (r.matches(tool.name())) {
+			if (r.matches(tool.name(), input)) {
 				return r.decision();
 			}
 		}
 		for (Rule r : DEFAULT_RULES) {
-			if (r.matches(tool.name())) {
+			if (r.matches(tool.name(), input)) {
 				return r.decision();
 			}
 		}

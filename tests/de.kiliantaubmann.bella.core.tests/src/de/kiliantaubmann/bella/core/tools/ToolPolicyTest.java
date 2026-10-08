@@ -25,6 +25,10 @@ class ToolPolicyTest {
 		assertEquals(Decision.AUTO, p.decide(tool("adt_read_source", ToolSpec.Kind.READ), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("adt_write_source", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("adt_activate", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_write_text_elements", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_text_elements", ToolSpec.Kind.READ), new JsonObject()));
+		assertEquals(Decision.DENY, p.withMode(ChatMode.PLAN)
+				.decide(tool("adt_write_text_elements", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(Decision.AUTO, p.decide(tool("mcp_arc1_SAPRead", ToolSpec.Kind.READ), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("mcp_arc1_SAPWrite", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("mcp_other_thing", ToolSpec.Kind.UNKNOWN), new JsonObject()));
@@ -50,6 +54,11 @@ class ToolPolicyTest {
 		ToolPolicy p = ToolPolicy.defaults();
 		assertEquals(Decision.CONFIRM, p.decide(tool("adt_table_contents", ToolSpec.Kind.READ), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("mcp_arc1_SAPQuery", ToolSpec.Kind.READ), new JsonObject()));
+		// the authorization trace reads table SUAUTHVALTRC: user names and authorization values
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"authorization_trace\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"short_dumps\"}")));
 	}
 
 	@Test
@@ -109,5 +118,60 @@ class ToolPolicyTest {
 		assertFalse(p.editorOnly(tool("adt_read_source", ToolSpec.Kind.READ)));
 		assertTrue(p.refusal(tool("adt_activate", ToolSpec.Kind.WRITE)).startsWith("Refused in suggest mode"));
 		assertFalse(ToolPolicy.defaults().editorOnly(tool("adt_write_source", ToolSpec.Kind.WRITE)));
+	}
+
+	@Test
+	void askRulesAskInEveryMode() {
+		for (ChatMode mode : ChatMode.values()) {
+			ToolPolicy p = ToolPolicy.defaults().withMode(mode);
+			Decision expected = mode == ChatMode.PLAN ? Decision.DENY : Decision.CONFIRM;
+			assertEquals(expected, p.decide(tool("adt_delete_object", ToolSpec.Kind.WRITE), new JsonObject()), mode.name());
+			for (String ask : List.of("adt_format_settings", "adt_transport_manage", "adt_git_write", "adt_trace_control")) {
+				assertEquals(expected, p.decide(tool(ask, ToolSpec.Kind.WRITE), new JsonObject()), mode + " " + ask);
+			}
+		}
+		ToolPolicy auto = ToolPolicy.defaults().withMode(ChatMode.AUTO);
+		// rules with an action only match that action
+		assertEquals(Decision.CONFIRM, auto.decide(tool("adt_package_manage", ToolSpec.Kind.WRITE),
+				Json.parseObject("{\"action\":\"delete\"}")));
+		// the tools trim the action, so surrounding blanks must not slip past the rule
+		assertEquals(Decision.CONFIRM, auto.decide(tool("adt_package_manage", ToolSpec.Kind.WRITE),
+				Json.parseObject("{\"action\":\" delete \"}")));
+		assertEquals(Decision.AUTO, auto.decide(tool("adt_package_manage", ToolSpec.Kind.WRITE),
+				Json.parseObject("{\"action\":\"create\"}")));
+		assertEquals(Decision.CONFIRM, auto.decide(tool("mcp_arc1_SAPTransport", ToolSpec.Kind.UNKNOWN),
+				Json.parseObject("{\"action\":\"create\"}")));
+		assertEquals(Decision.AUTO, auto.decide(tool("mcp_arc1_SAPTransport", ToolSpec.Kind.UNKNOWN),
+				Json.parseObject("{\"action\":\"list\"}")));
+		// the developer can loosen it on purpose
+		assertEquals(Decision.AUTO, new ToolPolicy(ToolPolicy.parseRules("adt_delete_object=AUTO"))
+				.decide(tool("adt_delete_object", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(List.of(new ToolPolicy.Rule("x:delete", Decision.ASK)), ToolPolicy.parseRules("x:delete=ASK"));
+	}
+
+	@Test
+	void rulesForMergedToolsKeepTheirEffect() {
+		ToolPolicy p = new ToolPolicy(ToolPolicy.parseRules("adt_short_dumps=DENY\nADT_SETTINGS_WRITE=AUTO\n"
+				+ "adt_list_transports=ASK"));
+		assertEquals(Decision.DENY, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"short_dumps\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"system_messages\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_format_settings", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_transports", ToolSpec.Kind.READ), new JsonObject()));
+		// the old list tool covered listing only, not the check before writing (the old adt_transport_info)
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_transports", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"layers\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_transports", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"for_object\"}")));
+	}
+
+	@Test
+	void wildcardsForMergedToolsKeepTheirEffect() {
+		ToolPolicy p = new ToolPolicy(ToolPolicy.parseRules("adt_short_dump*=DENY"));
+		assertEquals(Decision.DENY, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"short_dumps\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"traces\"}")));
 	}
 }

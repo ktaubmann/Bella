@@ -70,6 +70,18 @@ class LogTest {
 		assertEquals("lv_token = get_token( ). DATA token TYPE string.",
 				Log.redact("lv_token = get_token( ). DATA token TYPE string."));
 		assertEquals("", Log.redact(null));
+		String code = "me->authorization = authorization.\\n  ENDMETHOD.\\n ls_logon-password = lv_x. **Authorization:** checked";
+		assertEquals(code, Log.redact(code));
+		assertEquals("authorization = ***\\n  ENDMETHOD.", Log.redact("authorization = abc.\\n  ENDMETHOD."));
+		assertEquals("Authorization: *** next", Log.redact("Authorization: Basic dXNlcjpwdw== next"));
+	}
+
+	@Test
+	void hyphenatedHeadersAndOtherSchemesAreRedacted() {
+		assertEquals("x-csrf-token: *** X-Auth-Token: *** Proxy-Authorization: ***",
+				Log.redact("x-csrf-token: AbC123xyz X-Auth-Token: t0k3n Proxy-Authorization: Basic dXNlcjpwdw=="));
+		assertEquals("Authorization: *** next", Log.redact("Authorization: Negotiate YIIGhgYGKwYBBQUCoIIGejCCBnag next"));
+		assertEquals("password: ***", Log.redact("password: *abc"));
 	}
 
 	@Test

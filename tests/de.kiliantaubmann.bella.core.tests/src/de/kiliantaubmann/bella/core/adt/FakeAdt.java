@@ -12,10 +12,13 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
 /** Fake ADT backend: answers requests with a router function and records them. */
 final class FakeAdt implements AdtBackend {
 
-	final List<String> log = new ArrayList<>();
+	// AdtContext loads in parallel
+	final List<String> log = java.util.Collections.synchronizedList(new ArrayList<>());
 	final Map<String, Function<AdtRequest, AdtResponse>> routes = new LinkedHashMap<>();
 	final List<AdtSystem> systems = new ArrayList<>();
 	int openSessions;
+	/** When set, stateless requests fail with it, e.g. a lost connection. */
+	java.io.IOException down;
 
 	FakeAdt route(String pathPrefix, Function<AdtRequest, AdtResponse> handler) {
 		routes.put(pathPrefix, handler);
@@ -39,7 +42,13 @@ final class FakeAdt implements AdtBackend {
 
 	@Override
 	public AdtTransport stateless(String destinationId) {
-		return (r, c) -> handle(r, false);
+		return (r, c) -> {
+			if (down != null) {
+				log.add(r.method() + " " + r.path());
+				throw down;
+			}
+			return handle(r, false);
+		};
 	}
 
 	@Override

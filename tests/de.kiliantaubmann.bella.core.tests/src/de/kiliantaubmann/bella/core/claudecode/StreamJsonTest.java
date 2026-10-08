@@ -60,6 +60,23 @@ class StreamJsonTest {
 	}
 
 	@Test
+	void streamedTextBlocksAreSeparateParagraphs() {
+		Recorder r = new Recorder();
+		StreamJson s = new StreamJson(r);
+		String textStart = "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,"
+				+ "\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}";
+		s.accept(textStart);
+		s.accept(FakeCli.delta("I'm retrying that now."));
+		s.accept(FakeCli.assistantText("I'm retrying that now."));
+		s.accept(textStart);
+		s.accept(FakeCli.delta("The API is not finished."));
+		s.accept(FakeCli.assistantText("The API is not finished."));
+		s.accept(FakeCli.success("The API is not finished."));
+		assertEquals("I'm retrying that now.\n\nThe API is not finished.", r.text.toString());
+		assertEquals("I'm retrying that now.\n\nThe API is not finished.", s.text());
+	}
+
+	@Test
 	void showsCompleteMessagesWhenNothingWasStreamed() {
 		Recorder r = new Recorder();
 		StreamJson s = new StreamJson(r);

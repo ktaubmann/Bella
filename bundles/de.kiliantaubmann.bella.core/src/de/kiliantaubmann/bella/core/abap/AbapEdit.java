@@ -103,6 +103,38 @@ public final class AbapEdit {
 		return src.substring(ls, i);
 	}
 
+	/**
+	 * A selection over several lines widened to whole lines where it starts
+	 * or ends inside code: selecting from column 1 loses the {@code *} of a
+	 * comment line, ending before the last statement of a line cuts it.
+	 * One-line selections stay as they are (a part of a statement can be
+	 * meant).
+	 *
+	 * @return offset and length
+	 */
+	public static int[] wholeLines(String src, int offset, int length) {
+		int end = offset + length;
+		String selected = src.substring(offset, end);
+		if (selected.strip().indexOf('\n') < 0) {
+			return new int[] { offset, length };
+		}
+		int start = offset;
+		int ls = lineStart(src, offset);
+		if (!src.substring(ls, offset).isBlank()) {
+			start = ls;
+		}
+		int nl = src.indexOf('\n', end);
+		int le = nl < 0 ? src.length() : nl;
+		if (le > 0 && src.charAt(le - 1) == '\r') {
+			le--;
+		}
+		// a selection that ends at the start of a line ends after the line before it
+		if (end > lineStart(src, end) && end < le && !src.substring(end, le).isBlank()) {
+			end = le;
+		}
+		return new int[] { start, end - start };
+	}
+
 	public static int lineStart(String src, int offset) {
 		int nl = src.lastIndexOf('\n', Math.max(0, offset - 1));
 		return nl < 0 ? 0 : nl + 1;

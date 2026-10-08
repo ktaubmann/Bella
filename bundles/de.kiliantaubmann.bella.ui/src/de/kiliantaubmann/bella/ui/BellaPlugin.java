@@ -21,6 +21,7 @@ import org.osgi.util.tracker.ServiceTracker;
 import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtSystem;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
+import de.kiliantaubmann.bella.core.adt.DevScope;
 import de.kiliantaubmann.bella.core.lint.LintToolProvider;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
@@ -68,6 +69,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 	private final List<McpToolProvider> mcpProviders = new ArrayList<>();
 	private ServiceTracker<AdtBackend, AdtBackend> adtTracker;
 	private volatile String activeDestination;
+	private final DevScope devScope = new DevScope();
 	private LogFile logFile;
 	private final Masker masker = new Masker(this::maskSettings);
 	private volatile List<AdtSystem> maskSystems = List.of();
@@ -87,7 +89,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 				AdtBackend backend = super.addingService(reference);
 				Log.info("bella", "ADT integration available");
 				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination,
-						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant));
+						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant,
+						() -> conventions(activeDestination).naming(), devScope));
 				return backend;
 			}
 
@@ -463,6 +466,11 @@ public class BellaPlugin extends AbstractUIPlugin {
 				prefs().getString(Prefs.CONVENTIONS_NAMING + destinationId)));
 	}
 
+	/** The conventions for the system of the active editor. */
+	public ProjectConventions activeConventions() {
+		return conventions(activeDestination);
+	}
+
 	/**
 	 * The ATC check variant for a system: its own, else the one for all
 	 * systems, else empty for the system default.
@@ -495,6 +503,11 @@ public class BellaPlugin extends AbstractUIPlugin {
 
 	public AdtBackend adt() {
 		return adtTracker == null ? null : adtTracker.getService();
+	}
+
+	/** Development package and transport request of the chat, which the SAP tools keep to. */
+	public DevScope devScope() {
+		return devScope;
 	}
 
 	/** Destination of the ABAP object in the active editor; default system for tools. */

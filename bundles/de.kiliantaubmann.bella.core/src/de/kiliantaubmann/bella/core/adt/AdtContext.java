@@ -5,6 +5,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
 
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.abap.AbapReferences.Hint;
@@ -40,9 +47,11 @@ public final class AdtContext {
 	 * @param notFound candidates that do not exist in the system
 	 * @param skipped  candidates left out because a limit was reached
 	 * @param failed   candidates that could not be read, e.g. because the connection broke; as {@code NAME: error}
+	 * @param error    why loading stopped early (connection lost), otherwise {@code null}
+	 * @param ignored  customer objects of other packages, left out on purpose
 	 */
 	public record Result(String text, List<String> used, List<String> notFound, List<String> skipped,
-			List<String> failed) {
+			List<String> failed, String error, List<String> ignored) {
 
 		public boolean isEmpty() {
 			return used.isEmpty();
@@ -65,8 +74,69 @@ public final class AdtContext {
 	private AdtContext() {
 	}
 
+	/**
+	 * Objects loaded at the same time. Each lookup is a search plus a read, so loading one after the other let
+	 * the time limit cut off the last objects on slow systems. Stateless ADT requests are independent of each
+	 * other; three at a time stays well below what ADT itself sends.
+	 */
+	static final int PARALLEL = 3;
+	/**
+	 * Shared by all builds, each with at most {@link #PARALLEL} loads in
+	 * flight; idle threads end after a minute.
+	 */
+	private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {
+		Thread t = new Thread(r, "bella-adt-context");
+		t.setDaemon(true);
+		return t;
+	});
+
+	/** One candidate as loaded: the object and its definition, not found ({@code obj == null}), or a failure. */
+	private record Loaded(AdtObjectRef obj, String body, Exception failure) {
+	}
+
+	/** An object that is not allowed comes back without a body. */
+	private static Loaded load(AdtClient client, Reference ref, Predicate<AdtObjectRef> allowed, CancelToken cancel) {
+		try {
+			AdtObjectRef obj = find(client, ref, cancel);
+			if (obj != null && !allowed.test(obj)) {
+				return new Loaded(obj, null, null);
+			}
+			return obj == null ? new Loaded(null, null, null) : new Loaded(obj, content(client, obj, cancel), null);
+		} catch (IOException | RuntimeException e) {
+			return new Loaded(null, null, e);
+		}
+	}
+
 	public static Result build(AdtClient client, List<Reference> candidates, Limits limits, CancelToken cancel)
 			throws CancelledException {
+		return build(client, candidates, limits, r -> true, cancel);
+	}
+
+	/**
+	 * Customer objects (Z*, Y*) count only when they belong to {@code pkg};
+	 * SAP's objects always do. Without a package no customer object counts.
+	 * An object whose package cannot be read does not count either.
+	 */
+	public static Predicate<AdtObjectRef> inPackage(AdtClient client, String pkg, CancelToken cancel) {
+		return r -> {
+			if (!DevScope.customer(r.name()) || r.name().equalsIgnoreCase(pkg)) {
+				return true;
+			}
+			if (pkg == null) {
+				return false;
+			}
+			try {
+				String own = r.packageName().isEmpty() ? client.packageOf(r.uri(), cancel) : r.packageName();
+				return own.equalsIgnoreCase(pkg);
+			} catch (IOException | RuntimeException e) {
+				return false;
+			}
+		};
+	}
+
+	/** @param allowed objects that may be used; the others are listed as ignored */
+	public static Result build(AdtClient client, List<Reference> candidates, Limits limits,
+			Predicate<AdtObjectRef> allowed, CancelToken cancel) throws CancelledException {
 		long start = System.nanoTime();
 		long deadline = start + limits.timeoutMillis() * 1_000_000L;
 		StringBuilder text = new StringBuilder();
@@ -74,40 +144,78 @@ public final class AdtContext {
 		List<String> notFound = new ArrayList<>();
 		List<String> skipped = new ArrayList<>();
 		List<String> failed = new ArrayList<>();
-		for (Reference ref : candidates) {
-			cancel.throwIfCancelled();
-			if (used.size() >= limits.maxObjects() || text.length() >= limits.maxChars()
-					|| System.nanoTime() >= deadline) {
-				skipped.add(ref.name());
-				continue;
-			}
-			try {
-				AdtObjectRef obj = find(client, ref, cancel);
-				if (obj == null) {
-					notFound.add(ref.name());
+		List<String> ignored = new ArrayList<>();
+		String error = null;
+		List<Future<Loaded>> loads = new ArrayList<>();
+		try {
+			// a window of PARALLEL loads ahead of the candidate being assembled; results are used in order, so
+			// the limits and the text are the same as when loading one by one
+			for (int i = 0; i < candidates.size(); i++) {
+				cancel.throwIfCancelled();
+				Reference ref = candidates.get(i);
+				boolean full = error != null || used.size() >= limits.maxObjects() || text.length() >= limits.maxChars()
+						|| System.nanoTime() >= deadline;
+				while (!full && loads.size() < Math.min(candidates.size(), i + PARALLEL)) {
+					Reference next = candidates.get(loads.size());
+					loads.add(POOL.submit(() -> load(client, next, allowed, cancel)));
+				}
+				if (full) {
+					if (error == null) {
+						skipped.add(ref.name());
+					}
 					continue;
 				}
-				String body = content(client, obj, cancel);
-				String block = block(obj, body);
+				Loaded l;
+				try {
+					l = loads.get(i).get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+				} catch (TimeoutException e) {
+					skipped.add(ref.name());
+					continue;
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new CancelledException();
+				} catch (ExecutionException e) {
+					l = new Loaded(null, null, e.getCause() instanceof Exception x ? x : e);
+				}
+				cancel.throwIfCancelled();
+				if (l.failure() instanceof AdtConnectionException e) {
+					// every further request would fail the same way
+					error = e.getMessage();
+					failed.add(ref.name() + ": " + error);
+					continue;
+				}
+				if (l.failure() != null) {
+					Log.info("adt", "context: " + ref.name() + " not readable: " + l.failure().getMessage());
+					if (l.failure() instanceof AdtException a && a.status() == 404) {
+						notFound.add(ref.type() == null ? ref.name() : ref.name() + " (" + ref.type() + ")");
+					} else {
+						failed.add(ref.name() + ": " + l.failure().getMessage());
+					}
+					continue;
+				}
+				if (l.obj() != null && l.body() == null) {
+					ignored.add(l.obj().name());
+					continue;
+				}
+				if (l.obj() == null) {
+					notFound.add(ref.type() == null ? ref.name() : ref.name() + " (" + ref.type() + ")");
+					continue;
+				}
+				String block = block(l.obj(), l.body());
 				if (text.length() + block.length() > limits.maxChars()) {
 					int room = limits.maxChars() - text.length();
 					if (room < 500) {
 						skipped.add(ref.name());
 						continue;
 					}
-					block = block(obj, AdtXml.truncate(body, room - 200));
+					block = block(l.obj(), AdtXml.truncate(l.body(), room - 200));
 				}
 				text.append(block);
-				used.add(obj.name());
-			} catch (IOException | RuntimeException e) {
-				cancel.throwIfCancelled();
-				Log.info("adt", "context: " + ref.name() + " not readable: " + e.getMessage());
-				if (e instanceof AdtException a && a.status() == 404) {
-					notFound.add(ref.name());
-				} else {
-					failed.add(ref.name() + ": " + e.getMessage());
-				}
+				used.add(l.obj().name());
 			}
+		} finally {
+			// loads beyond the limits are not needed any more
+			loads.forEach(f -> f.cancel(true));
 		}
 		if (!notFound.isEmpty() && !used.isEmpty()) {
 			text.append("Not found: ").append(String.join(", ", notFound)).append('\n');
@@ -115,16 +223,36 @@ public final class AdtContext {
 		if (!failed.isEmpty() && !used.isEmpty()) {
 			text.append("Could not read: ").append(String.join("; ", failed)).append('\n');
 		}
+		if (!ignored.isEmpty() && !used.isEmpty()) {
+			text.append(IGNORED).append(String.join(", ", ignored)).append('\n');
+		}
 		Log.info("adt", "context: " + candidates.size() + " candidates, used " + used + ", not found " + notFound
 				+ (skipped.isEmpty() ? "" : ", skipped " + skipped)
-				+ (failed.isEmpty() ? "" : ", failed " + failed.size()) + ", " + text.length() + " chars ("
-				+ Log.millisSince(start) + " ms)");
+				+ (failed.isEmpty() ? "" : ", failed " + failed.size())
+				+ (ignored.isEmpty() ? "" : ", ignored " + ignored) + (error == null ? "" : ", stopped: " + error)
+				+ ", " + text.length() + " chars (" + Log.millisSince(start) + " ms)");
 		return new Result(text.toString(), List.copyOf(used), List.copyOf(notFound), List.copyOf(skipped),
-				List.copyOf(failed));
+				List.copyOf(failed), error, List.copyOf(ignored));
 	}
 
-	/** Exact-name search; among several hits the object type the code position suggests wins. */
+	/** Heads the list of customer objects outside the development package. */
+	public static final String IGNORED = "Ignored, customer objects outside the development package (do not use "
+			+ "them): ";
+
+	/**
+	 * Exact-name search; among several hits the object type the code position
+	 * suggests wins. A reference with a type takes only an object of that type.
+	 */
 	static AdtObjectRef find(AdtClient client, Reference ref, CancelToken cancel) throws IOException {
+		if (ref.type() != null) {
+			List<String> wanted = List.of(ref.type().toUpperCase(Locale.ROOT));
+			for (AdtObjectRef r : client.search(ref.name(), ref.type(), 20, cancel)) {
+				if (r.name().equalsIgnoreCase(ref.name()) && rank(r.type(), wanted) == 0) {
+					return r;
+				}
+			}
+			return null;
+		}
 		List<AdtObjectRef> exact = new ArrayList<>();
 		for (AdtObjectRef r : client.search(ref.name(), null, 20, cancel)) {
 			if (r.name().equalsIgnoreCase(ref.name()) && rank(r.type(), PREFERENCE.get(Hint.ANY)) < Integer.MAX_VALUE) {
@@ -171,7 +299,41 @@ public final class AdtContext {
 			return AdtXml.truncate(functionSignature(client.readSource(uri, null, cancel)), SHORT_CHARS);
 		}
 		String def = client.readDefinition(obj, cancel).strip();
+		if (type.startsWith("TABL")) {
+			def = compactTable(def);
+		}
 		return AdtXml.truncate(def, AdtClient.xmlOnly(type) ? SHORT_CHARS : SOURCE_CHARS);
+	}
+
+	/**
+	 * A table or structure as its fields: without annotations, foreign keys
+	 * and value helps, which fill most of a standard table's source (LIKP) so
+	 * the fields were cut off. The label stays.
+	 */
+	static String compactTable(String source) {
+		StringBuilder sb = new StringBuilder();
+		boolean inClause = false;
+		for (String raw : source.split("\r?\n")) {
+			String line = raw.strip();
+			if (inClause) {
+				inClause = !line.endsWith(";");
+				continue;
+			}
+			if (line.isEmpty() || line.startsWith("@") && !line.startsWith("@EndUserText.label")) {
+				continue;
+			}
+			if (line.startsWith("with foreign key") || line.startsWith("with value help")) {
+				// the field line before it ends here; the clause runs to its semicolon
+				if (!sb.isEmpty() && sb.charAt(sb.length() - 2) != ';') {
+					sb.insert(sb.length() - 1, ';');
+				}
+				inClause = !line.endsWith(";");
+				continue;
+			}
+			boolean member = !line.startsWith("@") && !line.startsWith("define ") && !line.equals("}");
+			sb.append(member ? "  " : "").append(line.replaceAll("\\s{2,}", " ")).append('\n');
+		}
+		return sb.toString().strip();
 	}
 
 	/** {@code CLASS … DEFINITION} up to the protected or private section. */

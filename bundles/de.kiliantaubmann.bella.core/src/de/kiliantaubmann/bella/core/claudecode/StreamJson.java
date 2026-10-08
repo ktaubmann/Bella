@@ -115,6 +115,11 @@ final class StreamJson {
 			JsonObject block = Json.obj(event, "content_block");
 			if ("tool_use".equals(Json.str(block, "type"))) {
 				listener.onToolUseStart(Json.str(block, "id"), toolName(Json.str(block, "name")));
+			} else if ("text".equals(Json.str(block, "type")) && text.length() > 0
+					&& text.charAt(text.length() - 1) != '\n') {
+				// a later text block (after tool calls) is a new paragraph, not the end of the last sentence
+				text.append("\n\n");
+				listener.onText("\n\n");
 			}
 		} else if ("message_start".equals(type)) {
 			String m = Json.str(Json.obj(event, "message"), "model");

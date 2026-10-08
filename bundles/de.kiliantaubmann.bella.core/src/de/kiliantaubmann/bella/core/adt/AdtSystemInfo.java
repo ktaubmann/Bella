@@ -15,6 +15,9 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
 public final class AdtSystemInfo {
 
 	private static final Map<String, AdtClient.SystemInfo> KNOWN = new ConcurrentHashMap<>();
+	/** When a system turned out to lack the endpoint (old releases); it is not asked again for a while. */
+	private static final Map<String, Long> FAILED = new ConcurrentHashMap<>();
+	static final long RETRY_AFTER_MILLIS = 10 * 60_000L;
 
 	private AdtSystemInfo() {
 	}
@@ -25,16 +28,31 @@ public final class AdtSystemInfo {
 		if (known != null) {
 			return Optional.of(known);
 		}
+		Long failed = FAILED.get(destinationId);
+		if (failed != null && System.currentTimeMillis() - failed < RETRY_AFTER_MILLIS) {
+			return Optional.empty();
+		}
 		try {
 			AdtClient.SystemInfo info = client.systemInfo(cancel);
 			KNOWN.put(destinationId, info);
+			FAILED.remove(destinationId);
 			return Optional.of(info);
 		} catch (IOException e) {
+			// only a missing endpoint stays missing; a timeout, a cancel or a logon still under way does not
+			if (e instanceof AdtException a && (a.status() == 404 || a.status() == 405)) {
+				FAILED.put(destinationId, System.currentTimeMillis());
+			}
 			return Optional.empty();
 		}
 	}
 
+	/** What is known already, without asking the system; for callers that must not wait (UI thread). */
+	public static Optional<AdtClient.SystemInfo> known(String destinationId) {
+		return Optional.ofNullable(destinationId == null ? null : KNOWN.get(destinationId));
+	}
+
 	static void clear() {
 		KNOWN.clear();
+		FAILED.clear();
 	}
 }

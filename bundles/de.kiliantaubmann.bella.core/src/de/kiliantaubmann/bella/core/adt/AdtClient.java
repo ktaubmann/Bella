@@ -1,6 +1,7 @@
 package de.kiliantaubmann.bella.core.adt;
 
 import java.io.IOException;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -8,7 +9,9 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -62,6 +65,11 @@ public final class AdtClient {
 		return URLEncoder.encode(s, StandardCharsets.UTF_8);
 	}
 
+	/** Sends a request through this client's transport and returns the response whatever its status. */
+	AdtResponse exchange(AdtRequest r, CancelToken cancel) throws IOException {
+		return exchange(transport, r, cancel);
+	}
+
 	private AdtResponse send(AdtRequest r, CancelToken cancel) throws IOException {
 		AdtResponse response = exchange(transport, r, cancel);
 		if (!response.ok()) {
@@ -70,11 +78,28 @@ public final class AdtClient {
 		return response;
 	}
 
+	private static final Pattern BASE64_CONTENT = Pattern.compile("(<chkrun:content>)([A-Za-z0-9+/=\\s]+)(</chkrun:content>)");
+
+	/**
+	 * A request body for the log without the base64 source a syntax check
+	 * carries: masking cannot see into it, so names and code would leak.
+	 */
+	static String withoutBase64(String body) {
+		Matcher m = BASE64_CONTENT.matcher(body);
+		StringBuilder sb = new StringBuilder();
+		while (m.find()) {
+			m.appendReplacement(sb, Matcher.quoteReplacement(
+					m.group(1) + "[source, " + m.group(2).length() + " characters base64]" + m.group(3)));
+		}
+		m.appendTail(sb);
+		return sb.toString();
+	}
+
 	/** Sends a request and writes method, path, status and duration to Bella's log. */
 	static AdtResponse exchange(AdtTransport t, AdtRequest r, CancelToken cancel) throws IOException {
 		long start = System.nanoTime();
 		String what = (t.isStateful() ? "[stateful] " : "") + r.method() + " " + r.path();
-		Log.debug(AREA, () -> r.body() == null ? what : what + " body:\n" + Log.clip(r.body(), 4_000));
+		Log.debug(AREA, () -> r.body() == null ? what : what + " body:\n" + Log.clip(withoutBase64(r.body()), 4_000));
 		AdtResponse response;
 		try {
 			response = t.send(r, cancel);
@@ -82,7 +107,8 @@ public final class AdtClient {
 			Log.warn(AREA, what + " failed after " + Log.millisSince(start) + " ms: " + e);
 			throw e;
 		}
-		if (response.ok()) {
+		if (response.ok() || response.status() == 304) {
+			// 304: the cached source is still current
 			Log.info(AREA, what + " -> " + response.status() + " (" + Log.millisSince(start) + " ms)");
 		} else {
 			Log.warn(AREA, what + " -> " + response.status() + " (" + Log.millisSince(start) + " ms): "
@@ -97,13 +123,164 @@ public final class AdtClient {
 	// ---- search ----------------------------------------------------------
 
 	public List<AdtObjectRef> search(String query, String type, int max, CancelToken cancel) throws IOException {
+		return search(query, type, null, max, cancel);
+	}
+
+	/** @param pkg only objects of this package, or {@code null} */
+	public List<AdtObjectRef> search(String query, String type, String pkg, int max, CancelToken cancel)
+			throws IOException {
 		StringBuilder path = new StringBuilder("/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=")
 				.append(enc(query)).append("&maxResults=").append(max);
 		if (type != null && !type.isBlank()) {
 			path.append("&objectType=").append(enc(type.toUpperCase(Locale.ROOT)));
 		}
+		if (pkg != null && !pkg.isBlank()) {
+			path.append("&packageName=").append(enc(pkg.trim().toUpperCase(Locale.ROOT)));
+		}
 		AdtResponse r = send(AdtRequest.get(path.toString(), "application/xml"), cancel);
 		return parseObjectReferences(r.body());
+	}
+
+	/** One object with lines that contain the searched text. */
+	public record SourceHit(String name, String type, String uri, List<SourceLine> lines) {
+	}
+
+	/** A matching line, counted from 1 (0 if ADT does not say). */
+	public record SourceLine(int line, String text) {
+	}
+
+	/**
+	 * Full-text search in ABAP sources (ADT's text search, SAP_BASIS 7.51 and later; the request follows ARC-1).
+	 *
+	 * @param type    object type filter, e.g. CLAS, or {@code null}
+	 * @param pkg     package filter, or {@code null}
+	 */
+	public List<SourceHit> searchSource(String text, String type, String pkg, int max, CancelToken cancel)
+			throws IOException {
+		StringBuilder path = new StringBuilder("/sap/bc/adt/repository/informationsystem/textsearch?searchString=")
+				.append(enc(text)).append("&searchFromIndex=1&searchToIndex=").append(max);
+		if (type != null && !type.isBlank()) {
+			String t = type.trim().toUpperCase(Locale.ROOT);
+			// the filter takes the short form; function modules are FUNC, not FUGR/FF
+			path.append("&objectType=").append(enc(t.equals("FUGR/FF") ? "FUNC" : t.replaceFirst("/.*", "")));
+		}
+		if (pkg != null && !pkg.isBlank()) {
+			path.append("&packageName=").append(enc(pkg.trim().toUpperCase(Locale.ROOT)));
+		}
+		AdtResponse r = exchange(transport, AdtRequest.get(path.toString(), "application/xml"), cancel);
+		if (!r.ok()) {
+			throw new AdtException(r.status(), textSearchError(r));
+		}
+		return parseSourceHits(r.body());
+	}
+
+	private static String textSearchError(AdtResponse r) {
+		String msg = AdtErrors.message(r);
+		String body = r.body() == null ? "" : r.body();
+		// the message itself, not the whole body: a body may mention "020" anywhere, e.g. in a date
+		if (UNSUPPORTED_ID.matcher(body).find() && UNSUPPORTED_NO.matcher(body).find()
+				|| msg.toLowerCase(Locale.ROOT).contains("not supported")) {
+			return "This SAP system does not support source code search (SADT_REST 020).";
+		}
+		return switch (r.status()) {
+		case 401, 403 -> "No authorization for source code search (authorization object S_ADT_RES): " + msg;
+		case 404 -> "This SAP system has no source code search (ADT text search is missing).";
+		case 501 -> "Source code search needs SAP_BASIS 7.51 or later.";
+		default -> "Source code search failed: " + msg;
+		};
+	}
+
+	/** T100 key SADT_REST 020 in an ADT exception: the system has no text search. */
+	private static final Pattern UNSUPPORTED_ID = Pattern.compile("T100KEY-ID\"[^>]*>\\s*SADT_REST\\s*<");
+	private static final Pattern UNSUPPORTED_NO = Pattern.compile("T100KEY-NO\"[^>]*>\\s*0*20\\s*<");
+	private static final Pattern START_LINE = Pattern.compile("#start=(\\d+)|\\bposition:(\\d+)");
+	private static final Pattern OBJECT_NAME = Pattern.compile("(?i)objectName:([^,#]+)");
+
+	static List<SourceHit> parseSourceHits(String xml) throws IOException {
+		List<SourceHit> out = new ArrayList<>();
+		Document d = AdtXml.parse(xml);
+		List<Element> objects = AdtXml.elements(d, "textSearchObject");
+		for (Element o : objects) {
+			List<SourceLine> lines = new ArrayList<>();
+			for (Element l : AdtXml.elements(o, "textLine")) {
+				// nested objects (a class and its include) list their own lines; count each line once
+				if (nearestSearchObject(l) != o) {
+					continue;
+				}
+				String content = "";
+				for (Element c : AdtXml.elements(l, "content")) {
+					content = AdtXml.text(c);
+					break;
+				}
+				lines.add(new SourceLine(lineOfUri(AdtXml.attr(l, "uri")), snippet(content)));
+			}
+			// parent nodes only give the path to the hits
+			if (lines.isEmpty()) {
+				continue;
+			}
+			String uri = AdtXml.attr(o, "uri");
+			String name = objectNameOfUri(uri);
+			String type = "";
+			for (Element m : AdtXml.elements(o, "adtMainObject")) {
+				type = AdtXml.attr(m, "type");
+				name = name.isEmpty() ? AdtXml.attr(m, "name") : name;
+				break;
+			}
+			out.add(new SourceHit(name, type, uri, lines));
+		}
+		if (!objects.isEmpty()) {
+			return out;
+		}
+		// older releases answer with object references
+		for (Element r : AdtXml.elements(d, "objectReference")) {
+			List<SourceLine> lines = new ArrayList<>();
+			for (Element m : AdtXml.elements(r, "textSearchResult")) {
+				String line = AdtXml.attr(m, "line");
+				String snip = AdtXml.attr(m, "snippet");
+				lines.add(new SourceLine(line.matches("\\d+") ? Integer.parseInt(line) : 0,
+						snippet(snip.isEmpty() ? AdtXml.text(m) : snip)));
+			}
+			out.add(new SourceHit(AdtXml.attr(r, "name"), AdtXml.attr(r, "type"), AdtXml.attr(r, "uri"), lines));
+		}
+		return out;
+	}
+
+	private static Element nearestSearchObject(Element e) {
+		for (Node n = e.getParentNode(); n != null; n = n.getParentNode()) {
+			if (n instanceof Element p && "textSearchObject".equals(p.getLocalName())) {
+				return p;
+			}
+		}
+		return null;
+	}
+
+	private static String decode(String s) {
+		try {
+			return java.net.URLDecoder.decode(s.replace("+", "%2B"), StandardCharsets.UTF_8);
+		} catch (IllegalArgumentException e) {
+			return s;
+		}
+	}
+
+	private static int lineOfUri(String uri) {
+		Matcher m = START_LINE.matcher(decode(uri));
+		return m.find() ? Integer.parseInt(m.group(1) != null ? m.group(1) : m.group(2)) : 0;
+	}
+
+	/** The object name inside a proxy URI ({@code …?content=objectName:ZCL_X,…}). */
+	private static String objectNameOfUri(String uri) {
+		int i = uri.indexOf("content=");
+		if (i < 0) {
+			return "";
+		}
+		String content = decode(uri.substring(i + 8).replaceFirst("&.*", ""));
+		Matcher m = OBJECT_NAME.matcher(content);
+		String raw = m.find() ? m.group(1) : content.split("#")[0];
+		return raw.replaceFirst("=+.*$", "").trim();
+	}
+
+	private static String snippet(String raw) {
+		return raw.replaceAll("(?i)</?b>", "").replaceAll("\\s+", " ").trim();
 	}
 
 	/** Objects of a package (search by package name; nodestructure mixes up descriptions on real systems). */
@@ -128,6 +305,11 @@ public final class AdtClient {
 	 */
 	public AdtObjectRef resolve(String name, String type, CancelToken cancel) throws IOException {
 		type = searchType(type);
+		if (TEXT_POOL.equals(type)) {
+			// no repository search knows REPT; the pool sits on the textelements service of its owner
+			String[] owner = textPoolOwner(name);
+			return new AdtObjectRef(textElementsUri(owner[0], owner[1]), owner[1], TEXT_POOL, "", "");
+		}
 		String direct = AdtObjectRef.uriFor(name, type);
 		if (direct != null) {
 			return new AdtObjectRef(direct, name.toUpperCase(Locale.ROOT), type, "", "");
@@ -156,6 +338,7 @@ public final class AdtClient {
 		case "CLASS" -> "CLAS";
 		case "INTERFACE" -> "INTF";
 		case "PROGRAM", "REPORT" -> "PROG";
+		case "REPT", "TEXTPOOL", "TEXT_POOL", "TEXT_ELEMENTS", "TEXTELEMENTS" -> TEXT_POOL;
 		case "CDS" -> "DDLS";
 		default -> t;
 		};
@@ -315,6 +498,11 @@ public final class AdtClient {
 
 	/** Release and kind of a system, from its installed software components. */
 	public record SystemInfo(String basisRelease, boolean cloud) {
+
+		/** Release and cloud flag for Bella's style check. */
+		public de.kiliantaubmann.bella.core.lint.AbapLint.Target lintTarget() {
+			return de.kiliantaubmann.bella.core.lint.AbapLint.Target.of(basisRelease, cloud);
+		}
 
 		/** e.g. "SAP_BASIS 758, on-premise" or "SAP BTP ABAP Environment (ABAP Cloud only)". */
 		public String describe() {
@@ -551,6 +739,34 @@ public final class AdtClient {
 	 */
 	public static String writeSource(AdtTransport.Session session, String objectUri, String include, String source,
 			String transport, CancelToken cancel) throws IOException {
+		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
+			StringBuilder path = new StringBuilder(AdtObjectRef.sourceUri(objectUri, include)).append("?lockHandle=")
+					.append(enc(handle));
+			if (!tr.isBlank()) {
+				path.append("&corrNr=").append(enc(tr));
+			}
+			// service definitions answer 400 "Accept header missing" without one
+			AdtResponse put = exchange(session, AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8")
+					.withHeader("Accept", "text/plain"), cancel);
+			if (!put.ok()) {
+				throw new AdtException(put.status(), "Could not write source: " + AdtErrors.message(put));
+			}
+		});
+	}
+
+	/** A change made while an object is locked. */
+	private interface LockedChange {
+		void apply(String lockHandle, String transport) throws IOException;
+	}
+
+	/**
+	 * Locks {@code objectUri}, runs {@code change} with the lock handle and the
+	 * transport request to use, and unlocks, all in one stateful session.
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	private static String withLock(AdtTransport.Session session, String objectUri, String transport,
+			CancelToken cancel, LockedChange change) throws IOException {
 		AdtRequest lockReq = AdtRequest.post(objectUri + "?_action=LOCK&accessMode=MODIFY",
 				"application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result", null,
 				null);
@@ -565,16 +781,7 @@ public final class AdtClient {
 				throw new AdtException(400,
 						"The object is not local ($TMP) and has no transport request. Ask the developer for one.");
 			}
-			StringBuilder path = new StringBuilder(AdtObjectRef.sourceUri(objectUri, include)).append("?lockHandle=")
-					.append(enc(lock.handle()));
-			if (tr != null && !tr.isBlank()) {
-				path.append("&corrNr=").append(enc(tr));
-			}
-			AdtResponse put = exchange(session, AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8"),
-					cancel);
-			if (!put.ok()) {
-				throw new AdtException(put.status(), "Could not write source: " + AdtErrors.message(put));
-			}
+			change.apply(lock.handle(), tr == null ? "" : tr);
 			return tr == null ? "" : tr;
 		} finally {
 			// an unlock failure must not hide the outcome of the write; the lock ends with the session anyway
@@ -585,6 +792,158 @@ public final class AdtClient {
 				Log.warn("adt", "unlock of " + objectUri + " failed: " + e.getMessage());
 			}
 		}
+	}
+
+	// ---- text elements ---------------------------------------------------------
+
+	/** Type of a text pool in transports and the inactive-objects list. */
+	public static final String TEXT_POOL = "REPT";
+
+	/**
+	 * Type and name of the object a text pool belongs to: {@code ZCL_A====CP}
+	 * is the pool of class ZCL_A, {@code SAPLZFG} that of function group ZFG,
+	 * any other name a program's.
+	 */
+	static String[] textPoolOwner(String name) {
+		String n = name.trim().toUpperCase(Locale.ROOT);
+		if (n.contains("=")) {
+			return new String[] { "CLAS", n.substring(0, n.indexOf('=')) };
+		}
+		if (n.startsWith("SAPL") && n.length() > 4) {
+			return new String[] { "FUGR", n.substring(4) };
+		}
+		return new String[] { "PROG", n };
+	}
+
+	/** The owner of a text pool URI as {type, name}, e.g. {PROG, ZREP}; {@code null} for other URIs. */
+	static String[] textPoolOwnerOfUri(String uri) {
+		Matcher m = TEXT_POOL_URI.matcher(uri == null ? "" : uri);
+		if (!m.find()) {
+			return null;
+		}
+		String type = switch (m.group(1)) {
+		case "classes" -> "CLAS";
+		case "functiongroups" -> "FUGR";
+		default -> "PROG";
+		};
+		return new String[] { type, URLDecoder.decode(m.group(2), StandardCharsets.UTF_8)
+				.toUpperCase(Locale.ROOT) };
+	}
+
+	private static final Pattern TEXT_POOL_URI = Pattern.compile("/textelements/(programs|classes|functiongroups)/([^/?#]+)");
+
+	/**
+	 * The text pool of each object, for the pools with saved but not activated
+	 * texts in the developer's inactive-objects list. ADT keeps written texts
+	 * inactive until the pool is activated; activating the program alone
+	 * leaves them so.
+	 */
+	public List<AdtObjectRef> inactiveTextPools(List<AdtObjectRef> owners, CancelToken cancel) throws IOException {
+		AdtResponse r = exchange(transport, AdtRequest.get("/sap/bc/adt/activation/inactiveobjects",
+				"application/vnd.sap.adt.inactivectsobjects.v1+xml, application/xml;q=0.8"), cancel);
+		return r.ok() ? inactiveTextPools(r.body(), owners) : List.of();
+	}
+
+	static List<AdtObjectRef> inactiveTextPools(String xml, List<AdtObjectRef> owners) throws IOException {
+		List<AdtObjectRef> out = new ArrayList<>();
+		if (xml == null || xml.isBlank()) {
+			return out;
+		}
+		Document doc = AdtXml.parse(xml);
+		List<Element> refs = new ArrayList<>(AdtXml.elements(doc, "ref"));
+		refs.addAll(AdtXml.elements(doc, "objectReference"));
+		for (Element e : refs) {
+			String uri = AdtXml.attr(e, "uri");
+			String[] owner = textPoolOwnerOfUri(uri);
+			if (owner == null && AdtXml.attr(e, "type").toUpperCase(Locale.ROOT).startsWith(TEXT_POOL)) {
+				owner = textPoolOwner(AdtXml.attr(e, "name"));
+			}
+			if (owner == null) {
+				continue;
+			}
+			for (AdtObjectRef o : owners) {
+				String type = o.type() == null ? "" : o.type().toUpperCase(Locale.ROOT);
+				if (o.name().equalsIgnoreCase(owner[1]) && type.startsWith(owner[0])) {
+					AdtObjectRef pool = new AdtObjectRef(textElementsUri(owner[0], owner[1]), owner[1], TEXT_POOL, "",
+							"");
+					if (!out.contains(pool)) {
+						out.add(pool);
+					}
+				}
+			}
+		}
+		return out;
+	}
+
+	/** Parts of a text pool: text symbols, selection texts, list headings. */
+	public static final List<String> TEXT_PARTS = List.of("symbols", "selections", "headings");
+
+	/**
+	 * URI of the text pool of a program, class or function group on ADT's
+	 * textelements service; the pool is locked and written on its own, apart
+	 * from the source.
+	 */
+	static String textElementsUri(String type, String name) throws AdtException {
+		String t = type == null ? "" : type.toUpperCase(Locale.ROOT);
+		String collection = switch (t.contains("/") ? t.substring(0, t.indexOf('/')) : t) {
+		case "PROG" -> "programs";
+		case "CLAS" -> "classes";
+		case "FUGR" -> "functiongroups";
+		default -> throw new AdtException(400,
+				"Text elements exist for programs (PROG), classes (CLAS) and function groups (FUGR), not for " + type
+						+ ".");
+		};
+		return "/sap/bc/adt/textelements/" + collection + "/" + enc(name.trim().toLowerCase(Locale.ROOT));
+	}
+
+	private static String textMediaType(String part) throws AdtException {
+		if (!TEXT_PARTS.contains(part)) {
+			throw new AdtException(400, "Unknown text element part '" + part + "'; use one of " + TEXT_PARTS + ".");
+		}
+		return "application/vnd.sap.adt.textelements." + part + ".v1";
+	}
+
+	/**
+	 * One part of a text pool as ADT sends it: {@code @MaxLength:20} and
+	 * {@code 001=Text} lines for symbols, {@code P_NAME=Text} for selection
+	 * texts, {@code listHeader=…} and {@code columnHeader_1=…} for headings.
+	 */
+	public String textElements(String type, String name, String part, CancelToken cancel) throws IOException {
+		String mediaType = textMediaType(part);
+		return send(AdtRequest.get(textElementsUri(type, name) + "/source/" + part, mediaType), cancel).body();
+	}
+
+	/**
+	 * Replaces one part of a text pool, in the form SAP accepts
+	 * ({@link AdtTextPool#normalize}). SAP keeps the texts inactive until the
+	 * pool is activated.
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	public static String writeTextElements(AdtTransport.Session session, String type, String name, String part,
+			String texts, String transport, CancelToken cancel) throws IOException {
+		String mediaType = textMediaType(part);
+		if (part.equals("selections")) {
+			throw new AdtException(400, "Selection texts cannot be written through ADT; SAP does not store them.");
+		}
+		if (type.toUpperCase(Locale.ROOT).startsWith("CLAS") && !part.equals("symbols")) {
+			throw new AdtException(400, "Classes only have text symbols; selection texts and headings belong to programs.");
+		}
+		String uri = textElementsUri(type, name);
+		String body = AdtTextPool.normalize(part, texts);
+		return withLock(session, uri, transport, cancel, (handle, tr) -> {
+			StringBuilder path = new StringBuilder(uri).append("/source/").append(part).append("?lockHandle=")
+					.append(enc(handle));
+			if (!tr.isBlank()) {
+				path.append("&corrNr=").append(enc(tr));
+			}
+			// SAP wants the part's media type as Accept as well, else it answers 400
+			AdtResponse put = exchange(session,
+					AdtRequest.put(path.toString(), body, mediaType).withHeader("Accept", mediaType), cancel);
+			if (!put.ok()) {
+				throw new AdtException(put.status(), "Could not write the text elements: " + AdtErrors.message(put));
+			}
+		});
 	}
 
 	// ---- checks --------------------------------------------------------------
@@ -769,12 +1128,70 @@ public final class AdtClient {
 		return atcCheck(List.of(objectUri), variant, cancel);
 	}
 
-	/** One ATC run over several objects with the given variant (or the configured one, or the system default). */
+	/**
+	 * One ATC run over several objects with the given variant (or the
+	 * configured one, or the system default). A variant whose checks run in
+	 * another system (remote ATC over an RFC destination) that cannot be
+	 * reached is replaced by the system's own default, see {@link #atcNote()}.
+	 */
 	public List<Message> atcCheck(List<String> objectUris, String variant, CancelToken cancel) throws IOException {
-		String v = variant == null || variant.isBlank() ? atcVariant : variant;
+		atcNote = "";
+		String v = variant == null || variant.isBlank() ? atcVariant : variant.trim().toUpperCase(Locale.ROOT);
 		if (v.isBlank()) {
 			v = atcDefaultVariant(cancel);
 		}
+		// without a scope the failure cannot be told apart from another system's
+		String key = cacheScope == null ? null : cacheScope + "|" + v;
+		Long failed = key == null ? null : UNREACHABLE_VARIANTS.get(key);
+		String reason = null;
+		if (failed != null && System.currentTimeMillis() - failed < UNREACHABLE_FOR_MILLIS) {
+			reason = "it failed a few minutes ago";
+		} else {
+			try {
+				return runAtc(objectUris, v, cancel);
+			} catch (AdtException e) {
+				if (!isRemoteFailure(e)) {
+					throw e;
+				}
+				if (key != null) {
+					UNREACHABLE_VARIANTS.put(key, System.currentTimeMillis());
+				}
+				reason = e.getMessage();
+			}
+		}
+		String fallback = atcDefaultVariant(cancel);
+		if (fallback.equalsIgnoreCase(v)) {
+			fallback = "DEFAULT";
+		}
+		if (fallback.equalsIgnoreCase(v)) {
+			throw new AdtException(500, "ATC with variant " + v + " is not possible: " + reason);
+		}
+		List<Message> out = runAtc(objectUris, fallback, cancel);
+		atcNote = "ATC ran with the local variant " + fallback + " instead of " + v + ", whose checks run in another "
+				+ "system that is not reachable (" + reason + "). Tell the developer; the remote checks are missing.";
+		return out;
+	}
+
+	/** Variants whose remote check system failed, by system and variant, with the time of the failure. */
+	private static final Map<String, Long> UNREACHABLE_VARIANTS = new ConcurrentHashMap<>();
+	/** How long a variant whose remote system failed is skipped; each try costs about 45 seconds. */
+	static final long UNREACHABLE_FOR_MILLIS = 15 * 60_000L;
+
+	private String atcNote = "";
+
+	/** How the last {@link #atcCheck} deviated from the asked variant; empty when it did not. */
+	public String atcNote() {
+		return atcNote;
+	}
+
+	/** A remote ATC run whose central check system cannot be reached, e.g. "Comm failure for dest A4C_BTP". */
+	static boolean isRemoteFailure(AdtException e) {
+		String m = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
+		return e.status() >= 500 && (m.contains("comm failure") || m.contains("communication failure")
+				|| m.contains("system failure") || m.contains("for dest") || m.contains("rfc destination"));
+	}
+
+	private List<Message> runAtc(List<String> objectUris, String v, CancelToken cancel) throws IOException {
 		String worklist = send(AdtRequest.post("/sap/bc/adt/atc/worklists?checkVariant=" + enc(v), "text/plain", null,
 				null), cancel).body().trim();
 		String run = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><atc:run maximumVerdicts=\"100\" xmlns:atc=\"http://www.sap.com/adt/atc\">"
@@ -964,45 +1381,67 @@ public final class AdtClient {
 	}
 
 	/**
-	 * Creates an empty class, interface or program.
+	 * Creates an object without source (see {@link AdtDdic#create}). Metadata
+	 * that SAP ignores on the create POST is written afterwards by the caller
+	 * ({@link #writeMetadata}).
 	 *
 	 * @return the new object
 	 */
-	public AdtObjectRef create(String type, String name, String description, String packageName, String transport,
-			String responsible, CancelToken cancel) throws IOException {
-		String t = type.toUpperCase(Locale.ROOT);
-		String upperName = name.toUpperCase(Locale.ROOT);
-		String common = " adtcore:description=\"" + AdtXml.escape(description) + "\" adtcore:name=\""
-				+ AdtXml.escape(upperName) + "\""
-				+ (responsible == null ? "" : " adtcore:responsible=\"" + AdtXml.escape(responsible) + "\"");
-		String pkg = "<adtcore:packageRef adtcore:name=\"" + AdtXml.escape(packageName.toUpperCase(Locale.ROOT))
-				+ "\"/>";
-		String path;
-		String xml;
-		switch (t.contains("/") ? t.substring(0, t.indexOf('/')) : t) {
-		case "CLAS" -> {
-			path = "/sap/bc/adt/oo/classes";
-			xml = "<class:abapClass xmlns:class=\"http://www.sap.com/adt/oo/classes\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
-					+ common + " adtcore:type=\"CLAS/OC\" class:final=\"true\" class:visibility=\"public\">" + pkg
-					+ "<class:include adtcore:name=\"CLAS/OC\" adtcore:type=\"CLAS/OC\" class:includeType=\"testclasses\"/>"
-					+ "<class:superClassRef/></class:abapClass>";
+	AdtObjectRef create(AdtDdic.CreateRequest r, String name, String packageName, String description,
+			CancelToken cancel) throws IOException {
+		AdtResponse resp = exchange(transport, AdtRequest.post(r.collection() + r.query(), "application/*", r.body(),
+				r.contentType()), cancel);
+		if (resp.status() == 415 && AdtDdic.DATAELEMENT_TYPE.equals(r.contentType())) {
+			// releases before data element v2
+			resp = exchange(transport, AdtRequest.post(r.collection() + r.query(), "application/*", r.body(),
+					AdtDdic.DATAELEMENT_TYPE_V1), cancel);
 		}
-		case "INTF" -> {
-			path = "/sap/bc/adt/oo/interfaces";
-			xml = "<intf:abapInterface xmlns:intf=\"http://www.sap.com/adt/oo/interfaces\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
-					+ common + " adtcore:type=\"INTF/OI\">" + pkg + "</intf:abapInterface>";
+		if (!resp.ok()) {
+			throw new AdtException(resp.status(), "Could not create " + name.toUpperCase(Locale.ROOT) + ": "
+					+ AdtErrors.message(resp));
 		}
-		case "PROG" -> {
-			path = "/sap/bc/adt/programs/programs";
-			xml = "<program:abapProgram xmlns:program=\"http://www.sap.com/adt/programs/programs\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
-					+ common + " adtcore:type=\"PROG/P\">" + pkg + "</program:abapProgram>";
-		}
-		default -> throw new AdtException(400, "Creating objects of type " + type
-				+ " is not supported; supported are CLAS, INTF and PROG.");
-		}
-		String query = transport == null || transport.isBlank() ? "" : "?corrNr=" + enc(transport);
-		send(AdtRequest.post(path + query, "application/*", "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + xml,
-				"application/*"), cancel);
-		return new AdtObjectRef(AdtObjectRef.uriFor(upperName, t), upperName, t, packageName, description);
+		String upper = name.trim().toUpperCase(Locale.ROOT);
+		return new AdtObjectRef(r.objectUri(), upper, r.type(), packageName == null ? "" : packageName, description);
+	}
+
+	/**
+	 * Deletes an object: lock, DELETE, all in one stateful session (the lock
+	 * ends with the deletion).
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	public static String delete(AdtTransport.Session session, String objectUri, String transport, CancelToken cancel)
+			throws IOException {
+		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
+			AdtResponse r = exchange(session, AdtRequest.delete(objectUri + "?lockHandle=" + enc(handle)
+					+ (tr.isBlank() ? "" : "&corrNr=" + enc(tr))), cancel);
+			if (!r.ok()) {
+				throw new AdtException(r.status(), "Could not delete: " + AdtErrors.message(r));
+			}
+		});
+	}
+
+	/** The metadata XML of an object (data element, domain, message class …). */
+	public String readMetadata(String objectUri, CancelToken cancel) throws IOException {
+		return send(AdtRequest.get(objectUri, "application/*"), cancel).body();
+	}
+
+	/**
+	 * Replaces the metadata XML of an object: lock, PUT, unlock.
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	public static String writeMetadata(AdtTransport.Session session, String objectUri, String body, String contentType,
+			String transport, CancelToken cancel) throws IOException {
+		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
+			String path = objectUri + "?lockHandle=" + enc(handle) + (tr.isBlank() ? "" : "&corrNr=" + enc(tr));
+			AdtResponse put = exchange(session, AdtRequest.put(path, body, contentType), cancel);
+			if (put.status() == 415 && AdtDdic.DATAELEMENT_TYPE.equals(contentType)) {
+				put = exchange(session, AdtRequest.put(path, body, AdtDdic.DATAELEMENT_TYPE_V1), cancel);
+			}
+			if (!put.ok()) {
+				throw new AdtException(put.status(), "Could not write the metadata: " + AdtErrors.message(put));
+			}
+		});
 	}
 }

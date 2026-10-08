@@ -31,6 +31,12 @@ public interface HttpTransport {
 		void close() throws IOException;
 	}
 
+	/** Scheme, host and path; user info and query may carry secrets and are left out. */
+	static String display(URI uri) {
+		return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "")
+				+ (uri.getPath() == null ? "" : uri.getPath());
+	}
+
 	static HttpTransport jdk() {
 		return new JdkHttpTransport();
 	}

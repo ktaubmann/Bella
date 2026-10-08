@@ -2,6 +2,7 @@ package de.kiliantaubmann.bella.core.util;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -81,6 +82,10 @@ final class JdkHttpTransport implements HttpTransport {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("interrupted", e);
+		} catch (ConnectException e) {
+			// a local server that is not started (ARC-1 on localhost) is no fault; the caller reports it once
+			Log.info(AREA, "POST " + display(target) + ": connection refused");
+			throw e;
 		} catch (IOException e) {
 			Log.warn(AREA, "POST " + display(target) + " failed after " + Log.millisSince(start) + " ms: " + e);
 			throw e;
@@ -159,9 +164,7 @@ final class JdkHttpTransport implements HttpTransport {
 		}
 	}
 
-	/** Scheme, host and path; user info and query may carry secrets and are left out. */
 	static String display(URI uri) {
-		return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "")
-				+ (uri.getPath() == null ? "" : uri.getPath());
+		return HttpTransport.display(uri);
 	}
 }

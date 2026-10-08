@@ -90,9 +90,41 @@ public final class Masker {
 	}
 
 	private static final String IDENT = "A-Za-z0-9_";
-	private static final Pattern CUSTOMER_OBJECT = Pattern.compile("(?<![" + IDENT + "/])[ZzYy][" + IDENT + "]{2,39}(?![" + IDENT + "])");
-	private static final Pattern MAIL = Pattern.compile("(?<![" + IDENT + ".+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?![" + IDENT + "])");
-	private static final Pattern IBAN = Pattern.compile("(?<![" + IDENT + "])[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?(?![" + IDENT + "])");
+	/** Roots of CDS annotations, which look like the domain of an address after a name ({@code x@Semantics.amount}). */
+	private static final String CDS_ANNOTATIONS = "(?:AbapCatalog|AccessControl|Aggregation|Analytics|AnalyticsDetails"
+			+ "|ClientHandling|Consumption|DataAging|DefaultAggregation|EndUserText|Environment|Hierarchy|Metadata"
+			+ "|ObjectModel|OData|Search|Semantics|UI|VDM)";
+	/**
+	 * Escaped line breaks and tabs in JSON or ABAP strings ({@code \nZREPORT})
+	 * also start a word, although the character before the name is a letter.
+	 */
+	private static final String AFTER_ESCAPE = "(?<=\\\\[nrt])";
+	/** A URL-encoded slash ({@code uri=%2Fsap%2F…%2Fzc_order}) also starts a name. */
+	private static final String AFTER_ENCODED_SLASH = "(?<=%2[Ff])";
+	private static final Pattern CUSTOMER_OBJECT = Pattern.compile("(?:(?<![" + IDENT + "])|" + AFTER_ESCAPE + "|"
+			+ AFTER_ENCODED_SLASH + ")[ZzYy][" + IDENT + "]{2,39}(?![" + IDENT + "])");
+	/**
+	 * Not right after a backslash: in JSON {@code \n@EndUserText.label} is a
+	 * line break before a CDS annotation, no address.
+	 */
+	private static final Pattern MAIL = Pattern.compile("(?:(?<![" + IDENT + ".+\\\\-])|" + AFTER_ESCAPE + ")[A-Za-z0-9._%+-]+@(?!" + CDS_ANNOTATIONS
+			+ "\\.)[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?![" + IDENT + "])");
+	private static final Pattern IBAN = Pattern.compile("(?:(?<![" + IDENT + "])|" + AFTER_ESCAPE + ")[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?(?![" + IDENT + "])");
+	/** Keywords that follow a data object's name in ABAP statements. */
+	private static final String ABAP_KEYWORDS_AFTER_NAME = "(?:TYPE|LIKE|VALUE|REF|TABLE|DEFAULT|OPTIONAL|BOXED"
+			+ "|AND|NOT|INTO|FROM|WHERE|ORDER|GROUP|USING|CHANGING|EXPORTING|IMPORTING|RETURNING|RAISING"
+			+ "|EXCEPTIONS|STRUCTURE|FOR|ASSIGNING|REFERENCE|WITH|BINARY|TRANSPORTING|ELSE|THEN|DIV|MOD|BIT)";
+	/**
+	 * A logon name SAP names in its messages ("locked in request … of user
+	 * MUELLER"): any user, not only the configured ones. Not in ABAP code: a
+	 * component ({@code ls_x-user}, {@code me->user}) or a variable called
+	 * user followed by a keyword ({@code DATA user TYPE syuname}).
+	 */
+	private static final Pattern NAMED_USER = Pattern.compile("(?<=(?<![-~>])\\b(?:[Uu]ser|USER|[Bb]enutzer|BENUTZER) )"
+			+ "(?!" + ABAP_KEYWORDS_AFTER_NAME + "(?![" + IDENT + "-]))"
+			+ "[A-Z][A-Z0-9_]{2,11}(?![" + IDENT + "])");
+	/** A transport request starts with the system id: {@code S4HK900123}. */
+	private static final String TRANSPORT_NUMBER = "(?=K\\d{6}(?![" + IDENT + "]))";
 	/** Upper-case words starting with Z or Y that are no customer objects. */
 	private static final Set<String> NOT_OBJECTS = Set.of("YES", "YEAR", "YEARS", "YET", "YOU", "YOUR", "YOURS", "YTD",
 			"ZERO", "ZEROS", "ZONE", "ZONES", "ZIP", "ZOOM", "YAML", "YIELD");
@@ -128,6 +160,7 @@ public final class Masker {
 			out = replaceLiteral(out, user, false, Kind.USER);
 		}
 		if (s.personal()) {
+			out = replacePattern(out, NAMED_USER, Kind.USER);
 			out = replacePattern(out, MAIL, Kind.MAIL);
 			out = replacePattern(out, IBAN, Kind.IBAN);
 		}
@@ -146,7 +179,11 @@ public final class Masker {
 	}
 
 	private String replaceLiteral(String text, String value, boolean ignoreCase, Kind kind) {
-		Pattern p = Pattern.compile(boundaryBefore(value) + Pattern.quote(value) + boundaryAfter(value),
+		String after = boundaryAfter(value);
+		if (kind == Kind.SYSTEM && !after.isEmpty()) {
+			after = "(?:" + after + "|" + TRANSPORT_NUMBER + ")";
+		}
+		Pattern p = Pattern.compile(boundaryBefore(value) + Pattern.quote(value) + after,
 				ignoreCase ? Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE : 0);
 		Matcher m = p.matcher(text);
 		if (!m.find()) {
@@ -256,7 +293,9 @@ public final class Masker {
 	}
 
 	private static String boundaryBefore(String value) {
-		return Character.isLetterOrDigit(value.charAt(0)) || value.charAt(0) == '_' ? "(?<![" + IDENT + "])" : "";
+		return Character.isLetterOrDigit(value.charAt(0)) || value.charAt(0) == '_'
+				? "(?:(?<![" + IDENT + "])|" + AFTER_ESCAPE + ")"
+				: "";
 	}
 
 	private static String boundaryAfter(String value) {

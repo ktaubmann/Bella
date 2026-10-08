@@ -8,6 +8,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import de.kiliantaubmann.bella.core.tools.ChatMode;
+
 class PromptsTest {
 
 	@Test
@@ -120,5 +122,23 @@ class PromptsTest {
 				&& p.user().indexOf("**Blocking**") < p.user().indexOf("**Should fix**"), p.user());
 		assertTrue(p.user().contains("SELECT * FROM mara INTO TABLE @DATA(x)."));
 		assertTrue(p.system().contains("Clean ABAP"));
+	}
+
+	@Test
+	void qualityRulesKeepTextsInTheTextPoolAndRequireAtc() {
+		String system = new AbapPrompts(null, null).chatSystem();
+		assertTrue(system.contains("adt_write_text_elements"), system);
+		assertTrue(system.contains("never into code such as %_p_name_%_app_%-text"), system);
+		assertTrue(system.contains("maintain in SE38 (Goto > Text Elements > Selection Texts)"), system);
+		assertTrue(system.contains("ATC without priority 1 and 2 findings"), system);
+		for (ChatMode mode : List.of(ChatMode.ACTIVATE,
+				ChatMode.AUTO)) {
+			assertTrue(mode.instruction().contains("ATC priority 1 and 2"), mode.instruction());
+			assertTrue(mode.instruction().contains("check the result with ATC once"), mode.instruction());
+			assertTrue(mode.instruction().contains("adt_write_text_elements"), mode.instruction());
+		}
+		EditorContext ctx = new EditorContext("ZX", "PROG/P", null, "REPORT zx.", "REPORT zx.", 0);
+		assertTrue(new AbapPrompts(null, null).reviewCode(ctx).user().contains("(%_…_%_APP_%)"));
+		assertTrue(new AbapPrompts(null, null).reviewTransport("DEVK900001", null).contains("(%_…_%_APP_%)"));
 	}
 }

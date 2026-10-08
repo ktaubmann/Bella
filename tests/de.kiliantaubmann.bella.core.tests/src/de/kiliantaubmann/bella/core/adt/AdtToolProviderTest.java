@@ -64,6 +64,17 @@ class AdtToolProviderTest {
 	}
 
 	@Test
+	void contextReportsLostConnection() {
+		FakeAdt adt = twoSystems();
+		adt.down = new AdtConnectionException("dev", "connection broken");
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").call("adt_context",
+				Json.parseObject("{\"names\":[\"ZCL_DEMO_A\",\"ZCL_DEMO_B\"]}"), CancelToken.NONE);
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("Connection to SAP system dev lost"), r.content());
+		assertFalse(r.content().contains("exist"), r.content());
+	}
+
+	@Test
 	void activationReportsErrors() {
 		FakeAdt adt = twoSystems().route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(
 				"<chkl:messages xmlns:chkl=\"http://www.sap.com/abapxml/checklist\"><msg type=\"E\" href=\"/sap/bc/adt/oo/classes/zcl_a/source/main#start=3,1\"><shortText><txt>Syntax error</txt></shortText></msg></chkl:messages>"));
@@ -78,7 +89,11 @@ class AdtToolProviderTest {
 		FakeAdt adt = twoSystems()
 				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=LOCK", r -> FakeAdt.ok(
 						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
-				.route("PUT /sap/bc/adt/oo/classes/zcl_a/source/main", r -> FakeAdt.ok(""))
+				.route("PUT /sap/bc/adt/oo/classes/zcl_a/source/main", r -> {
+					// service definitions answer 400 "Accept header missing" without it
+					assertEquals("text/plain", r.headers().get("Accept"));
+					return FakeAdt.ok("");
+				})
 				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=UNLOCK", r -> FakeAdt.ok(""));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
 		ToolSpec write = p.listTools().stream().filter(t -> t.name().equals("adt_write_source")).findFirst().orElseThrow();
@@ -130,6 +145,65 @@ class AdtToolProviderTest {
 		assertEquals("No referenced repository objects found.", nothing.content());
 	}
 
+	@Test
+	void searchRefusesBroadPatternsAndSaysWhenTheListIsCut() {
+		List<String> searches = new ArrayList<>();
+		FakeAdt adt = twoSystems().route(AdtContextTest.SEARCH, r -> {
+			searches.add(r.path());
+			return FakeAdt.ok(AdtContextTest.hits("/sap/bc/adt/programs/programs/zsd_a", "PROG/P", "ZSD_A", "A",
+					"/sap/bc/adt/programs/programs/zsd_b", "PROG/P", "ZSD_B", "B",
+					"/sap/bc/adt/programs/programs/zsd_c", "PROG/P", "ZSD_C", "C"));
+		});
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+
+		for (String broad : List.of("Z*", "y*", "*", "ZS*")) {
+			ToolResult r = call(p, "adt_search_objects", "{\"query\":\"" + broad + "\"}");
+			assertTrue(r.isError() && r.content().contains("thousands of objects"), broad + ": " + r.content());
+		}
+		assertTrue(searches.isEmpty(), searches.toString());
+
+		ToolResult cut = call(p, "adt_search_objects", "{\"query\":\"ZSD*\",\"max_results\":2}");
+		assertFalse(cut.isError(), cut.content());
+		assertTrue(cut.content().startsWith("The first 2 hits; there are more"), cut.content());
+		assertTrue(cut.content().contains("ZSD_B (PROG/P)") && !cut.content().contains("ZSD_C"), cut.content());
+		assertTrue(searches.get(0).contains("maxResults=3"), searches.toString());
+
+		ToolResult all = call(p, "adt_search_objects", "{\"query\":\"ZSD*\",\"max_results\":3}");
+		assertTrue(all.content().startsWith("ZSD_A (PROG/P)"), all.content());
+
+		ToolResult inPackage = call(p, "adt_search_objects", "{\"query\":\"Z*\",\"package\":\"zsd_pkg\"}");
+		assertFalse(inPackage.isError(), inPackage.content());
+		assertTrue(searches.get(searches.size() - 1).contains("&packageName=ZSD_PKG"), searches.toString());
+	}
+
+	@Test
+	void contextTypeAppliesToNames() {
+		List<String> searches = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route(AdtContextTest.SEARCH, r -> {
+					searches.add(r.path());
+					// both share the name; a search without a type filter lists the data element first
+					return FakeAdt.ok(AdtContextTest.hits("/sap/bc/adt/ddic/dataelements/statv", "DTEL/DE", "STATV",
+							"Statistics Indicator for Pensions", "/sap/bc/adt/ddic/domains/statv", "DOMA/DD", "STATV",
+							"Document Status"));
+				})
+				.route("GET /sap/bc/adt/ddic/dataelements/statv", r -> FakeAdt.ok("<dtel description=\"Pensions\"/>"))
+				.route("GET /sap/bc/adt/ddic/domains/statv", r -> FakeAdt.ok("<doma description=\"Document Status\"/>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+
+		ToolResult domain = call(p, "adt_context", "{\"names\":[\"statv\"],\"type\":\"DOMA\"}");
+		assertFalse(domain.isError(), domain.content());
+		assertTrue(domain.content().startsWith("### STATV (DOMA/DD"), domain.content());
+		assertFalse(domain.content().contains("DTEL"), domain.content());
+		assertTrue(searches.get(0).contains("&objectType=DOMA"), searches.toString());
+
+		ToolResult any = call(p, "adt_context", "{\"names\":[\"statv\"]}");
+		assertTrue(any.content().startsWith("### STATV (DTEL/DE"), any.content());
+
+		ToolResult missing = call(p, "adt_context", "{\"names\":[\"statv\"],\"type\":\"TTYP\"}");
+		assertEquals("None of these objects exist in the system: STATV (TTYP)", missing.content());
+	}
+
 	private static final String CLASS_SRC = "CLASS zcl_a DEFINITION PUBLIC.\n  PUBLIC SECTION.\n    METHODS run.\nENDCLASS.\n"
 			+ "CLASS zcl_a IMPLEMENTATION.\n  METHOD run.\n    WRITE 'x'.\n  ENDMETHOD.\n  METHOD other.\n  ENDMETHOD.\nENDCLASS.\n";
 
@@ -172,7 +246,8 @@ class AdtToolProviderTest {
 		assertEquals(CLASS_SRC, call(p, "adt_read_source", json).content());
 		assertFalse(call(p, "adt_write_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"source\":\"x\"}").isError());
 		call(p, "adt_read_source", json);
-		assertEquals(List.of("null", "\"v1\"", "null"), ifNoneMatch);
+		// the write reads the source once more (from the cache) for the syntax check before saving
+		assertEquals(List.of("null", "\"v1\"", "\"v1\"", "null"), ifNoneMatch);
 	}
 
 	@Test
@@ -352,18 +427,18 @@ class AdtToolProviderTest {
 				})
 				.route("GET /sap/bc/adt/runtime/dump/abc%20d/formatted", r -> new AdtResponse(200, "text/plain", "Runtime error x"));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
-		String info = call(p, "adt_transport_info", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}").content();
-		assertTrue(info.startsWith("ZCL_A in package ZSALES: changes are recorded in a transport request.\n"
-				+ "Already locked in request DEVK900099; use it.\nOpen requests that fit:\n- DEVK900101 First candidate (DEVELOPER)"), info);
-		assertTrue(call(p, "adt_transport_info", "{\"name\":\"ZNEW\",\"create\":true,\"package\":\"ZSALES\"}").isError(),
+		String info = call(p, "adt_transports", "{\"action\":\"for_object\",\"name\":\"ZCL_A\",\"type\":\"CLAS\"}").content();
+		assertEquals("ZCL_A in package ZSALES: changes are recorded in a transport request.\n"
+				+ "Already locked in request DEVK900099; changes go there, pass it as 'transport'.", info);
+		assertTrue(call(p, "adt_transports", "{\"action\":\"for_object\",\"name\":\"ZNEW\",\"create\":true,\"package\":\"ZSALES\"}").isError(),
 				"type is needed for a new object");
 
-		String list = call(p, "adt_short_dumps", "{}").content();
+		String list = call(p, "adt_diagnose", "{\"action\":\"short_dumps\"}").content();
 		assertTrue(list.startsWith("2026-03-28T20:19:14Z  STRING_OFFSET_TOO_LARGE in SAPLSUSR_CERTRULE (DEVELOPER)  id: "), list);
-		call(p, "adt_short_dumps", "{\"user\":\"*\",\"max_results\":99}");
+		call(p, "adt_diagnose", "{\"action\":\"short_dumps\",\"user\":\"*\",\"max_results\":99}");
 		assertEquals(List.of("/sap/bc/adt/runtime/dumps?$top=10&$query=and%28equals%28user%2CDEV%29%29",
 				"/sap/bc/adt/runtime/dumps?$top=50"), dumpQueries);
-		assertEquals("Runtime error x", call(p, "adt_short_dumps", "{\"id\":\"abc d\"}").content());
+		assertEquals("Runtime error x", call(p, "adt_diagnose", "{\"action\":\"short_dumps\",\"id\":\"abc d\"}").content());
 	}
 
 	@Test
@@ -485,10 +560,363 @@ class AdtToolProviderTest {
 	}
 
 	@Test
+	void textsSapDoesNotKeepAreReported() {
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/symbols",
+						r -> new AdtResponse(200, "text/plain", "@MaxLength:18\r\n001=Deliv"))
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/symbols", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""));
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_write_text_elements",
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"symbols\",\"texts\":\"001=Delivery\"}");
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("001: wrote 'Delivery', reads 'Deliv'"), r.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("/activation")), adt.log.toString());
+	}
+
+	@Test
+	void selectionTextsAreLeftToTheDeveloper() {
+		FakeAdt adt = twoSystems();
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_write_text_elements",
+				"{\"name\":\"zrep\",\"type\":\"PROG\",\"part\":\"selections\","
+						+ "\"texts\":\"S_VBELN=Delivery\\nP_TEST  =Test run (no deletion)\"}");
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Selection texts cannot be written through ADT"), r.content());
+		assertTrue(r.content().contains("SE38 for ZREP"), r.content());
+		assertTrue(r.content().endsWith("\n- S_VBELN: Delivery\n- P_TEST: Test run (no deletion)"), r.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("textelements") || l.contains("quickSearch")),
+				adt.log.toString());
+	}
+
+	@Test
+	void activationTakesTheInactiveTextPoolAlong() {
+		List<String> bodies = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/activation/inactiveobjects", r -> FakeAdt.ok(
+						"<ioc:inactiveObjects xmlns:ioc=\"http://www.sap.com/abapxml/inactiveCtsObjects\" "
+								+ "xmlns:adtcore=\"http://www.sap.com/adt/core\"><ioc:entry><ioc:object>"
+								+ "<ioc:ref adtcore:uri=\"/sap/bc/adt/textelements/programs/zrep\" adtcore:type=\"REPT\" "
+								+ "adtcore:name=\"ZREP\"/></ioc:object></ioc:entry></ioc:inactiveObjects>"))
+				.route("POST /sap/bc/adt/activation", r -> {
+					bodies.add(r.body());
+					return FakeAdt.ok("");
+				});
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_activate",
+				"{\"objects\":[{\"name\":\"ZREP\",\"type\":\"PROG\"}]}");
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Activated ZREP, text pool of ZREP"), r.content());
+		assertTrue(bodies.get(0).contains("adtcore:uri=\"/sap/bc/adt/textelements/programs/zrep\""), bodies.get(0));
+
+		ToolResult pool = call(new AdtToolProvider(adt, () -> "dev"), "adt_activate",
+				"{\"objects\":[{\"name\":\"ZREP\",\"type\":\"REPT\"}]}");
+		assertFalse(pool.isError(), pool.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("quickSearch")), adt.log.toString());
+	}
+
+	@Test
 	void columnsAreOnlyColumnNames() {
 		ToolResult r = new AdtToolProvider(twoSystems(), () -> "dev").call("adt_table_contents", Json.parseObject(
 				"{\"table\":\"t000\",\"columns\":\"mandt FROM usr02 UNION SELECT bname\"}"), CancelToken.NONE);
 		assertTrue(r.isError(), r.content());
 		assertTrue(r.content().contains("'columns' takes column names"), r.content());
+	}
+
+	@Test
+	void readsAndWritesTextElements() {
+		List<AdtRequest> puts = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/selections",
+						r -> new AdtResponse(200, "text/plain", "S_VBELN=Delivery\n"))
+				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(""))
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/headings", r -> new AdtResponse(200, "text/plain", ""))
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR>DEVK900001</CORRNR><IS_LOCAL></IS_LOCAL></DATA>"))
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/symbols",
+						r -> new AdtResponse(200, "text/plain", "@MaxLength:40\r\n001=No outbound deliveries found"))
+				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/symbols", r -> {
+					puts.add(r);
+					return FakeAdt.ok("");
+				})
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		assertEquals("S_VBELN=Delivery\n",
+				call(p, "adt_text_elements", "{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"selections\"}").content());
+		assertEquals("No headings maintained for ZREP.",
+				call(p, "adt_text_elements", "{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"headings\"}").content());
+
+		ToolSpec write = p.listTools().stream().filter(t -> t.name().equals("adt_write_text_elements")).findFirst()
+				.orElseThrow();
+		assertEquals(ToolSpec.Kind.WRITE, write.kind());
+		var input = Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"symbols\","
+				+ "\"texts\":\"@MaxLength:40\\n001=No outbound deliveries found\"}");
+		assertEquals(null, SchemaCheck.validate(write.inputSchema(), input));
+		ToolResult r = p.call("adt_write_text_elements", input, CancelToken.NONE);
+		assertFalse(r.isError(), r.content());
+		assertEquals("Saved the symbols of ZREP in S4H_100 (transport DEVK900001) and activated the text pool.",
+				r.content());
+		assertTrue(adt.log.contains("POST /sap/bc/adt/activation?method=activate&preauditRequested=true"),
+				adt.log.toString());
+		assertEquals(1, puts.size());
+		AdtRequest put = puts.get(0);
+		assertEquals("/sap/bc/adt/textelements/programs/zrep/source/symbols?lockHandle=H&corrNr=DEVK900001",
+				put.path());
+		assertEquals("application/vnd.sap.adt.textelements.symbols.v1", put.contentType());
+		assertEquals("application/vnd.sap.adt.textelements.symbols.v1", put.headers().get("Accept"));
+		assertEquals("@MaxLength:40\n001=No outbound deliveries found", put.body());
+		assertEquals(0, adt.openSessions);
+		assertTrue(adt.log.contains("S POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK&lockHandle=H"),
+				adt.log.toString());
+
+		ToolResult classSelections = call(p, "adt_write_text_elements",
+				"{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"part\":\"headings\",\"texts\":\"listHeader=x\"}");
+		assertTrue(classSelections.isError() && classSelections.content().contains("Classes only have text symbols"),
+				classSelections.content());
+		assertTrue(call(p, "adt_text_elements", "{\"name\":\"ZIF_A\",\"type\":\"INTF\",\"part\":\"symbols\"}")
+				.isError());
+		assertEquals(1, puts.size());
+	}
+
+	@Test
+	void textElementWritesKeepToAllowedPackages() {
+		FakeAdt adt = twoSystems().route("GET /sap/bc/adt/programs/programs/rsabc", r -> FakeAdt.ok(
+				"<program:abapProgram xmlns:program=\"http://www.sap.com/adt/programs/programs\" xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+						+ "<adtcore:packageRef adtcore:name=\"SABP\"/></program:abapProgram>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev", () -> "$TMP, Z*");
+		String refused = p.refuse("adt_write_text_elements", Json.parseObject(
+				"{\"name\":\"RSABC\",\"type\":\"PROG\",\"part\":\"symbols\",\"texts\":\"001=x\"}"), CancelToken.NONE)
+				.orElseThrow();
+		assertTrue(refused.startsWith("RSABC is in package SABP"), refused);
+	}
+
+	@Test
+	void writeReportsStyleAndSyntaxFindings() {
+		FakeAdt adt = twoSystems()
+				.route("POST /sap/bc/adt/programs/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/programs/programs/zrep/source/main", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/programs/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/checkruns", r -> FakeAdt.ok(
+						"<chkrun:checkRunReports xmlns:chkrun=\"http://www.sap.com/adt/checkrun\"><chkrun:checkReport><chkrun:checkMessageList>"
+								+ "<chkrun:checkMessage chkrun:uri=\"/sap/bc/adt/programs/programs/zrep/source/main#start=4,0\" chkrun:type=\"W\" chkrun:shortText=\"Unused variable\"/>"
+								+ "</chkrun:checkMessageList></chkrun:checkReport></chkrun:checkRunReports>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolResult r = call(p, "adt_write_source", "{\"name\":\"ZREP\",\"type\":\"PROG\",\"source\":"
+				+ "\"REPORT zrep.\\nINITIALIZATION.\\n  %_p_test_%_app_%-text = 'Test run'.\\nWRITE 'Done'.\"}");
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Saved ZREP in S4H_100. Not activated yet."), r.content());
+		assertTrue(r.content().contains("Line 3 [error] internal_screen_text"), r.content());
+		assertTrue(r.content().contains("Line 4 [warning] text_literal"), r.content());
+		assertTrue(r.content().contains("Syntax check of the saved version:\nWarning line 4: Unused variable"),
+				r.content());
+		assertTrue(adt.log.stream().anyMatch(l -> l.startsWith("POST /sap/bc/adt/checkruns")), adt.log.toString());
+	}
+
+	@Test
+	void unreachableRemoteAtcVariantFallsBackToTheLocalOne() {
+		String error = "<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\">"
+				+ "<message lang=\"EN\">Comm failure for dest A4C_BTP</message></exc:exception>";
+		FakeAdt adt = twoSystems()
+				.route("POST /sap/bc/adt/atc/worklists?checkVariant=Z_REMOTE_FB", r -> new AdtResponse(200, "text/plain", "WR"))
+				.route("POST /sap/bc/adt/atc/worklists?checkVariant=DEFAULT", r -> new AdtResponse(200, "text/plain", "WL"))
+				.route("POST /sap/bc/adt/atc/runs?worklistId=WR", r -> new AdtResponse(500, "application/xml", error))
+				.route("POST /sap/bc/adt/atc/runs?worklistId=WL", r -> FakeAdt.ok(""))
+				.route("GET /sap/bc/adt/atc/worklists/WL", r -> FakeAdt.ok(
+						"<atcworklist:worklist xmlns:atcworklist=\"http://www.sap.com/adt/atc/worklist\"/>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev", () -> "", d -> "Z_REMOTE_FB");
+		ToolResult r = call(p, "adt_atc_check", "{\"name\":\"ZREP\",\"type\":\"PROG\"}");
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("ATC ran with the local variant DEFAULT instead of Z_REMOTE_FB"), r.content());
+		assertTrue(r.content().endsWith("No ATC findings."), r.content());
+		// the next run does not wait for the remote system again
+		int before = adt.log.size();
+		ToolResult again = call(p, "adt_atc_check", "{\"name\":\"ZREP\",\"type\":\"PROG\"}");
+		assertTrue(again.content().contains("it failed a few minutes ago"), again.content());
+		assertTrue(adt.log.subList(before, adt.log.size()).stream().noneMatch(l -> l.contains("worklistId=WR")),
+				adt.log.toString());
+	}
+
+	@Test
+	void activationRunsAtcOnlyWhenAsked() {
+		FakeAdt adt = twoSystems()
+				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/atc/worklists", r -> new AdtResponse(200, "text/plain", "W1"))
+				.route("POST /sap/bc/adt/atc/runs", r -> FakeAdt.ok(""))
+				.route("GET /sap/bc/adt/atc/worklists/W1", r -> FakeAdt.ok(
+						"<atcworklist:worklist xmlns:atcworklist=\"http://www.sap.com/adt/atc/worklist\" xmlns:atcfinding=\"http://www.sap.com/adt/atc/finding\">"
+								+ "<atcfinding:finding atcfinding:location=\"/sap/bc/adt/programs/programs/zrep/source/main#start=12,2\" "
+								+ "atcfinding:priority=\"2\" atcfinding:checkTitle=\"Extended Program Check\" "
+								+ "atcfinding:messageTitle=\"Char. strings w/o text elements\"/></atcworklist:worklist>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev", () -> "", d -> "ZVARIANT");
+		ToolResult r = call(p, "adt_activate", "{\"objects\":[{\"name\":\"ZREP\",\"type\":\"PROG\"}],\"run_atc\":true}");
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().contains("ATC findings:\nPriority 2 line 12: Extended Program Check: Char. strings w/o text "
+				+ "elements\nFix priority 1 and 2 findings now"), r.content());
+		assertTrue(adt.log.contains("POST /sap/bc/adt/atc/worklists?checkVariant=ZVARIANT"), adt.log.toString());
+
+		int before = adt.log.size();
+		ToolResult off = call(p, "adt_activate", "{\"objects\":[{\"name\":\"ZREP\",\"type\":\"PROG\"}]}");
+		assertFalse(off.content().contains("ATC"), off.content());
+		assertTrue(adt.log.subList(before, adt.log.size()).stream().noneMatch(l -> l.contains("/atc/")));
+	}
+
+	static final String TEXT_SEARCH = "<tsr:textSearchResult xmlns:tsr=\"http://www.sap.com/adt/ris/textSearch\" "
+			+ "xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+			+ "<tsr:textSearchObject adtcore:uri=\"/sap/bc/adt/ris/proxy?content=objectName%3AZCL_SALES%2CobjectType%3ACLAS\">"
+			+ "<tsr:adtMainObject adtcore:type=\"CLAS/OC\" adtcore:name=\"ZCL_SALES\"/>"
+			+ "<tsr:textLine adtcore:uri=\"/sap/bc/adt/oo/classes/zcl_sales/source/main%23start%3D12%2C4\">"
+			+ "<tsr:content>    lv_x = <b>'DELIVERY_BLOCK'</b>.</tsr:content></tsr:textLine></tsr:textSearchObject>"
+			+ "<tsr:textSearchObject adtcore:uri=\"/sap/bc/adt/packages/zsd\"/></tsr:textSearchResult>";
+
+	@Test
+	void searchesInSources() throws Exception {
+		List<AdtClient.SourceHit> hits = AdtClient.parseSourceHits(TEXT_SEARCH);
+		assertEquals(List.of(new AdtClient.SourceHit("ZCL_SALES", "CLAS/OC",
+				"/sap/bc/adt/ris/proxy?content=objectName%3AZCL_SALES%2CobjectType%3ACLAS",
+				List.of(new AdtClient.SourceLine(12, "lv_x = 'DELIVERY_BLOCK'.")))), hits);
+
+		List<String> paths = new ArrayList<>();
+		FakeAdt adt = twoSystems().route("GET /sap/bc/adt/repository/informationsystem/textsearch", r -> {
+			paths.add(r.path());
+			return FakeAdt.ok(TEXT_SEARCH);
+		});
+		ToolResult r = new AdtToolProvider(adt, () -> null).call("adt_search_objects", Json.parseObject(
+				"{\"query\":\"DELIVERY_BLOCK\",\"search_in\":\"source\",\"package\":\"zsd\",\"type\":\"CLAS/OC\"}"),
+				CancelToken.NONE);
+		assertFalse(r.isError(), r.content());
+		assertEquals("ZCL_SALES (CLAS/OC)\n  12: lv_x = 'DELIVERY_BLOCK'.\n", r.content());
+		assertTrue(paths.get(0).contains("searchString=DELIVERY_BLOCK&searchFromIndex=1&searchToIndex=50"), paths.get(0));
+		assertTrue(paths.get(0).endsWith("&objectType=CLAS&packageName=ZSD"), paths.get(0));
+
+		ToolResult unsupported = new AdtToolProvider(twoSystems(), () -> null).call("adt_search_objects",
+				Json.parseObject("{\"query\":\"x\",\"search_in\":\"source\"}"), CancelToken.NONE);
+		assertTrue(unsupported.isError() && unsupported.content().contains("no source code search"),
+				unsupported.content());
+	}
+
+	private static String checkMessages(String... errors) {
+		StringBuilder sb = new StringBuilder("<chkrun:checkRunReports xmlns:chkrun=\"http://www.sap.com/adt/checkrun\">"
+				+ "<chkrun:checkReport><chkrun:checkMessageList>");
+		for (String e : errors) {
+			sb.append("<chkrun:checkMessage chkrun:uri=\"/sap/bc/adt/programs/programs/zrep/source/main#start=2,0\" "
+					+ "chkrun:type=\"E\" chkrun:shortText=\"").append(e).append("\"/>");
+		}
+		return sb.append("</chkrun:checkMessageList></chkrun:checkReport></chkrun:checkRunReports>").toString();
+	}
+
+	@Test
+	void writeIsCheckedBeforeSaving() {
+		List<String> checked = new ArrayList<>();
+		List<String> saved = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/programs/programs/zrep/source/main",
+						r -> new AdtResponse(200, "text/plain", "REPORT zrep.\nWRITE x."))
+				.route("POST /sap/bc/adt/checkruns", r -> {
+					String source = new String(java.util.Base64.getDecoder().decode(
+							r.body().replaceAll("(?s).*<chkrun:content>(.*)</chkrun:content>.*", "$1")),
+							java.nio.charset.StandardCharsets.UTF_8);
+					checked.add(source);
+					// the old source has one error, the new one with "y" a second one
+					return FakeAdt.ok(source.contains("y") ? checkMessages("Field X is unknown", "Field Y is unknown")
+							: source.contains("x") ? checkMessages("Field X is unknown") : checkMessages());
+				})
+				.route("POST /sap/bc/adt/programs/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/programs/programs/zrep/source/main", r -> {
+					saved.add(r.body());
+					return FakeAdt.ok("");
+				})
+				.route("POST /sap/bc/adt/programs/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+
+		ToolResult refused = call(p, "adt_write_source",
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"source\":\"REPORT zrep.\\nWRITE: x, y.\"}");
+		assertTrue(refused.isError() && refused.content().startsWith("Not saved: the new source adds syntax errors:\n"
+				+ "Error line 2: Field Y is unknown"), refused.content());
+		assertTrue(saved.isEmpty());
+		assertEquals(2, checked.size(), "new source, then the old one for comparison");
+
+		ToolResult allowed = call(p, "adt_write_source",
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"allow_errors\":true,\"source\":\"REPORT zrep.\\nWRITE: x, y.\"}");
+		assertFalse(allowed.isError(), allowed.content());
+		assertEquals(1, saved.size());
+
+		checked.clear();
+		ToolResult clean = call(p, "adt_write_source",
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"source\":\"REPORT zrep.\\nWRITE 'ok'(001).\"}");
+		assertFalse(clean.isError(), clean.content());
+		assertTrue(clean.content().contains("Syntax check: no errors."), clean.content());
+		assertEquals(1, checked.size(), "a clean change costs one check, also standing in for the check after saving");
+	}
+
+	@Test
+	void transportsWithoutNameAskForIt() {
+		AdtToolProvider p = new AdtToolProvider(twoSystems(), () -> "dev");
+		for (String action : List.of("for_object", "history")) {
+			ToolResult r = call(p, "adt_transports", "{\"action\":\"" + action + "\"}");
+			assertTrue(r.isError() && r.content().contains("Give 'name'"), r.content());
+		}
+	}
+
+	@Test
+	void nestedSearchHitsCountOnce() throws Exception {
+		String xml = "<tsr:textSearchResult xmlns:tsr=\"http://www.sap.com/adt/ris/textSearch\" "
+				+ "xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+				+ "<tsr:textSearchObject adtcore:uri=\"/sap/bc/adt/ris/proxy?content=objectName%3AZCL_A\">"
+				+ "<tsr:adtMainObject adtcore:type=\"CLAS/OC\" adtcore:name=\"ZCL_A\"/>"
+				+ "<tsr:textSearchObject adtcore:uri=\"/sap/bc/adt/ris/proxy?content=objectName%3AZCL_A%2Cinclude\">"
+				+ "<tsr:adtMainObject adtcore:type=\"CLAS/OC\" adtcore:name=\"ZCL_A\"/>"
+				+ "<tsr:textLine adtcore:uri=\"/x%23start%3D3%2C0\"><tsr:content>a</tsr:content></tsr:textLine>"
+				+ "<tsr:textLine adtcore:uri=\"/x%23start%3D9%2C0\"><tsr:content>b</tsr:content></tsr:textLine>"
+				+ "</tsr:textSearchObject></tsr:textSearchObject></tsr:textSearchResult>";
+		List<AdtClient.SourceHit> hits = AdtClient.parseSourceHits(xml);
+		assertEquals(1, hits.size(), hits.toString());
+		assertEquals(2, hits.get(0).lines().size());
+	}
+
+	@Test
+	void unsupportedSearchIsRecognizedByItsMessageKey() {
+		String sadt = "<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\">"
+				+ "<message lang=\"EN\">%s</message><properties><entry key=\"T100KEY-ID\">SADT_REST</entry>"
+				+ "<entry key=\"T100KEY-NO\">%s</entry></properties></exc:exception>";
+		FakeAdt adt = twoSystems().route("GET /sap/bc/adt/repository/informationsystem/textsearch",
+				r -> new AdtResponse(400, "application/xml", String.format(sadt, "Not supported", "020")));
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_search_objects",
+				"{\"query\":\"x\",\"search_in\":\"source\"}");
+		assertTrue(r.content().contains("does not support source code search"), r.content());
+
+		// another SADT_REST message that only mentions 2020 somewhere is no "unsupported"
+		FakeAdt denied = twoSystems().route("GET /sap/bc/adt/repository/informationsystem/textsearch",
+				r2 -> new AdtResponse(403, "application/xml", String.format(sadt, "No authorization since 2020", "102")));
+		ToolResult d = call(new AdtToolProvider(denied, () -> "dev"), "adt_search_objects",
+				"{\"query\":\"x\",\"search_in\":\"source\"}");
+		assertTrue(d.content().contains("No authorization for source code search"), d.content());
+
+		// a system that says so without the T100 key
+		FakeAdt plain = twoSystems().route("GET /sap/bc/adt/repository/informationsystem/textsearch",
+				r3 -> new AdtResponse(400, "text/plain", "Text search is not supported in this system"));
+		ToolResult n = call(new AdtToolProvider(plain, () -> "dev"), "adt_search_objects",
+				"{\"query\":\"x\",\"search_in\":\"source\"}");
+		assertTrue(n.content().contains("does not support source code search"), n.content());
+	}
+
+	@Test
+	void systemWithoutComponentsIsNotAskedOnEveryWrite() {
+		AdtSystemInfo.clear();
+		FakeAdt adt = twoSystems();
+		AdtClient c = new AdtClient(adt.stateless("dev"));
+		assertTrue(AdtSystemInfo.of("dev", c, CancelToken.NONE).isEmpty());
+		assertTrue(AdtSystemInfo.of("dev", c, CancelToken.NONE).isEmpty());
+		assertEquals(1, adt.log.stream().filter(l -> l.contains("/system/components")).count(), adt.log.toString());
+		AdtSystemInfo.clear();
+
+		// a passing problem (here: not logged on yet) is asked about again next time
+		FakeAdt later = twoSystems().route("GET /sap/bc/adt/system/components",
+				r -> new AdtResponse(401, "text/plain", "logon"));
+		AdtClient lc = new AdtClient(later.stateless("dev"));
+		AdtSystemInfo.of("dev", lc, CancelToken.NONE);
+		AdtSystemInfo.of("dev", lc, CancelToken.NONE);
+		assertEquals(2, later.log.stream().filter(l -> l.contains("/system/components")).count(), later.log.toString());
+		AdtSystemInfo.clear();
 	}
 }

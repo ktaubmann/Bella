@@ -66,6 +66,7 @@ class FakeAcp implements ProcessLauncher {
 		/** Everything Bella sent (requests, notifications, responses). */
 		final List<JsonObject> received = new CopyOnWriteArrayList<>();
 		final List<String> prompts = new CopyOnWriteArrayList<>();
+		final List<String> firstBlocks = new CopyOnWriteArrayList<>();
 		volatile JsonObject newSessionParams;
 		volatile JsonElement pendingPrompt;
 		private final LinkedBlockingQueue<byte[]> out = new LinkedBlockingQueue<>();
@@ -204,7 +205,13 @@ class FakeAcp implements ProcessLauncher {
 				reply(id, r);
 			}
 			case "session/prompt" -> {
-				String text = params.getAsJsonArray("prompt").get(0).getAsJsonObject().get("text").getAsString();
+				JsonArray blocks = params.getAsJsonArray("prompt");
+				String text = blocks.get(0).getAsJsonObject().get("text").getAsString();
+				firstBlocks.add(text);
+				if (blocks.size() > 1) {
+					// instructions come second; tests read the prompt in its logical order
+					text = blocks.get(1).getAsJsonObject().get("text").getAsString() + "\n\n" + text;
+				}
 				prompts.add(text);
 				pendingPrompt = id;
 				script.onPrompt(this, id, Json.str(params, "sessionId"), text);
