@@ -68,6 +68,38 @@ class AdtCodeToolsTest {
 		assertTrue(call(p, "adt_object_info", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"action\":\"x\"}").isError());
 	}
 
+	private static String version(String number, String time, String transport) {
+		return "<atom:entry><atom:author><atom:name>DEV</atom:name></atom:author><atom:content type=\"text/plain\" "
+				+ "src=\"/sap/bc/adt/programs/programs/zrep/source/main/versions/1/" + number + "/content\"/><atom:id>"
+				+ number + "</atom:id>" + (transport == null ? "" : "<atom:link adtcore:name=\"" + transport
+						+ "\" href=\"/sap/bc/adt/cts/transportrequests/" + transport
+						+ "\" rel=\"http://www.sap.com/adt/relations/transport/request\"/>")
+				+ "<atom:updated>" + time + "</atom:updated></atom:entry>";
+	}
+
+	@Test
+	void transportHistoryFromVersions() {
+		FakeAdt adt = adt().route("GET /sap/bc/adt/programs/programs/zrep/source/main/versions", r -> FakeAdt.ok(
+				"<atom:feed xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+						+ version("00003", "2026-06-25T10:00:00Z", "DEVK900200")
+						+ version("00002", "2026-06-24T10:00:00Z", "DEVK900200")
+						+ version("00000", "2026-06-23T12:00:00Z", null)
+						+ version("00001", "2026-06-23T09:00:00Z", "DEVK900100") + "</atom:feed>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolResult r = call(p, "adt_transports", "{\"action\":\"history\",\"name\":\"ZREP\",\"type\":\"PROG\"}");
+		assertEquals("Transport requests of ZREP, newest first:\n"
+				+ "DEVK900200  2026-06-24T10:00:00Z – 2026-06-25T10:00:00Z  DEV  (2 versions)\n"
+				+ "DEVK900100  2026-06-23T09:00:00Z  DEV  (1 version)\n"
+				+ "1 version without a transport request (e.g. the active or a local one).\n", r.content());
+		assertTrue(call(p, "adt_transports", "{\"action\":\"x\"}").isError());
+	}
+
+	@Test
+	void metadataExtensionsHaveADirectUri() {
+		assertEquals("/sap/bc/adt/ddic/ddlx/sources/zc_travel_mde", AdtObjectRef.uriFor("ZC_TRAVEL_MDE", "DDLX"));
+		assertEquals("/sap/bc/adt/acm/dcl/sources/zi_travel_dcl", AdtObjectRef.uriFor("ZI_TRAVEL_DCL", "DCLS/DL"));
+	}
+
 	@Test
 	void navigation() {
 		List<String> sql = new ArrayList<>();

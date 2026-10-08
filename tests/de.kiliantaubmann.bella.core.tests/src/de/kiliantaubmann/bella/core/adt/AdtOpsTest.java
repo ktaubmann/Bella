@@ -221,7 +221,7 @@ class AdtOpsTest {
 						+ "<nameditem:data>QAS</nameditem:data></nameditem:namedItem></nameditem:namedItemList>"));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
 		assertEquals("Transport layers:\n- ZDEV  Development  → QAS\n",
-				call(p, "adt_list_transports", "{\"values\":\"layers\"}").content());
+				call(p, "adt_transports", "{\"action\":\"layers\"}").content());
 	}
 
 	@Test

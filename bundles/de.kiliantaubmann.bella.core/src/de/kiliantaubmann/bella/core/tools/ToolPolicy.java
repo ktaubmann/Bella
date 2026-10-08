@@ -76,7 +76,7 @@ public final class ToolPolicy {
 			new Rule("adt_git_write", Decision.ASK),
 			new Rule("adt_package_manage:delete", Decision.ASK),
 			new Rule("adt_trace_control", Decision.ASK),
-			new Rule("adt_settings_write", Decision.ASK),
+			new Rule("adt_format_settings", Decision.ASK),
 			// the same actions through ARC-1
 			new Rule("mcp_*SAPWrite:delete*", Decision.ASK),
 			new Rule("mcp_*SAPTransport:create", Decision.ASK),

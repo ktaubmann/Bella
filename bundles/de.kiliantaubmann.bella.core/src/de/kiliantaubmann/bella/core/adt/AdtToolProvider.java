@@ -277,8 +277,6 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "Give 'name' (an object), 'source' (code) and/or 'names'. Call before writing code that uses tables, "
 						+ "structures, classes or function modules, so you use real field names and signatures.",
 				contextSchema, null, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_where_used", "Where-used list of a repository object.",
-				schema(new String[] { "name" }, objectProps()), Capability.WHERE_USED, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_syntax_check",
 				"Syntax check of an object. Pass 'source' to check code that is not saved yet (e.g. a proposed change) without writing it.",
 				schema(new String[] { "name" }, objectProps("source", "string", "Optional full source to check instead of the saved version.")),
@@ -308,7 +306,7 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[0], objectProps("action", "string", "format (default) or get_settings.", "source",
 						"string", "Code to format.", "include", "string", "Class include, default main.")),
 				null, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_settings_write",
+		t.add(ToolSpec.of("adt_format_settings",
 				"Change the pretty printer settings for everybody on the system (indentation, keyword case). Bella "
 						+ "always asks first.",
 				schema(new String[] { "indentation", "style" }, "indentation", "boolean", "Indent code.", "style",
@@ -326,7 +324,7 @@ public final class AdtToolProvider implements ToolProvider {
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_navigate",
 				"Code navigation, read only. 'definition': where the symbol at line/column is defined; 'references': "
-						+ "objects that use the object, or the symbol at line/column; 'completion': ADT's code "
+						+ "where-used list of the object (without line), or the uses of the symbol at line/column; 'completion': ADT's code "
 						+ "completion at line/column; 'hierarchy': superclass, interfaces and subclasses of a class. "
 						+ "Lines count from 1, columns from 0.",
 				schema(new String[] { "name", "action" }, objectProps("action", "string",
@@ -339,21 +337,19 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "(labels of PARAMETERS and SELECT-OPTIONS) or list headings.",
 				schema(new String[] { "name", "part" }, objectProps("part", "string", TEXT_PART_DESC)), null,
 				ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_transport_info",
-				"Which transport request a change needs: whether the object's package records changes, the request the object "
-						+ "is already locked in, and the developer's open requests that fit. Use it before writing a non-local object. "
-						+ "Releasing transports is not possible.",
-				schema(new String[] { "name" }, objectProps("package", "string",
-						"Package, needed when the object does not exist yet.", "create", "boolean",
-						"true if the object is about to be created; default false (change).")),
-				null, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_list_transports",
-				"Transport requests of a user with their tasks and number of objects: modifiable ones by default, "
-						+ "released ones with status R.",
-				schema(new String[0], "user", "string", "Owner; default the logged-on user, '*' for all users.", "status",
-						"string", "D modifiable (default) or R released.", "values", "string",
-						"Instead of requests: layers (transport layers) or targets (transport targets).", "system",
-						"string", SYSTEM_DESC),
+		t.add(ToolSpec.of("adt_transports",
+				"Transport requests, read only (releasing is not possible). 'list' (default): requests of a user with "
+						+ "tasks and number of objects ('user', 'status' D modifiable or R released). 'for_object': which "
+						+ "request a change of object 'name' needs: whether its package records changes, the request it "
+						+ "is locked in and the developer's open requests that fit; use it before writing a non-local "
+						+ "object ('package' and 'create' true for a new object). 'history': the requests an object was "
+						+ "changed in, from its version history. 'layers' / 'targets': transport layers and targets.",
+				schema(new String[0], objectProps("action", "string", "list (default), for_object, history, layers or targets.",
+						"user", "string", "list: owner; default the logged-on user, '*' for all users.", "status", "string",
+						"list: D modifiable (default) or R released.", "package", "string",
+						"for_object: package, needed when the object does not exist yet.", "create", "boolean",
+						"for_object: true if the object is about to be created.", "include", "string",
+						"history: class include, default main.")),
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_transport_review",
 				"Everything needed to review a transport request, read only: header, tasks, objects, per source the diff "
@@ -363,13 +359,6 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[] { "request" }, "request", "string", "Transport request number, e.g. DEVK900123.",
 						"object", "string", "Only this object of the request, with its whole diff.", "checks", "boolean",
 						"Run syntax check, ATC and ABAP Unit (default true).", "system", "string", SYSTEM_DESC),
-				null, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_short_dumps",
-				"Runtime errors (short dumps, ST22): without 'id' a list of the newest dumps (by default the developer's own), "
-						+ "with 'id' the full dump text including the source position.",
-				schema(new String[0], "id", "string", "Dump id from the list, to read one dump.", "user", "string",
-						"Only dumps of this user; default the logged-on user, '*' for all users.", "max_results", "integer",
-						"Default 10, at most 50.", "system", "string", SYSTEM_DESC),
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_table_contents",
 				"Read rows of a database table or CDS view (data preview, like SE16 or ADT's SQL console). Give 'table' with "
@@ -382,7 +371,9 @@ public final class AdtToolProvider implements ToolProvider {
 						"integer", "Default 100, at most " + TABLE_MAX_ROWS + ".", "system", "string", SYSTEM_DESC),
 				Capability.TABLE_CONTENTS, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_write_source",
-				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system.",
+				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. "
+						+ "Works for ABAP (classes, interfaces, programs, includes, function modules) and for CDS views (DDLS), "
+						+ "access controls (DCLS), metadata extensions (DDLX), behavior definitions (BDEF) and service definitions (SRVD). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system.",
 				schema(new String[] { "name", "source" }, objectProps("source", "string",
 						"Complete new source code, or with 'method' the new method body.", "method", "string",
 						"Replace only the body of this method (between METHOD and ENDMETHOD).",
@@ -436,7 +427,8 @@ public final class AdtToolProvider implements ToolProvider {
 						"Delete even though other objects use it.")),
 				null, ToolSpec.Kind.WRITE));
 		t.add(ToolSpec.of("adt_diagnose",
-				"Runtime diagnostics, read only: 'system_messages' (SM02), 'gateway_errors' (/IWFND/ERROR_LOG; with "
+				"Runtime diagnostics, read only: 'short_dumps' (ST22; the newest dumps, by default the developer's "
+						+ "own, 'user' '*' for all; with 'id' one dump in full with its source position), 'system_messages' (SM02), 'gateway_errors' (/IWFND/ERROR_LOG; with "
 						+ "'id' one error in detail), 'traces' (ABAP profiler traces; with 'id' and 'part' hitlist, "
 						+ "statements or db_accesses one analysis), 'trace_requests' (armed traces), 'sql_trace_state' "
 						+ "(ST05), 'sql_trace_directory', 'authorization_trace' (STUSERTRACE; 'user', 'auth_object', "
@@ -467,7 +459,7 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "workbench request ('description', optional 'package', 'transport_layer' or 'target'); "
 						+ "'reassign' to another 'owner' ('with_tasks'); 'delete' ('with_tasks'); 'remove_object' from a "
 						+ "request ('pgmid', 'object_type', 'object_name', e.g. R3TR CLAS ZCL_X). Transport layers and "
-						+ "targets: adt_list_transports 'values'.",
+						+ "targets: adt_transports 'layers' or 'targets'.",
 				schema(new String[] { "action" }, "action", "string", "create, reassign, delete or remove_object.",
 						"request", "string", "Transport request number.", "description", "string", "create.", "package",
 						"string", "create: package whose route the request follows.", "transport_layer", "string",
@@ -632,7 +624,6 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_search_objects" -> searchObjects(in, cancel);
 			case "adt_read_source" -> readSource(in, cancel);
 			case "adt_context" -> context(in, cancel);
-			case "adt_where_used" -> whereUsed(in, cancel);
 			case "adt_syntax_check" -> syntaxCheck(in, cancel);
 			case "adt_run_unit_tests" -> unitTests(in, cancel);
 			case "adt_atc_check" -> atc(in, cancel);
@@ -651,11 +642,9 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_rap" -> rap(in, cancel);
 			case "adt_ui5" -> ui5(in, cancel);
 			case "adt_format" -> format(in, cancel);
-			case "adt_settings_write" -> writeSettings(in, cancel);
+			case "adt_format_settings" -> writeSettings(in, cancel);
 			case "adt_write_text_elements" -> writeTextElements(in, cancel);
-			case "adt_transport_info" -> transportInfo(in, cancel);
-			case "adt_short_dumps" -> shortDumps(in, cancel);
-			case "adt_list_transports" -> listTransports(in, cancel);
+			case "adt_transports" -> transports(in, cancel);
 			case "adt_transport_review" -> transportReview(in, cancel);
 			case "adt_table_contents" -> tableContents(in, cancel);
 			case "adt_write_source" -> writeSource(in, cancel);
@@ -895,20 +884,6 @@ public final class AdtToolProvider implements ToolProvider {
 			text += "Not loaded (limit reached, use adt_read_source): " + String.join(", ", r.skipped()) + "\n";
 		}
 		return ToolResult.ok(text);
-	}
-
-	private ToolResult whereUsed(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
-		AdtObjectRef ref = resolve(c, in, cancel);
-		List<AdtObjectRef> refs = c.whereUsed(AdtObjectRef.objectUri(ref.uri()), cancel);
-		if (refs.isEmpty()) {
-			return ToolResult.ok("No usages found.");
-		}
-		StringBuilder sb = new StringBuilder();
-		for (AdtObjectRef r : refs) {
-			sb.append(r.name()).append(" (").append(r.type()).append(")\n");
-		}
-		return ToolResult.ok(sb.toString());
 	}
 
 	private ToolResult syntaxCheck(JsonObject in, CancelToken cancel) throws IOException {
@@ -1326,6 +1301,9 @@ public final class AdtToolProvider implements ToolProvider {
 		String id = Json.str(in, "id");
 		String user = Json.str(in, "user");
 		switch (action(in)) {
+		case "short_dumps" -> {
+			return shortDumps(in, cancel);
+		}
 		case "system_messages" -> {
 			return ToolResult.ok(AdtDiagnostics.atom(AdtDiagnostics.get(c, "/sap/bc/adt/runtime/systemmessages?maxResults="
 					+ max, AdtDiagnostics.FEED, cancel), max));
@@ -1907,6 +1885,72 @@ public final class AdtToolProvider implements ToolProvider {
 		return ToolResult.ok(sb.toString());
 	}
 
+	private ToolResult transports(JsonObject in, CancelToken cancel) throws IOException {
+		String action = Json.str(in, "action");
+		switch (action == null || action.isBlank() ? "list" : action.trim().toLowerCase(Locale.ROOT)) {
+		case "list" -> {
+			return listTransports(in, cancel);
+		}
+		case "layers", "targets" -> {
+			JsonObject copy = in.deepCopy();
+			copy.addProperty("values", action.trim().toLowerCase(Locale.ROOT));
+			return listTransports(copy, cancel);
+		}
+		case "for_object" -> {
+			return transportInfo(in, cancel);
+		}
+		case "history" -> {
+			return transportHistory(in, cancel);
+		}
+		default -> {
+			return ToolResult.error("Unknown action " + action + "; use list, for_object, history, layers or targets.");
+		}
+		}
+	}
+
+	/** The requests an object was changed in, newest first, from the transport noted on each version. */
+	private ToolResult transportHistory(JsonObject in, CancelToken cancel) throws IOException {
+		AdtClient c = client(system(in));
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String objectUri = AdtObjectRef.objectUri(ref.uri());
+		List<AdtRevisions.Revision> revisions = c.revisions(versionsUri(ref, objectUri, Json.str(in, "include")),
+				cancel);
+		if (revisions.isEmpty()) {
+			return ToolResult.ok(ref.name() + " has no version history (objects without source, or only local).");
+		}
+		java.util.LinkedHashMap<String, List<AdtRevisions.Revision>> byTransport = new java.util.LinkedHashMap<>();
+		int withoutTransport = 0;
+		for (AdtRevisions.Revision r : revisions) {
+			if (r.transport().isEmpty()) {
+				withoutTransport++;
+			} else {
+				byTransport.computeIfAbsent(r.transport(), k -> new ArrayList<>()).add(r);
+			}
+		}
+		if (byTransport.isEmpty()) {
+			return ToolResult.ok(ref.name() + " has " + revisions.size() + " versions, none of them names a transport "
+					+ "request (local or never transported).");
+		}
+		StringBuilder sb = new StringBuilder("Transport requests of " + ref.name() + ", newest first:\n");
+		byTransport.forEach((tr, rs) -> {
+			// revisions are newest first
+			String last = rs.get(0).timestamp();
+			String first = rs.get(rs.size() - 1).timestamp();
+			sb.append(tr).append("  ").append(first.equals(last) ? last : first + " – " + last).append("  ")
+					.append(String.join(", ", rs.stream().map(AdtRevisions.Revision::author).distinct().toList()))
+					.append("  (").append(rs.size()).append(rs.size() == 1 ? " version)" : " versions)").append('\n');
+		});
+		if (withoutTransport > 0) {
+			sb.append(withoutTransport).append(withoutTransport == 1 ? " version" : " versions")
+					.append(" without a transport request (e.g. the active or a local one).\n");
+		}
+		if (ref.type().startsWith("CLAS")) {
+			sb.append("Only the ").append(Json.str(in, "include") == null ? "main" : Json.str(in, "include"))
+					.append(" include; other includes (testclasses, implementations) have their own history.\n");
+		}
+		return ToolResult.ok(sb.toString());
+	}
+
 	private ToolResult listTransports(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem s = system(in);
 		String user = Json.str(in, "user");
@@ -2015,9 +2059,15 @@ public final class AdtToolProvider implements ToolProvider {
 			inactive.remove(s.destinationId());
 		}
 		boolean oneMethod = method != null && !method.isBlank();
+		// CDS, access controls, metadata extensions, behavior and service definitions: Bella's style check
+		// understands only ABAP
+		String kind = ref.type().replaceFirst("/.*", "");
+		String checks = AdtDdic.ABAP_SOURCE.contains(kind) || kind.isEmpty()
+				? checksAfterWrite(c, uri, oneMethod ? Json.str(in, "source") : source, oneMethod, cancel)
+				: syntaxAfterWrite(c, uri, cancel);
 		return ToolResult.ok("Saved " + (oneMethod ? "method " + method.toUpperCase(Locale.ROOT) + " of " : "")
 				+ ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet."
-				+ checksAfterWrite(c, uri, oneMethod ? Json.str(in, "source") : source, oneMethod, cancel));
+				+ checks);
 	}
 
 	private ToolResult create(JsonObject in, CancelToken cancel) throws IOException {
@@ -2035,7 +2085,7 @@ public final class AdtToolProvider implements ToolProvider {
 				&& c.transport(transport, cancel).isEmpty()) {
 			// some releases drop the messages silently when given a task instead of a request
 			return ToolResult.error(transport.trim().toUpperCase(Locale.ROOT) + " is not a transport request. Message "
-					+ "classes need the request number, not the number of a task (adt_list_transports).");
+					+ "classes need the request number, not the number of a task (adt_transports).");
 		}
 		String processing = Json.str(in, "processing_type");
 		String updateKind = Json.str(in, "update_task_kind");

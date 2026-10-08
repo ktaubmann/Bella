@@ -12,7 +12,9 @@ import com.google.gson.JsonObject;
  * @param inputSchema JSON schema of the input object
  * @param capability  optional capability tag (see {@link Capability}) used to
  *                    de-duplicate tools that do the same thing
- * @param kind        read-only or mutating; drives the default policy
+ * @param kind        read-only or mutating; drives the default policy. It says whether the call changes
+ *                    the system, not which HTTP method it uses: a syntax check, a pretty print or a quick
+ *                    fix preview send POST requests and still change nothing, so they are {@code READ}
  * @param providerId  id of the {@link ToolProvider} that executes it
  * @param remoteName  the name the provider knows the tool by
  */

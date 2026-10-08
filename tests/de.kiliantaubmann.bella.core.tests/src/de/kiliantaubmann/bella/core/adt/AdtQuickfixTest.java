@@ -127,7 +127,7 @@ class AdtQuickfixTest {
 				p.call("adt_format", Json.parseObject("{\"source\":\"data x type i.\"}"), CancelToken.NONE).content());
 		assertEquals("Pretty printer: indentation on, keywords keywordLower.",
 				p.call("adt_format", Json.parseObject("{\"action\":\"get_settings\"}"), CancelToken.NONE).content());
-		assertTrue(p.call("adt_settings_write", Json.parseObject("{\"indentation\":true,\"style\":\"loud\"}"),
+		assertTrue(p.call("adt_format_settings", Json.parseObject("{\"indentation\":true,\"style\":\"loud\"}"),
 				CancelToken.NONE).isError());
 	}
 }

@@ -352,18 +352,18 @@ class AdtToolProviderTest {
 				})
 				.route("GET /sap/bc/adt/runtime/dump/abc%20d/formatted", r -> new AdtResponse(200, "text/plain", "Runtime error x"));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
-		String info = call(p, "adt_transport_info", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}").content();
+		String info = call(p, "adt_transports", "{\"action\":\"for_object\",\"name\":\"ZCL_A\",\"type\":\"CLAS\"}").content();
 		assertTrue(info.startsWith("ZCL_A in package ZSALES: changes are recorded in a transport request.\n"
 				+ "Already locked in request DEVK900099; use it.\nOpen requests that fit:\n- DEVK900101 First candidate (DEVELOPER)"), info);
-		assertTrue(call(p, "adt_transport_info", "{\"name\":\"ZNEW\",\"create\":true,\"package\":\"ZSALES\"}").isError(),
+		assertTrue(call(p, "adt_transports", "{\"action\":\"for_object\",\"name\":\"ZNEW\",\"create\":true,\"package\":\"ZSALES\"}").isError(),
 				"type is needed for a new object");
 
-		String list = call(p, "adt_short_dumps", "{}").content();
+		String list = call(p, "adt_diagnose", "{\"action\":\"short_dumps\"}").content();
 		assertTrue(list.startsWith("2026-03-28T20:19:14Z  STRING_OFFSET_TOO_LARGE in SAPLSUSR_CERTRULE (DEVELOPER)  id: "), list);
-		call(p, "adt_short_dumps", "{\"user\":\"*\",\"max_results\":99}");
+		call(p, "adt_diagnose", "{\"action\":\"short_dumps\",\"user\":\"*\",\"max_results\":99}");
 		assertEquals(List.of("/sap/bc/adt/runtime/dumps?$top=10&$query=and%28equals%28user%2CDEV%29%29",
 				"/sap/bc/adt/runtime/dumps?$top=50"), dumpQueries);
-		assertEquals("Runtime error x", call(p, "adt_short_dumps", "{\"id\":\"abc d\"}").content());
+		assertEquals("Runtime error x", call(p, "adt_diagnose", "{\"action\":\"short_dumps\",\"id\":\"abc d\"}").content());
 	}
 
 	@Test
