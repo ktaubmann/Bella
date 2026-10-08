@@ -196,7 +196,7 @@ public final class OpenEditorRouter implements WriteGuard {
 	}
 
 	/** An open editor showing the target object, searching all windows and pages. */
-	static IEditorPart findOpenEditor(ObjectTarget target) {
+	public static IEditorPart findOpenEditor(ObjectTarget target) {
 		for (IWorkbenchWindow window : PlatformUI.getWorkbench().getWorkbenchWindows()) {
 			for (IWorkbenchPage page : window.getPages()) {
 				for (IEditorReference ref : page.getEditorReferences()) {

@@ -35,6 +35,23 @@ class ToolPolicyTest {
 	}
 
 	@Test
+	void debuggerToolsAskFirst() {
+		ToolPolicy p = ToolPolicy.defaults();
+		ToolSpec context = ToolSpec.of("debug_context", "", new JsonObject(), Capability.DEBUG_STATE,
+				ToolSpec.Kind.READ);
+		ToolSpec step = tool("debug_step", ToolSpec.Kind.WRITE);
+		ToolSpec breakpoint = tool("debug_breakpoint", ToolSpec.Kind.WRITE);
+		// variable values go to the model provider
+		assertEquals(Decision.CONFIRM, p.decide(context, new JsonObject()));
+		assertEquals(Decision.AUTO, p.withMode(ChatMode.READ_DATA).decide(context, new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.decide(breakpoint, new JsonObject()));
+		// resuming may commit: asks also in Automode
+		assertEquals(Decision.CONFIRM, p.withMode(ChatMode.AUTO).decide(step, new JsonObject()));
+		assertEquals(Decision.DENY, p.withMode(ChatMode.PLAN).decide(breakpoint, new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.withMode(ChatMode.PLAN).decide(context, new JsonObject()));
+	}
+
+	@Test
 	void transportReleaseIsAlwaysDenied() {
 		ToolPolicy p = new ToolPolicy(List.of(new ToolPolicy.Rule("*", Decision.AUTO)));
 		ToolSpec t = tool("mcp_arc1_SAPTransport", ToolSpec.Kind.WRITE);

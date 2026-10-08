@@ -125,6 +125,7 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 		Group editor = Form.group(c, Messages.get("prefs.editor"));
 		form.check(editor, Messages.get("prefs.diffPreview"), Prefs.DIFF_PREVIEW);
 		form.check(editor, Messages.get("prefs.sapContext"), Prefs.EDITOR_SAP_CONTEXT);
+		form.check(editor, Messages.get("prefs.debugOffer"), Prefs.DEBUG_OFFER_ANALYSIS);
 		autoCompletion = form.check(editor, Messages.get("prefs.autoCompletion"), Prefs.AUTO_COMPLETION);
 		form.number(editor, Messages.get("prefs.autoCompletionDelay"), Prefs.AUTO_COMPLETION_DELAY, 200, 5000, 100);
 		editorHint = Form.hint(editor);

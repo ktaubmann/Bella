@@ -18,6 +18,12 @@ PLUGIN = {
  "prefs.log": "日志",
  "context.editor.name": "使用 Bella 编辑",
  "context.editor.description": "已接入 Bella 的文本编辑器（行内补全）",
+ "cmd.explainDebugState": "Bella：解释调试器状态",
+ "cmd.explainDebugState.desc": "在 Bella 聊天中解释已暂停的 ABAP 调试会话状态，并查找错误原因",
+ "cmd.analyzeDump": "分析最新的短转储",
+ "cmd.analyzeDump.desc": "让 Bella 找出最新短转储（ST22）的原因并提出修复建议",
+ "menu.explainDebugState": "Bella：解释调试器状态",
+ "menu.analyzeDump": "分析最新的短转储",
 }
 MESSAGES = {
  "app.name": "Bella",
@@ -185,4 +191,13 @@ MESSAGES = {
  "prefs.cp.token.tip": "可选：具有 Copilot Requests 权限的细粒度个人访问令牌，用于 Eclipse 看不到 copilot 登录的情况。不支持经典 ghp_ 令牌。",
  "prefs.cp.model.tip": "“检查”显示的模型 ID；留空 = Copilot 默认模型",
  "prefs.autoCompletion.cpTip": "GitHub Copilot 下不可用：每次建议都会启动 CLI 并消耗一次高级请求。",
+ "chat.display.debugState": "解释调试器状态：{0}",
+ "chat.display.analyzeDump": "分析我最新的短转储",
+ "chat.display.analyzeDumpFor": "分析我最新的短转储（{0}）",
+ "debug.reading": "正在读取调试会话…",
+ "debug.title": "Bella 调试",
+ "debug.noSession": "没有已暂停的 ABAP 调试会话。请先在断点处暂停程序。",
+ "debug.exception.text": "调试器在 {1} 中因异常 {0} 而暂停。",
+ "debug.exception.link": "让 Bella 分析原因",
+ "prefs.debugOffer": "调试器因异常暂停时提供分析",
 }

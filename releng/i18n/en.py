@@ -39,6 +39,12 @@ PLUGIN = {
  "prefs.log": "Log file",
  "context.editor.name": "Editing with Bella",
  "context.editor.description": "Text editors Bella is attached to (inline completion)",
+ "cmd.explainDebugState": "Bella: Explain debugger state",
+ "cmd.explainDebugState.desc": "Explain the state of the stopped ABAP debug session in the Bella chat and look for the cause of an error",
+ "cmd.analyzeDump": "Analyse newest short dump",
+ "cmd.analyzeDump.desc": "Let Bella find the cause of your newest short dump (ST22) and propose a fix",
+ "menu.explainDebugState": "Bella: Explain debugger state",
+ "menu.analyzeDump": "Analyse newest short dump",
 }
 MESSAGES = {
  "app.name": "Bella",
@@ -269,4 +275,13 @@ MESSAGES = {
  "prefs.cp.token.tip": "Optional: fine-grained personal access token with the Copilot Requests permission, if Eclipse does not see the copilot login. Classic ghp_ tokens are not supported.",
  "prefs.cp.model.tip": "Model ID as shown by Check; empty = Copilot default",
  "prefs.autoCompletion.cpTip": "Not available with GitHub Copilot: every suggestion starts the CLI and uses a premium request.",
+ "chat.display.debugState": "Explain debugger state: {0}",
+ "chat.display.analyzeDump": "Analyse my newest short dump",
+ "chat.display.analyzeDumpFor": "Analyse my newest short dump ({0})",
+ "debug.reading": "Reading the debug session…",
+ "debug.title": "Bella debugging",
+ "debug.noSession": "No ABAP debug session is stopped. Stop the program at a breakpoint first.",
+ "debug.exception.text": "The debugger stopped at exception {0} in {1}.",
+ "debug.exception.link": "Let Bella analyse the cause",
+ "prefs.debugOffer": "Offer an analysis when the debugger stops at an exception",
 }

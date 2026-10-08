@@ -75,6 +75,11 @@ public final class AbapPrompts {
 				  first hits say nothing. Before creating an object, check that its exact name is free.
 				- To review a transport request, start with adt_transport_review; never change or release anything.
 				- For a runtime error, read the short dump (adt_diagnose 'short_dumps').
+				- While the developer debugs in Eclipse, debug_context shows where the debugger stands, the call
+				  stack and the variables; expand one variable with 'variable' instead of guessing its value. When
+				  the cause lies before the current line or cannot be seen in the code, suggest breakpoints (object,
+				  line, what to look at there) and set them with debug_breakpoint once the developer agrees. Step or
+				  resume (debug_step) only when the developer asks.
 				- Work in one development package (adt_dev_package). If the chat has no object from the editor, ask
 				  the developer which package to develop in before using customer objects (Z*, Y*) or changing
 				  anything; with an editor object it is that object's package. Customer objects of other packages are
@@ -442,6 +447,51 @@ public final class AbapPrompts {
 				leave that place unchanged.
 				Reply with exactly one ```abap code block that contains the complete corrected source. No explanation.
 				""".formatted(ctx.describeObject(), list, ctx.source());
+		return new Prompt(chatSystem(), user);
+	}
+
+	/**
+	 * Explains the state of a stopped debug session and looks for the cause
+	 * of what went wrong; the snapshot comes from {@code DebugSnapshot#format}.
+	 *
+	 * @param question what the developer wants to know, may be blank
+	 */
+	public Prompt explainDebugState(String snapshot, String question) {
+		String ask = question == null || question.isBlank()
+				? "Explain what the program does at this point and whether something looks wrong (an exception, "
+						+ "initial or unexpected values, sy-subrc). If so, find the cause."
+				: question.strip();
+		String user = """
+				The ABAP debugger is stopped in Eclipse. %s
+
+				%s
+
+				Read the source around the current line (adt_read_source, 'grep' or 'method') and expand variables \
+				with debug_context 'variable' when their value matters. If the cause lies before this point, say \
+				where to stop next and suggest breakpoints (object, line, what to look at there); set them with \
+				debug_breakpoint only when the developer agrees. Do not step or resume on your own. If you see the \
+				fix, show it as code.
+				""".formatted(ask, snapshot.strip());
+		return new Prompt(chatSystem(), user);
+	}
+
+	/**
+	 * Finds the cause of the newest short dump and proposes a fix.
+	 *
+	 * @param object the object the developer has open, may be blank
+	 */
+	public Prompt analyzeDump(String object) {
+		String scope = object == null || object.isBlank() ? ""
+				: " Prefer a dump in or called from " + object.strip() + ".";
+		String user = """
+				Analyse my newest ABAP short dump (ST22).%s
+				1. List my recent dumps with adt_diagnose 'short_dumps' and read the matching one in full ('id').
+				2. Read the source at the termination point and the calls leading to it.
+				3. Explain in a few sentences what happened and why (the cause, not only the error text).
+				4. Propose a fix as code. Change nothing without my confirmation.
+				5. If the dump does not show the cause, suggest breakpoints (object, line, what to look at) to \
+				reproduce it in the debugger.
+				""".formatted(scope);
 		return new Prompt(chatSystem(), user);
 	}
 

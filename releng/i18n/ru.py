@@ -18,6 +18,12 @@ PLUGIN = {
  "prefs.log": "Журнал",
  "context.editor.name": "Редактирование с Bella",
  "context.editor.description": "Текстовые редакторы, к которым подключена Bella (встроенное дополнение)",
+ "cmd.explainDebugState": "Bella: объяснить состояние отладчика",
+ "cmd.explainDebugState.desc": "Объяснить в чате Bella состояние остановленного сеанса отладки ABAP и найти причину ошибки",
+ "cmd.analyzeDump": "Анализировать последний дамп",
+ "cmd.analyzeDump.desc": "Bella найдёт причину вашего последнего краткого дампа (ST22) и предложит исправление",
+ "menu.explainDebugState": "Bella: объяснить состояние отладчика",
+ "menu.analyzeDump": "Анализировать последний дамп",
 }
 MESSAGES = {
  "app.name": "Bella",
@@ -185,4 +191,13 @@ MESSAGES = {
  "prefs.cp.token.tip": "Необязательно: детализированный персональный токен доступа с разрешением Copilot Requests, если Eclipse не видит вход copilot. Классические токены ghp_ не поддерживаются.",
  "prefs.cp.model.tip": "ID модели, как показывает Проверить; пусто = модель Copilot по умолчанию",
  "prefs.autoCompletion.cpTip": "Недоступно с GitHub Copilot: каждое предложение запускает CLI и расходует премиум-запрос.",
+ "chat.display.debugState": "Объяснить состояние отладчика: {0}",
+ "chat.display.analyzeDump": "Анализировать мой последний дамп",
+ "chat.display.analyzeDumpFor": "Анализировать мой последний дамп ({0})",
+ "debug.reading": "Чтение сеанса отладки…",
+ "debug.title": "Отладка с Bella",
+ "debug.noSession": "Нет остановленного сеанса отладки ABAP. Сначала остановите программу в точке останова.",
+ "debug.exception.text": "Отладчик остановился на исключении {0} в {1}.",
+ "debug.exception.link": "Пусть Bella проанализирует причину",
+ "prefs.debugOffer": "Предлагать анализ, когда отладчик останавливается на исключении",
 }

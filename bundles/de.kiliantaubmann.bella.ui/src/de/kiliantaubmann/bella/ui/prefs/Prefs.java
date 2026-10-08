@@ -40,6 +40,8 @@ public final class Prefs {
 	public static final String EDITOR_SAP_CONTEXT = "editor.sapContext";
 	public static final String AUTO_COMPLETION = "completion.auto";
 	public static final String AUTO_COMPLETION_DELAY = "completion.delayMs";
+	/** Offers an analysis when the ABAP debugger stops at an exception. */
+	public static final String DEBUG_OFFER_ANALYSIS = "debug.offerAnalysis";
 
 	/** Writes {@code bella.log} for troubleshooting; off by default. */
 	public static final String LOG_ENABLED = "log.enabled";

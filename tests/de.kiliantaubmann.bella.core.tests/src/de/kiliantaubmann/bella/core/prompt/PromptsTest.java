@@ -125,6 +125,23 @@ class PromptsTest {
 	}
 
 	@Test
+	void debuggingPrompts() {
+		AbapPrompts p = new AbapPrompts(null, null);
+		assertTrue(p.chatSystem().contains("set them with debug_breakpoint once the developer agrees"), p.chatSystem());
+		Prompt state = p.explainDebugState("Debugger stopped in ZREP at line 3.\n", " ");
+		assertTrue(state.user().startsWith("The ABAP debugger is stopped in Eclipse. Explain what the program does"),
+				state.user());
+		assertTrue(state.user().contains("Debugger stopped in ZREP at line 3.\n\nRead the source"), state.user());
+		assertTrue(state.user().contains("Do not step or resume on your own."), state.user());
+		assertTrue(p.explainDebugState("x", "Why is LV_X initial?").user()
+				.startsWith("The ABAP debugger is stopped in Eclipse. Why is LV_X initial?"));
+		Prompt dump = p.analyzeDump("zrep");
+		assertTrue(dump.user().contains("Prefer a dump in or called from zrep."), dump.user());
+		assertTrue(dump.user().contains("adt_diagnose 'short_dumps'"), dump.user());
+		assertTrue(p.analyzeDump(null).user().startsWith("Analyse my newest ABAP short dump (ST22).\n"));
+	}
+
+	@Test
 	void qualityRulesKeepTextsInTheTextPoolAndRequireAtc() {
 		String system = new AbapPrompts(null, null).chatSystem();
 		assertTrue(system.contains("adt_write_text_elements"), system);

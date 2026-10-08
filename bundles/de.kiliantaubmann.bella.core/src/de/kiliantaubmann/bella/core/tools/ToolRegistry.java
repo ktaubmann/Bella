@@ -20,6 +20,8 @@ public final class ToolRegistry {
 	public static final String ADT_PROVIDER_ID = "adt";
 	/** Bella's style check; its tool keeps its own name like the ADT tools. */
 	public static final String LINT_PROVIDER_ID = "lint";
+	/** The ABAP debugger in Eclipse; its tools keep their names ({@code debug_…}). */
+	public static final String DEBUG_PROVIDER_ID = "debug";
 
 	private final List<ToolProvider> providers = new CopyOnWriteArrayList<>();
 	private volatile String preferredProviderId = ADT_PROVIDER_ID;
@@ -104,7 +106,8 @@ public final class ToolRegistry {
 	 */
 	static String exposedName(ToolProvider provider, String remoteName) {
 		String name;
-		if (provider.id().equals(ADT_PROVIDER_ID) || provider.id().equals(LINT_PROVIDER_ID)) {
+		if (provider.id().equals(ADT_PROVIDER_ID) || provider.id().equals(LINT_PROVIDER_ID)
+				|| provider.id().equals(DEBUG_PROVIDER_ID)) {
 			name = remoteName;
 		} else {
 			String server = provider.id().startsWith("mcp:") ? provider.id().substring(4) : provider.id();

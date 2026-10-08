@@ -18,6 +18,12 @@ PLUGIN = {
  "prefs.log": "Log",
  "context.editor.name": "Modifica con Bella",
  "context.editor.description": "Editor di testo a cui Bella è collegata (completamento in linea)",
+ "cmd.explainDebugState": "Bella: spiega lo stato del debugger",
+ "cmd.explainDebugState.desc": "Spiega nella chat di Bella lo stato della sessione di debug ABAP fermata e cerca la causa di un errore",
+ "cmd.analyzeDump": "Analizza l’ultimo dump",
+ "cmd.analyzeDump.desc": "Lascia che Bella trovi la causa del tuo ultimo short dump (ST22) e proponga una correzione",
+ "menu.explainDebugState": "Bella: spiega lo stato del debugger",
+ "menu.analyzeDump": "Analizza l’ultimo dump",
 }
 MESSAGES = {
  "app.name": "Bella",
@@ -185,4 +191,13 @@ MESSAGES = {
  "prefs.cp.token.tip": "Facoltativo: token di accesso personale granulare con l’autorizzazione Copilot Requests, se Eclipse non vede l’accesso di copilot. I token classici ghp_ non sono supportati.",
  "prefs.cp.model.tip": "ID del modello come mostrato da Verifica; vuoto = modello predefinito di Copilot",
  "prefs.autoCompletion.cpTip": "Non disponibile con GitHub Copilot: ogni suggerimento avvia la CLI e consuma una richiesta premium.",
+ "chat.display.debugState": "Spiega lo stato del debugger: {0}",
+ "chat.display.analyzeDump": "Analizza il mio ultimo short dump",
+ "chat.display.analyzeDumpFor": "Analizza il mio ultimo short dump ({0})",
+ "debug.reading": "Lettura della sessione di debug…",
+ "debug.title": "Debug con Bella",
+ "debug.noSession": "Nessuna sessione di debug ABAP è ferma. Ferma prima il programma a un breakpoint.",
+ "debug.exception.text": "Il debugger si è fermato sull’eccezione {0} in {1}.",
+ "debug.exception.link": "Lascia che Bella analizzi la causa",
+ "prefs.debugOffer": "Proponi un’analisi quando il debugger si ferma su un’eccezione",
 }

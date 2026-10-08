@@ -82,6 +82,8 @@ public final class ToolPolicy {
 			new Rule("adt_format_settings", Decision.ASK),
 			// the developer names package and transport request; the call shows what the model understood
 			new Rule("adt_dev_package:set", Decision.ASK),
+			// stepping on may run COMMIT WORK in the developer's session
+			new Rule("debug_step", Decision.ASK),
 			// the same actions through ARC-1
 			new Rule("mcp_*SAPWrite:delete*", Decision.ASK),
 			new Rule("mcp_*SAPTransport:create", Decision.ASK),
@@ -101,6 +103,9 @@ public final class ToolPolicy {
 			// table contents leave the system for the model provider: ask first
 			new Rule("adt_table_contents", Decision.CONFIRM),
 			new Rule("adt_diagnose:authorization_trace", Decision.CONFIRM),
+			// variable values leave the system for the model provider, as table contents do
+			new Rule("debug_context", Decision.CONFIRM),
+			new Rule("debug_breakpoint", Decision.CONFIRM),
 			new Rule("mcp_*SAPQuery", Decision.CONFIRM),
 			new Rule("adt_*", Decision.AUTO),
 			new Rule("mcp_*SAPRead", Decision.AUTO),
@@ -223,7 +228,8 @@ public final class ToolPolicy {
 		if (configured != Decision.CONFIRM) {
 			return configured;
 		}
-		boolean data = Capability.TABLE_CONTENTS.equals(tool.capability());
+		boolean data = Capability.TABLE_CONTENTS.equals(tool.capability())
+				|| Capability.DEBUG_STATE.equals(tool.capability());
 		boolean runs = switch (mode) {
 		case AUTO -> true;
 		case ACTIVATE -> tool.kind() == ToolSpec.Kind.WRITE && !data;

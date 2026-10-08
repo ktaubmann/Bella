@@ -18,6 +18,12 @@ PLUGIN = {
  "prefs.log": "Log",
  "context.editor.name": "Edição com a Bella",
  "context.editor.description": "Editores de texto aos quais a Bella está conectada (conclusão em linha)",
+ "cmd.explainDebugState": "Bella: explicar o estado do depurador",
+ "cmd.explainDebugState.desc": "Explicar no chat da Bella o estado da sessão de depuração ABAP parada e procurar a causa de um erro",
+ "cmd.analyzeDump": "Analisar o último dump",
+ "cmd.analyzeDump.desc": "Deixar a Bella encontrar a causa do seu último short dump (ST22) e propor uma correção",
+ "menu.explainDebugState": "Bella: explicar o estado do depurador",
+ "menu.analyzeDump": "Analisar o último dump",
 }
 MESSAGES = {
  "app.name": "Bella",
@@ -185,4 +191,13 @@ MESSAGES = {
  "prefs.cp.token.tip": "Opcional: token de acesso pessoal refinado com a permissão Copilot Requests, se o Eclipse não enxergar o login do copilot. Tokens clássicos ghp_ não são suportados.",
  "prefs.cp.model.tip": "ID do modelo como mostrado por Verificar; vazio = modelo padrão do Copilot",
  "prefs.autoCompletion.cpTip": "Indisponível com o GitHub Copilot: cada sugestão inicia a CLI e consome uma solicitação premium.",
+ "chat.display.debugState": "Explicar o estado do depurador: {0}",
+ "chat.display.analyzeDump": "Analisar meu último short dump",
+ "chat.display.analyzeDumpFor": "Analisar meu último short dump ({0})",
+ "debug.reading": "Lendo a sessão de depuração…",
+ "debug.title": "Depuração com a Bella",
+ "debug.noSession": "Nenhuma sessão de depuração ABAP está parada. Pare primeiro o programa em um breakpoint.",
+ "debug.exception.text": "O depurador parou na exceção {0} em {1}.",
+ "debug.exception.link": "Deixar a Bella analisar a causa",
+ "prefs.debugOffer": "Oferecer uma análise quando o depurador parar em uma exceção",
 }

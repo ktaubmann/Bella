@@ -45,6 +45,10 @@
             name="%cmd.atcFix" description="%cmd.atcFix.desc"/>
       <command id="de.kiliantaubmann.bella.ui.reviewTransport" categoryId="de.kiliantaubmann.bella.ui.commands"
             name="%cmd.reviewTransport" description="%cmd.reviewTransport.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.explainDebugState" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.explainDebugState" description="%cmd.explainDebugState.desc"/>
+      <command id="de.kiliantaubmann.bella.ui.analyzeDump" categoryId="de.kiliantaubmann.bella.ui.commands"
+            name="%cmd.analyzeDump" description="%cmd.analyzeDump.desc"/>
    </extension>
 
    <extension point="org.eclipse.ui.commandImages">
@@ -59,6 +63,8 @@
       <image commandId="de.kiliantaubmann.bella.ui.complete" icon="icons/insert.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.atcFix" icon="icons/atc.png"/>
       <image commandId="de.kiliantaubmann.bella.ui.reviewTransport" icon="icons/transport.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.explainDebugState" icon="icons/explain.png"/>
+      <image commandId="de.kiliantaubmann.bella.ui.analyzeDump" icon="icons/explain.png"/>
    </extension>
 
    <extension point="org.eclipse.ui.handlers">
@@ -88,6 +94,8 @@
          <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
       </handler>
       <handler commandId="de.kiliantaubmann.bella.ui.reviewTransport" class="de.kiliantaubmann.bella.ui.handlers.ReviewTransportHandler"/>
+      <handler commandId="de.kiliantaubmann.bella.ui.explainDebugState" class="de.kiliantaubmann.bella.ui.handlers.ExplainDebugStateHandler"/>
+      <handler commandId="de.kiliantaubmann.bella.ui.analyzeDump" class="de.kiliantaubmann.bella.ui.handlers.AnalyzeDumpHandler"/>
       <handler commandId="de.kiliantaubmann.bella.ui.atcFix" class="de.kiliantaubmann.bella.ui.handlers.AtcFixHandler">
          <activeWhen><reference definitionId="de.kiliantaubmann.bella.ui.inEditor"/></activeWhen>
       </handler>
@@ -111,6 +119,15 @@
             <!-- Built at runtime so the texts follow Bella's UI language. -->
             <dynamic id="de.kiliantaubmann.bella.ui.editorMenu.items" class="de.kiliantaubmann.bella.ui.internal.BellaMenuItems"/>
          </menu>
+      </menuContribution>
+      <!-- Debug and Variables view: explain the stopped session -->
+      <menuContribution locationURI="popup:org.eclipse.debug.ui.DebugView?after=additions">
+         <command commandId="de.kiliantaubmann.bella.ui.explainDebugState" label="%menu.explainDebugState"
+               icon="icons/bella.png" style="push"/>
+      </menuContribution>
+      <menuContribution locationURI="popup:org.eclipse.debug.ui.VariableView?after=additions">
+         <command commandId="de.kiliantaubmann.bella.ui.explainDebugState" label="%menu.explainDebugState"
+               icon="icons/bella.png" style="push"/>
       </menuContribution>
       <!-- Main menu "Bella" -->
       <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">

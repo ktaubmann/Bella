@@ -18,6 +18,12 @@ PLUGIN = {
  "prefs.log": "Protokol",
  "context.editor.name": "Úpravy s Bellou",
  "context.editor.description": "Textové editory, ke kterým je Bella připojena (doplňování v řádku)",
+ "cmd.explainDebugState": "Bella: vysvětlit stav debuggeru",
+ "cmd.explainDebugState.desc": "Vysvětlit v chatu Bella stav zastavené ladicí relace ABAP a hledat příčinu chyby",
+ "cmd.analyzeDump": "Analyzovat nejnovější dump",
+ "cmd.analyzeDump.desc": "Nechat Bellu najít příčinu vašeho nejnovějšího short dumpu (ST22) a navrhnout opravu",
+ "menu.explainDebugState": "Bella: vysvětlit stav debuggeru",
+ "menu.analyzeDump": "Analyzovat nejnovější dump",
 }
 MESSAGES = {
  "app.name": "Bella",
@@ -185,4 +191,13 @@ MESSAGES = {
  "prefs.cp.token.tip": "Volitelné: jemně odstupňovaný osobní přístupový token s oprávněním Copilot Requests, pokud Eclipse nevidí přihlášení copilot. Klasické tokeny ghp_ nejsou podporovány.",
  "prefs.cp.model.tip": "ID modelu podle Zkontrolovat; prázdné = výchozí model Copilot",
  "prefs.autoCompletion.cpTip": "S GitHub Copilot není k dispozici: každý návrh spouští CLI a spotřebuje prémiový požadavek.",
+ "chat.display.debugState": "Vysvětlit stav debuggeru: {0}",
+ "chat.display.analyzeDump": "Analyzovat můj nejnovější short dump",
+ "chat.display.analyzeDumpFor": "Analyzovat můj nejnovější short dump ({0})",
+ "debug.reading": "Čtení ladicí relace…",
+ "debug.title": "Ladění s Bellou",
+ "debug.noSession": "Žádná ladicí relace ABAP není zastavena. Nejprve zastavte program na breakpointu.",
+ "debug.exception.text": "Debugger se zastavil na výjimce {0} v {1}.",
+ "debug.exception.link": "Nechat Bellu analyzovat příčinu",
+ "prefs.debugOffer": "Nabídnout analýzu, když se debugger zastaví na výjimce",
 }

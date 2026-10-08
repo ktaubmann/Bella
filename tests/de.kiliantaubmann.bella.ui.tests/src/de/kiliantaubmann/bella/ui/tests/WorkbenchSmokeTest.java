@@ -124,12 +124,41 @@ class WorkbenchSmokeTest {
 		assertNotNull(BellaPlugin.getDefault());
 		ICommandService commands = PlatformUI.getWorkbench().getService(ICommandService.class);
 		for (String id : List.of("openChat", "explain", "refactor", "unitTest", "generate", "rewrite",
-				"implementMethod", "complete", "atcFix", "reviewTransport", "reviewCode")) {
+				"implementMethod", "complete", "atcFix", "reviewTransport", "reviewCode", "explainDebugState",
+				"analyzeDump")) {
 			Command c = commands.getCommand("de.kiliantaubmann.bella.ui." + id);
 			assertTrue(c.isDefined(), id);
 		}
 		assertNotNull(BellaPlugin.image(BellaPlugin.IMG_BELLA));
 		assertFalse(Messages.get("chat.send").startsWith("!"));
+	}
+
+	@Test
+	void debuggerToolsWorkWithoutASession() throws Exception {
+		var registry = BellaPlugin.getDefault().tools();
+		registry.refresh(e -> {
+		});
+		assertTrue(registry.find("debug_context").isPresent());
+		assertTrue(registry.find("debug_step").isPresent());
+		var provider = registry.providerOf("debug_context").orElseThrow();
+		// called off the UI thread as the chat does; the backend reads the Debug view on the UI thread
+		java.util.concurrent.atomic.AtomicReference<de.kiliantaubmann.bella.core.tools.ToolResult> result =
+				new java.util.concurrent.atomic.AtomicReference<>();
+		Thread t = new Thread(() -> {
+			try {
+				result.set(provider.call("debug_context", new com.google.gson.JsonObject(),
+						de.kiliantaubmann.bella.core.util.CancelToken.NONE));
+			} catch (Exception e) {
+				result.set(de.kiliantaubmann.bella.core.tools.ToolResult.error(e.toString()));
+			}
+		});
+		t.start();
+		while (t.isAlive()) {
+			pump();
+			t.join(5);
+		}
+		assertFalse(result.get().isError(), result.get().content());
+		assertTrue(result.get().content().startsWith("No ABAP debug session is stopped"), result.get().content());
 	}
 
 	@Test
@@ -526,9 +555,9 @@ class WorkbenchSmokeTest {
 		try {
 			for (String[] lang : new String[][] {
 					{ "en", "What happens here?", "Bella Chat", "Check with ATC and fix…", "Review transport request…",
-							"Review code (chat)" },
+							"Review code (chat)", "Analyse newest short dump" },
 					{ "de", "Was passiert hier?", "Bella-Chat", "Mit ATC prüfen und beheben…", "Transportauftrag reviewen…",
-							"Code prüfen (Chat)" } }) {
+							"Code prüfen (Chat)", "Neuesten Kurzdump analysieren" } }) {
 				prefs.setValue(Prefs.UI_LANGUAGE, lang[0]);
 				Menu menu = new Menu(shell, SWT.POP_UP);
 				BellaMenuItems items = new BellaMenuItems(BellaMenuItems.POPUP_ID);
@@ -537,7 +566,8 @@ class WorkbenchSmokeTest {
 				List<String> labels = java.util.Arrays.stream(menu.getItems()).map(MenuItem::getText)
 						.filter(t -> !t.isEmpty()).toList();
 				assertTrue(labels.get(0).startsWith(lang[1]), labels.toString());
-				assertEquals(11, labels.size(), labels.toString());
+				assertEquals(12, labels.size(), labels.toString());
+				assertTrue(labels.contains(lang[6]), labels.toString());
 				assertTrue(labels.contains(lang[3]), labels.toString());
 				assertTrue(labels.contains(lang[5]), labels.toString());
 				assertTrue(labels.contains(lang[4]), labels.toString());

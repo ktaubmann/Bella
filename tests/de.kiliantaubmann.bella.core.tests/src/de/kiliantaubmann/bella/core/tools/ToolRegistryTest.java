@@ -96,5 +96,7 @@ class ToolRegistryTest {
 	void namesAreSanitizedAndCut() {
 		String n = ToolRegistry.exposedName(new Fake("mcp:my server", List.of()), "a.b".repeat(30));
 		assertTrue(n.matches("[a-zA-Z0-9_-]{1,64}"), n);
+		assertEquals("debug_step", ToolRegistry.exposedName(new Fake(ToolRegistry.DEBUG_PROVIDER_ID, List.of()),
+				"debug_step"));
 	}
 }

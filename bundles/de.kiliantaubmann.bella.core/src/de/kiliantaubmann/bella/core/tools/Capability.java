@@ -17,6 +17,8 @@ public final class Capability {
 	public static final String CREATE_OBJECT = "create_object";
 	public static final String ACTIVATE = "activate";
 	public static final String TABLE_CONTENTS = "table_contents";
+	/** Variable values of a debug session; like table contents they are data of the system. */
+	public static final String DEBUG_STATE = "debug_state";
 
 	private Capability() {
 	}

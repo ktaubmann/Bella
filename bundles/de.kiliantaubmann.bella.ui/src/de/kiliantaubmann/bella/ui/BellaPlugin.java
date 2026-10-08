@@ -22,6 +22,7 @@ import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtSystem;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
 import de.kiliantaubmann.bella.core.adt.DevScope;
+import de.kiliantaubmann.bella.core.debug.DebugToolProvider;
 import de.kiliantaubmann.bella.core.lint.LintToolProvider;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
@@ -52,6 +53,7 @@ import de.kiliantaubmann.bella.core.tools.WriteGuard;
 import de.kiliantaubmann.bella.core.util.HttpTransport;
 import de.kiliantaubmann.bella.core.util.Log;
 import de.kiliantaubmann.bella.ui.internal.LogFile;
+import de.kiliantaubmann.bella.ui.debug.EclipseDebugBackend;
 import de.kiliantaubmann.bella.ui.prefs.McpServerConfig;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
 import de.kiliantaubmann.bella.ui.prefs.SecureStore;
@@ -103,6 +105,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 		};
 		adtTracker.open();
 		tools.addProvider(new LintToolProvider(() -> conventions(activeDestination).naming()));
+		tools.addProvider(new DebugToolProvider(new EclipseDebugBackend()));
 		Log.mask(masker::mask);
 		configureLog();
 		getPreferenceStore().addPropertyChangeListener(e -> {
