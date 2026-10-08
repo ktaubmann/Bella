@@ -23,12 +23,15 @@ final class AdtTextPool {
 	}
 
 	/**
-	 * The texts in the form SAP accepts: each text symbol gets a
-	 * {@code @MaxLength} line (SAP rejects a pool without one with HTTP 406
-	 * "Text elements contain errors"), one shorter than the text is raised.
+	 * The texts in the form SAP accepts, as ADT and ARC-1 send them: each text
+	 * symbol gets a {@code @MaxLength} line (SAP rejects a pool without one
+	 * with HTTP 406 "Text elements contain errors"), one shorter than the text
+	 * is raised, and the symbols are separated by blank lines; selection names
+	 * are sent upper case and unpadded, the list heading is followed by a blank
+	 * line. Every line ends with a line break.
 	 */
 	static String normalize(String part, String texts) {
-		List<String> out = new ArrayList<>();
+		StringBuilder out = new StringBuilder();
 		Integer pending = null;
 		for (String raw : texts.replace("\r\n", "\n").split("\n")) {
 			String line = raw.strip();
@@ -42,22 +45,32 @@ final class AdtTextPool {
 			}
 			Matcher e = ENTRY.matcher(line);
 			if (!e.matches()) {
-				out.add(line);
+				out.append(line).append('\n');
 				continue;
 			}
 			String key = e.group(1).strip();
 			String text = e.group(2);
-			if (part.equals("symbols")) {
+			switch (part) {
+			case "symbols" -> {
+				if (!out.isEmpty()) {
+					out.append('\n');
+				}
 				int length = text.length();
 				int limit = pending == null ? defaultMaxLength(length) : Math.max(pending, length);
-				out.add("@MaxLength:" + limit);
-				out.add(key + "=" + text);
-			} else {
-				out.add(key + "=" + text);
+				out.append("@MaxLength:").append(limit).append('\n').append(key).append('=').append(text)
+						.append('\n');
+			}
+			case "selections" -> out.append(key.toUpperCase(Locale.ROOT)).append('=').append(text).append('\n');
+			default -> {
+				out.append(key).append('=').append(text).append('\n');
+				if (key.equalsIgnoreCase("listHeader")) {
+					out.append('\n');
+				}
+			}
 			}
 			pending = null;
 		}
-		return String.join("\n", out);
+		return out.toString();
 	}
 
 	/**

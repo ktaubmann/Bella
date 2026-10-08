@@ -576,17 +576,46 @@ class AdtToolProviderTest {
 	}
 
 	@Test
-	void selectionTextsAreLeftToTheDeveloper() {
-		FakeAdt adt = twoSystems();
+	void writesSelectionTexts() {
+		List<AdtRequest> puts = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/selections", r -> {
+					puts.add(r);
+					return FakeAdt.ok("");
+				})
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""))
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/selections",
+						r -> new AdtResponse(200, "text/plain", "P_TEST  =Test run (no deletion)\r\nS_VBELN =Delivery"))
+				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(""));
 		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_write_text_elements",
 				"{\"name\":\"zrep\",\"type\":\"PROG\",\"part\":\"selections\","
 						+ "\"texts\":\"S_VBELN=Delivery\\nP_TEST  =Test run (no deletion)\"}");
+		assertFalse(r.isError(), r.content());
+		assertEquals(1, puts.size());
+		assertEquals("S_VBELN=Delivery\nP_TEST=Test run (no deletion)\n", puts.get(0).body());
+		assertEquals("application/vnd.sap.adt.textelements.selections.v1", puts.get(0).headers().get("Accept"));
+	}
+
+	@Test
+	void selectionTextsSapDoesNotKeepAreLeftToTheDeveloper() {
+		FakeAdt adt = twoSystems()
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/selections", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""))
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/selections",
+						r -> new AdtResponse(200, "text/plain", "S_VBELN =?..."));
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_write_text_elements",
+				"{\"name\":\"zrep\",\"type\":\"PROG\",\"part\":\"selections\","
+						+ "\"texts\":\"S_VBELN=Delivery\"}");
 		assertTrue(r.isError(), r.content());
-		assertTrue(r.content().startsWith("Selection texts cannot be written through ADT"), r.content());
+		assertTrue(r.content().contains("S_VBELN: wrote 'Delivery', reads '?...'"), r.content());
+		assertTrue(r.content().contains("activate the program first"), r.content());
 		assertTrue(r.content().contains("SE38 for ZREP"), r.content());
-		assertTrue(r.content().endsWith("\n- S_VBELN: Delivery\n- P_TEST: Test run (no deletion)"), r.content());
-		assertTrue(adt.log.stream().noneMatch(l -> l.contains("textelements") || l.contains("quickSearch")),
-				adt.log.toString());
+		assertTrue(r.content().endsWith("\n- S_VBELN: Delivery"), r.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("/activation")), adt.log.toString());
 	}
 
 	@Test
@@ -663,7 +692,7 @@ class AdtToolProviderTest {
 				put.path());
 		assertEquals("application/vnd.sap.adt.textelements.symbols.v1", put.contentType());
 		assertEquals("application/vnd.sap.adt.textelements.symbols.v1", put.headers().get("Accept"));
-		assertEquals("@MaxLength:40\n001=No outbound deliveries found", put.body());
+		assertEquals("@MaxLength:40\n001=No outbound deliveries found\n", put.body());
 		assertEquals(0, adt.openSessions);
 		assertTrue(adt.log.contains("S POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK&lockHandle=H"),
 				adt.log.toString());

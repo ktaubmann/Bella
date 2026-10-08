@@ -558,16 +558,17 @@ public final class AdtToolProvider implements ToolProvider {
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_write_text_elements",
 				"Replace one part of the text pool of a program (PROG), class (CLAS, symbols only) or function group "
-						+ "(FUGR). Use it for the text symbols behind TEXT-nnn, instead of literals in code. Selection "
-						+ "texts of PARAMETERS and SELECT-OPTIONS cannot be written through ADT: list them for the "
-						+ "developer to maintain in SE38. Read the part first with adt_text_elements and keep the other "
-						+ "entries. Saved directly in the SAP system (also when the object is open in the editor) and "
-						+ "activated right away. Symbols without a @MaxLength line get one with room for translations.",
-				schema(new String[] { "name", "type", "part", "texts" }, objectProps("part", "string",
-						"symbols (text symbols TEXT-nnn) or headings (list and column headings).",
+						+ "(FUGR). Use it for the text symbols behind TEXT-nnn and for the selection texts of PARAMETERS "
+						+ "and SELECT-OPTIONS, instead of literals or %_..._%_APP_% in code. Selection texts stick only "
+						+ "for fields of the active program, so activate the program first. Read the part first with "
+						+ "adt_text_elements and keep the other entries. Saved directly in the SAP system (also when "
+						+ "the object is open in the editor) and activated right away. Symbols without a @MaxLength "
+						+ "line get one with room for translations.",
+				schema(new String[] { "name", "type", "part", "texts" }, objectProps("part", "string", TEXT_PART_DESC,
 						"texts", "string", "The complete new part, one entry per line. symbols: 001=Text, optionally "
-								+ "preceded by a line @MaxLength:40 (else Bella adds one). headings: listHeader=Title, "
-								+ "columnHeader_1=Column titles.",
+								+ "preceded by a line @MaxLength:40 (else Bella adds one). selections: P_NAME=Text (name "
+								+ "of the parameter or select-option, text up to 30 characters). headings: "
+								+ "listHeader=Title, columnHeader_1=Column titles.",
 						"transport", "string", "Transport request, required for non-local objects unless already assigned.")),
 				null, ToolSpec.Kind.WRITE));
 		JsonObject activateSchema = schema(new String[] { "objects" }, "system", "string", SYSTEM_DESC,
@@ -2296,9 +2297,6 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult writeTextElements(JsonObject in, CancelToken cancel) throws IOException {
 		String part = textPart(in);
 		String texts = Json.str(in, "texts");
-		if (part.equals("selections")) {
-			return selectionTextsByHand(Json.str(in, "name"), texts);
-		}
 		AdtSystem s = system(in);
 		AdtClient c = client(s);
 		AdtObjectRef ref = resolve(c, in, cancel);
@@ -2315,6 +2313,9 @@ public final class AdtToolProvider implements ToolProvider {
 				+ (tr.isEmpty() ? "" : " (transport " + tr + ")");
 		// SAP answers 200 also when it stored the texts differently, so compare what it reads back
 		List<String> lost = AdtTextPool.differences(texts, c.textElements(ref.type(), ref.name(), part, cancel));
+		if (!lost.isEmpty() && part.equals("selections")) {
+			return selectionTextsByHand(ref.name(), texts, saved, lost);
+		}
 		if (!lost.isEmpty()) {
 			return ToolResult.error(saved + ", but SAP did not keep the texts as written:\n- "
 					+ String.join("\n- ", lost) + "\nRead the part with adt_text_elements and write it again in the "
@@ -2339,23 +2340,18 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	/**
-	 * SAP's textelements service answers 200 to selection texts but does not
-	 * store them, so they are left to the developer: the answer lists them for
-	 * SE38 without contacting SAP.
+	 * SAP keeps a selection text only for a PARAMETERS or SELECT-OPTIONS of the
+	 * active program; for the others it answers 200 and reads back "?...".
+	 * Those are left to the developer: the answer lists them for SE38.
 	 */
-	static ToolResult selectionTextsByHand(String program, String texts) {
-		StringBuilder sb = new StringBuilder("Selection texts cannot be written through ADT; SAP does not store them. "
-				+ "Nothing was saved, do not try again. Ask the developer to maintain them in SE38");
-		if (program != null && !program.isBlank()) {
-			sb.append(" for ").append(program.trim().toUpperCase(Locale.ROOT));
-		}
-		sb.append(" (Goto > Text Elements > Selection Texts)");
-		Map<String, String> entries = AdtTextPool.entries(texts);
-		if (entries.isEmpty()) {
-			return ToolResult.error(sb.append('.').toString());
-		}
-		sb.append(':');
-		entries.forEach((key, text) -> sb.append("\n- ").append(key).append(": ").append(text));
+	static ToolResult selectionTextsByHand(String program, String texts, String saved, List<String> lost) {
+		StringBuilder sb = new StringBuilder(saved).append(", but SAP did not keep these selection texts:\n- ")
+				.append(String.join("\n- ", lost))
+				.append("\nSAP keeps selection texts only for PARAMETERS and SELECT-OPTIONS of the active program: "
+						+ "activate the program first, then write them again. If they still do not stick, ask the "
+						+ "developer to maintain them in SE38 for ").append(program.trim().toUpperCase(Locale.ROOT))
+				.append(" (Goto > Text Elements > Selection Texts):");
+		AdtTextPool.entries(texts).forEach((key, text) -> sb.append("\n- ").append(key).append(": ").append(text));
 		return ToolResult.error(sb.toString());
 	}
 

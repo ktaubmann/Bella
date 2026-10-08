@@ -66,7 +66,7 @@ public enum ChatMode {
 		case NORMAL, READ_DATA -> "";
 		case ACTIVATE -> """
 				<chat_mode>The developer allowed writing, creating and activating without confirmation. Change the \
-				objects (adt_create_object, adt_write_source, adt_write_text_elements for text symbols) and fix \
+				objects (adt_create_object, adt_write_source, adt_write_text_elements for text symbols and selection texts) and fix \
 				the style and syntax findings their results report. Activate (adt_activate) and fix errors \
 				until activation passes. Once it passes, check the result with ATC once (the last \
 				adt_activate with run_atc, or adt_atc_check); fix ATC priority 1 and 2 findings and activate \
@@ -76,7 +76,7 @@ public enum ChatMode {
 		case AUTO -> """
 				<chat_mode>Automode. The developer allowed everything without confirmation. Carry the task out \
 				completely instead of only proposing code: read what you need, create or change the objects \
-				(adt_create_object, adt_write_source, adt_write_text_elements for text symbols) and fix the style \
+				(adt_create_object, adt_write_source, adt_write_text_elements for text symbols and selection texts) and fix the style \
 				and syntax findings their results report. Activate (adt_activate; it runs the ABAP Unit tests \
 				for you, otherwise adt_run_unit_tests) and fix errors and failing tests. Once \
 				activation and tests pass, check the result with ATC once (adt_activate with run_atc, or \

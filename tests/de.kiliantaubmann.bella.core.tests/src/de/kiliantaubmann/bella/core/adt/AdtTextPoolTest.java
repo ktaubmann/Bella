@@ -13,8 +13,8 @@ class AdtTextPoolTest {
 	@Test
 	void symbolsGetAMaxLength() {
 		// without @MaxLength SAP answers 406 "Text elements contain errors"
-		assertEquals("@MaxLength:19\n001=Deletable\n@MaxLength:50\n002=Enter at least one selection crit\n"
-				+ "@MaxLength:17\n003=Longer than given",
+		assertEquals("@MaxLength:19\n001=Deletable\n\n@MaxLength:50\n002=Enter at least one selection crit\n\n"
+				+ "@MaxLength:17\n003=Longer than given\n",
 				AdtTextPool.normalize("symbols", "001=Deletable\r\n\r\n@MaxLength:50\n002=Enter at least one selection crit\n"
 						+ "@MaxLength:5\n003=Longer than given"));
 		assertEquals(10, AdtTextPool.defaultMaxLength(0));
@@ -25,8 +25,12 @@ class AdtTextPoolTest {
 	}
 
 	@Test
-	void headingsStayAsWritten() {
-		assertEquals("listHeader=Title", AdtTextPool.normalize("headings", "listHeader=Title\n"));
+	void headingsAndSelectionsAsAdtSendsThem() {
+		assertEquals("listHeader=Title\n\ncolumnHeader_1=Column\n",
+				AdtTextPool.normalize("headings", "listHeader=Title\ncolumnHeader_1=Column"));
+		// as ARC-1 writes them: names unpadded, one per line, each line ended
+		assertEquals("P_TEST=Test run\nS_VBELN=Delivery\n",
+				AdtTextPool.normalize("selections", "p_test  =Test run\r\n\r\nS_VBELN=Delivery"));
 	}
 
 	@Test

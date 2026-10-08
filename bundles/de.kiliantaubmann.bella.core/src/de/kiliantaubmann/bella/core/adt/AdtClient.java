@@ -923,9 +923,6 @@ public final class AdtClient {
 	public static String writeTextElements(AdtTransport.Session session, String type, String name, String part,
 			String texts, String transport, CancelToken cancel) throws IOException {
 		String mediaType = textMediaType(part);
-		if (part.equals("selections")) {
-			throw new AdtException(400, "Selection texts cannot be written through ADT; SAP does not store them.");
-		}
 		if (type.toUpperCase(Locale.ROOT).startsWith("CLAS") && !part.equals("symbols")) {
 			throw new AdtException(400, "Classes only have text symbols; selection texts and headings belong to programs.");
 		}
