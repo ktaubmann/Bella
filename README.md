@@ -133,8 +133,8 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 The chat mode can tighten or loosen this (see *Chat modes*); refusals stay refusals in every mode.
 
 - Add your own rules under *Preferences → Bella → SAP-Tools & ARC-1*, one per line as `pattern=AUTO|CONFIRM|ASK|DENY`; `ASK` asks even in Automode, and `tool:action=…` matches only one action of a multi-purpose tool (e.g. `mcp_arc1_SAPTransport:create=ASK`). Rules that still name tools Bella has merged, also through a wildcard such as `adt_short_dump*`, keep their effect on exactly the calls they covered: `adt_short_dumps` applies to `adt_diagnose 'short_dumps'`, `adt_where_used` to `adt_navigate 'references'`, `adt_transport_info` to `adt_transports 'for_object'`, `adt_list_transports` to `adt_transports` 'list', 'layers' and 'targets', `adt_settings_write` to `adt_format_settings`.
-- **Development package**: a chat works in one package. With an object from the editor in the chat it is that object's package; otherwise Bella asks you which package to develop in and records your answer with `adt_dev_package` (you confirm it, also in Automode). Customer objects (Z*, Y*) of other packages are ignored: the search lists their names only as taken, `adt_context` leaves them out, and reading or changing them is refused, as is any write before the package is known. The editor actions leave such objects out of the definitions they load, too.
-- **Transport request**: before the first change in a non-local package Bella asks you which request to use; only your own open requests are accepted, every write uses that request (Bella fills it in), and a different one is refused. A new chat starts without package and request.
+- **Development package**: a chat works in one package. With an object from the editor in the chat it is the package of the first such object; switching to another include or class later keeps package and request, and changes to objects of other packages are refused. Without an editor object Bella asks you which package to develop in and records your answer with `adt_dev_package` (you confirm it, also in Automode). Customer objects (Z*, Y*) of other packages are ignored: the search lists their names only as taken, `adt_context` and the class hierarchy and where-used list of `adt_navigate` leave them out, and reading them (also as a table in a `SELECT` of `adt_table_contents`) or changing them is refused, as is any write before the package is known. The editor actions leave such objects out of the definitions they load, too; if the package of the edited object cannot be read, they load the definitions without this filter.
+- **Transport request**: before the first change in a non-local package Bella asks you which request to use; only your own open requests are accepted, every write uses that request (Bella fills it in), and a different one is refused. A new package can be created before a development package is set, with one of your own open requests; it then becomes the chat's development package with that request. A new chat starts without package and request.
 - **Allowed packages** (same page, default `$TMP, Z*, Y*`): Bella's tools write, create and activate only there; other writes are refused before you are asked. Empty allows all packages. Writing into an open editor is not affected.
 - With ARC-1, its server-side safety flags apply in addition.
 
@@ -277,11 +277,11 @@ When something does not work, switch on the log under *Preferences → Bella →
   - Claude Code and Copilot CLI processes with command line, exit code and stderr,
   - MCP connections.
 - **Details** (a second checkbox) adds the content: prompts, answers, tool input and output, source code and every protocol line of the CLIs. Only switch it on while you reproduce a problem.
-- API keys, tokens, bearer headers and passwords are removed from every entry. Environment variables are logged by name only.
+- API keys, tokens, passwords and authorization headers (also `x-csrf-token`, `Proxy-Authorization`, and every scheme such as Basic, Bearer, Negotiate or NTLM) are removed from every entry. Environment variables are logged by name only.
 - **Masking** (same page, on by default): confidential data in the log is replaced with placeholders, so you can attach the file to a bug report. The model still gets the real data.
   - Customer objects (Z*, Y*): `ZCL_ACME_ORDER` → `ZCL_MASK1`, `zcl_acme_order` → `zcl_mask1`.
   - System data: SID, ABAP project and logon user → `MASKSYS2`, `MASKUSER3`.
-  - E-mail addresses and IBANs → `maskmail4@example.invalid`, `MASKIBAN5`.
+  - E-mail addresses and IBANs → `maskmail4@example.invalid`, `MASKIBAN5`; with this option also user names SAP gives in its messages ("locked by user MUELLER"), but not ABAP code such as `DATA user TYPE syuname`.
   - Own terms (company, customer, project, namespace such as `/ACME/`), one per line → `MASKTERM6`, `/MASK7/`.
   - A value keeps its placeholder for the Eclipse session, so you can follow an object through the log. Names of people in free text, comments or string literals are only masked if you add them as terms.
 - The file is `bella.log` in `<workspace>/.metadata/.plugins/de.kiliantaubmann.bella.ui/`. The preference page opens it, opens its folder or clears it; the chat view menu (▾) has *Open log*. At 5 MB it moves to `bella.log.1`.
@@ -306,11 +306,11 @@ xvfb-run -a ./mvnw verify     # plus the workbench smoke test on Linux
 python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 ```
 
-`mvnw` (`mvnw.cmd` on Windows) uses Maven 3.9.16; Tycho 4.0.13 does not start with Maven 3.10.
+`mvnw` (`mvnw.cmd` on Windows) uses Maven 3.9.16, the version the build and the release workflow use; Maven 3.10 on the GitHub runners did not start the earlier Tycho 4 build.
 
 `-Padt` downloads ADT from SAP's update site; SAP's license terms for these downloads (SAP Developer License Agreement) apply to whoever runs the build. The ADT bundles are only used to compile against and are not part of Bella's update site.
 
-**Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files (e.g. with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release. When the repository variable `PAGES_ENABLED` is `true`, it then publishes the same update site on GitHub Pages (`pages.yml`, address from the variable `UPDATE_SITE_URL`); *Actions → Update site → Run workflow* publishes an existing release again.
+**Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files and in `BellaPlugin.VERSION` (e.g. with `./mvnw org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release. When the repository variable `PAGES_ENABLED` is `true`, it then publishes the same update site on GitHub Pages (`pages.yml`, address from the variable `UPDATE_SITE_URL`); *Actions → Update site → Run workflow* publishes an existing release again.
 
 | Module | Contents |
 |---|---|
