@@ -199,7 +199,7 @@ public final class AbapLint {
 			if (INTERNAL_SCREEN_TEXT.matcher(raw).find()) {
 				out.add(new Finding(line, "internal_screen_text", Severity.ERROR,
 						"Selection texts are set through SAP's internal screen fields %_…_%_APP_%; maintain them as "
-								+ "selection texts in the text pool instead (adt_write_text_elements, part selections)."));
+								+ "selection texts in the text pool instead (SE38: Goto > Text Elements > Selection Texts)."));
 			}
 			if (TEXT_OUTPUT.matcher(code).find() && hasTextLiteral(st.text())) {
 				out.add(new Finding(line, "text_literal", Severity.WARNING,

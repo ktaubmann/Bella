@@ -499,17 +499,31 @@ class AdtToolProviderTest {
 	@Test
 	void textsSapDoesNotKeepAreReported() {
 		FakeAdt adt = twoSystems()
-				.route("GET /sap/bc/adt/textelements/programs/zrep/source/selections",
-						r -> new AdtResponse(200, "text/plain", "P_TEST  =?...\r\n\r\nS_VBELN =?..."))
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/symbols",
+						r -> new AdtResponse(200, "text/plain", "@MaxLength:18\r\n001=Deliv"))
 				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
 						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
-				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/selections", r -> FakeAdt.ok(""))
+				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/symbols", r -> FakeAdt.ok(""))
 				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""));
 		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_write_text_elements",
-				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"selections\",\"texts\":\"S_VBELN=Delivery\\nP_TEST=Test\"}");
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"symbols\",\"texts\":\"001=Delivery\"}");
 		assertTrue(r.isError(), r.content());
-		assertTrue(r.content().contains("S_VBELN: wrote 'Delivery', reads '?...'"), r.content());
+		assertTrue(r.content().contains("001: wrote 'Delivery', reads 'Deliv'"), r.content());
 		assertTrue(adt.log.stream().noneMatch(l -> l.contains("/activation")), adt.log.toString());
+	}
+
+	@Test
+	void selectionTextsAreLeftToTheDeveloper() {
+		FakeAdt adt = twoSystems();
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_write_text_elements",
+				"{\"name\":\"zrep\",\"type\":\"PROG\",\"part\":\"selections\","
+						+ "\"texts\":\"S_VBELN=Delivery\\nP_TEST  =Test run (no deletion)\"}");
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Selection texts cannot be written through ADT"), r.content());
+		assertTrue(r.content().contains("SE38 for ZREP"), r.content());
+		assertTrue(r.content().endsWith("\n- S_VBELN: Delivery\n- P_TEST: Test run (no deletion)"), r.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("textelements") || l.contains("quickSearch")),
+				adt.log.toString());
 	}
 
 	@Test
@@ -550,13 +564,14 @@ class AdtToolProviderTest {
 		List<AdtRequest> puts = new ArrayList<>();
 		FakeAdt adt = twoSystems()
 				.route("GET /sap/bc/adt/textelements/programs/zrep/source/selections",
-						r -> new AdtResponse(200, "text/plain", puts.isEmpty() ? "S_VBELN=Delivery\n"
-								: "P_TEST  =Test run (no deletion)\r\n\r\nS_VBELN =Delivery"))
+						r -> new AdtResponse(200, "text/plain", "S_VBELN=Delivery\n"))
 				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(""))
 				.route("GET /sap/bc/adt/textelements/programs/zrep/source/headings", r -> new AdtResponse(200, "text/plain", ""))
 				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
 						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR>DEVK900001</CORRNR><IS_LOCAL></IS_LOCAL></DATA>"))
-				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/selections", r -> {
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/symbols",
+						r -> new AdtResponse(200, "text/plain", "@MaxLength:40\r\n001=No outbound deliveries found"))
+				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/symbols", r -> {
 					puts.add(r);
 					return FakeAdt.ok("");
 				})
@@ -570,31 +585,28 @@ class AdtToolProviderTest {
 		ToolSpec write = p.listTools().stream().filter(t -> t.name().equals("adt_write_text_elements")).findFirst()
 				.orElseThrow();
 		assertEquals(ToolSpec.Kind.WRITE, write.kind());
-		var input = Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"selections\","
-				+ "\"texts\":\"S_VBELN=Delivery\\nP_TEST=Test run (no deletion)\"}");
+		var input = Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"symbols\","
+				+ "\"texts\":\"@MaxLength:40\\n001=No outbound deliveries found\"}");
 		assertEquals(null, SchemaCheck.validate(write.inputSchema(), input));
 		ToolResult r = p.call("adt_write_text_elements", input, CancelToken.NONE);
 		assertFalse(r.isError(), r.content());
-		assertEquals("Saved the selections of ZREP in S4H_100 (transport DEVK900001) and activated the text pool.",
+		assertEquals("Saved the symbols of ZREP in S4H_100 (transport DEVK900001) and activated the text pool.",
 				r.content());
 		assertTrue(adt.log.contains("POST /sap/bc/adt/activation?method=activate&preauditRequested=true"),
 				adt.log.toString());
 		assertEquals(1, puts.size());
 		AdtRequest put = puts.get(0);
-		assertEquals("/sap/bc/adt/textelements/programs/zrep/source/selections?lockHandle=H&corrNr=DEVK900001",
+		assertEquals("/sap/bc/adt/textelements/programs/zrep/source/symbols?lockHandle=H&corrNr=DEVK900001",
 				put.path());
-		assertEquals("application/vnd.sap.adt.textelements.selections.v1", put.contentType());
-		assertEquals("application/vnd.sap.adt.textelements.selections.v1", put.headers().get("Accept"));
-		assertEquals("S_VBELN =Delivery\nP_TEST  =Test run (no deletion)", put.body());
+		assertEquals("application/vnd.sap.adt.textelements.symbols.v1", put.contentType());
+		assertEquals("application/vnd.sap.adt.textelements.symbols.v1", put.headers().get("Accept"));
+		assertEquals("@MaxLength:40\n001=No outbound deliveries found", put.body());
 		assertEquals(0, adt.openSessions);
 		assertTrue(adt.log.contains("S POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK&lockHandle=H"),
 				adt.log.toString());
 
-		ToolResult badLine = call(p, "adt_write_text_elements",
-				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"selections\",\"texts\":\"%_S_VBELN_%_APP_%-TEXT = 'x'\"}");
-		assertTrue(badLine.isError() && badLine.content().contains("NAME=Text"), badLine.content());
 		ToolResult classSelections = call(p, "adt_write_text_elements",
-				"{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"part\":\"selections\",\"texts\":\"P_A=x\"}");
+				"{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"part\":\"headings\",\"texts\":\"listHeader=x\"}");
 		assertTrue(classSelections.isError() && classSelections.content().contains("Classes only have text symbols"),
 				classSelections.content());
 		assertTrue(call(p, "adt_text_elements", "{\"name\":\"ZIF_A\",\"type\":\"INTF\",\"part\":\"symbols\"}")

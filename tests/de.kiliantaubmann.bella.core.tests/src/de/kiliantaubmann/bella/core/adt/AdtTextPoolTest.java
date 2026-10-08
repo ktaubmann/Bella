@@ -25,9 +25,7 @@ class AdtTextPoolTest {
 	}
 
 	@Test
-	void selectionNamesArePaddedAsAdtSendsThem() {
-		assertEquals("S_VBELN =Delivery\nP_TEST  =Test run\nP_LONGNAM=x",
-				AdtTextPool.normalize("selections", "s_vbeln=Delivery\nP_TEST  =Test run\nP_LONGNAM=x"));
+	void headingsStayAsWritten() {
 		assertEquals("listHeader=Title", AdtTextPool.normalize("headings", "listHeader=Title\n"));
 	}
 

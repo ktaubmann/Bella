@@ -129,6 +129,7 @@ class PromptsTest {
 		String system = new AbapPrompts(null, null).chatSystem();
 		assertTrue(system.contains("adt_write_text_elements"), system);
 		assertTrue(system.contains("never into code such as %_p_name_%_app_%-text"), system);
+		assertTrue(system.contains("maintain in SE38 (Goto > Text Elements > Selection Texts)"), system);
 		assertTrue(system.contains("ATC without priority 1 and 2 findings"), system);
 		for (ChatMode mode : List.of(ChatMode.ACTIVATE,
 				ChatMode.AUTO)) {

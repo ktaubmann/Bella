@@ -18,8 +18,6 @@ final class AdtTextPool {
 	private static final Pattern ENTRY = Pattern.compile("([^=]+?)\\s*=(.*)");
 	/** Longest room for translations Bella proposes on its own. */
 	static final int MAX_SYMBOL_LENGTH = 132;
-	/** Width ADT pads selection names to. */
-	private static final int SELECTION_KEY = 8;
 
 	private AdtTextPool() {
 	}
@@ -27,8 +25,7 @@ final class AdtTextPool {
 	/**
 	 * The texts in the form SAP accepts: each text symbol gets a
 	 * {@code @MaxLength} line (SAP rejects a pool without one with HTTP 406
-	 * "Text elements contain errors"), one shorter than the text is raised;
-	 * selection names are padded to 8 characters as ADT sends them.
+	 * "Text elements contain errors"), one shorter than the text is raised.
 	 */
 	static String normalize(String part, String texts) {
 		List<String> out = new ArrayList<>();
@@ -55,8 +52,6 @@ final class AdtTextPool {
 				int limit = pending == null ? defaultMaxLength(length) : Math.max(pending, length);
 				out.add("@MaxLength:" + limit);
 				out.add(key + "=" + text);
-			} else if (part.equals("selections")) {
-				out.add(pad(key.toUpperCase(Locale.ROOT)) + "=" + text);
 			} else {
 				out.add(key + "=" + text);
 			}
@@ -72,10 +67,6 @@ final class AdtTextPool {
 	static int defaultMaxLength(int length) {
 		int limit = length < 20 ? length + 10 : length + (length + 1) / 2;
 		return Math.min(Math.max(limit, 10), Math.max(MAX_SYMBOL_LENGTH, length));
-	}
-
-	private static String pad(String key) {
-		return key.length() >= SELECTION_KEY ? key : key + " ".repeat(SELECTION_KEY - key.length());
 	}
 
 	/** The entries of a part, key to text; {@code @MaxLength} lines and blank lines left out. */

@@ -64,8 +64,8 @@ public final class AbapPrompts {
 				- ATC checks the active version, so run it after activation, once a change is complete (adt_activate
 				  with run_atc, or adt_atc_check), not after every activation. Fix priority 1 and 2 findings,
 				  activate again, and say why you leave any finding.
-				- Maintain texts in the text pool with adt_write_text_elements: selection texts for PARAMETERS and
-				  SELECT-OPTIONS, text symbols for TEXT-nnn.
+				- Maintain text symbols for TEXT-nnn with adt_write_text_elements. Selection texts of PARAMETERS
+				  and SELECT-OPTIONS cannot be written through ADT: list them for the developer to maintain in SE38.
 				- For a syntax or ATC finding, look for SAP's own quick fix first (adt_quickfix); format new code with
 				  SAP's pretty printer (adt_format) before writing it.
 				- Before writing code that depends on the release, check it with adt_list_systems (SAP_BASIS release
@@ -136,8 +136,9 @@ public final class AbapPrompts {
 			  symbols (TEXT-001 or 'Text'(001)) or a message class (MESSAGE e001(zclass)). Maintain the text
 			  symbols with adt_write_text_elements; create a message class with adt_create_object (type MSAG)
 			  and add messages with adt_write_metadata.
-			- Selection texts of PARAMETERS and SELECT-OPTIONS go into the text pool (adt_write_text_elements, part
-			  selections), never into code such as %_p_name_%_app_%-text = '…' in INITIALIZATION.
+			- Selection texts of PARAMETERS and SELECT-OPTIONS belong in the text pool,
+			  never into code such as %_p_name_%_app_%-text = '…' in INITIALIZATION. ADT cannot write them:
+			  list them for the developer to maintain in SE38 (Goto > Text Elements > Selection Texts).
 			- Reports: a local class (e.g. lcl_report) holds the logic; START-OF-SELECTION only creates it and calls
 			  one method; no FORM routines and no global data beyond the selection screen.
 			- AUTHORITY-CHECK before reading sensitive data and before changing or deleting anything; check
