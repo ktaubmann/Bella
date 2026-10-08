@@ -34,6 +34,11 @@ public final class AdtSystemInfo {
 		}
 	}
 
+	/** What is known already, without asking the system; for callers that must not wait (UI thread). */
+	public static Optional<AdtClient.SystemInfo> known(String destinationId) {
+		return Optional.ofNullable(destinationId == null ? null : KNOWN.get(destinationId));
+	}
+
 	static void clear() {
 		KNOWN.clear();
 	}

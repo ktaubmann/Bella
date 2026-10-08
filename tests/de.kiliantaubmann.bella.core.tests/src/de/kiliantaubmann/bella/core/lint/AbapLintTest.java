@@ -50,7 +50,7 @@ class AbapLintTest {
 	@Test
 	void obsoleteStatements() {
 		assertEquals(List.of("obsolete_move"), rules("MOVE a TO b."));
-		assertEquals(List.of(), rules("MOVE-CORRESPONDING a TO b."));
+		assertEquals(List.of("prefer_corresponding"), rules("MOVE-CORRESPONDING a TO b."));
 		assertEquals(List.of("obsolete_compute"), rules("COMPUTE x = a + b."));
 		assertEquals(List.of("obsolete_arithmetic"), rules("ADD 1 TO x."));
 		assertEquals(List.of("obsolete_arithmetic"), rules("SUBTRACT 1 FROM x."));
@@ -214,7 +214,7 @@ class AbapLintTest {
 		assertEquals(List.of(), rules("METHOD m.\n  DATA: BEGIN OF ls_x,\n          a TYPE i,\n          b TYPE i,\n"
 				+ "        END OF ls_x.\n  ls_x-a = 1.\n  ls_x-b = 2.\nENDMETHOD."));
 		assertEquals(List.of(), rules("METHOD m.\n  DATA BEGIN OF ls_x.\n  DATA a TYPE i.\n  DATA END OF ls_x.\n"
-				+ "  DATA lv_y TYPE i.\n  lv_y = ls_x-a.\nENDMETHOD."));
+				+ "  out->write( ls_x-a ).\nENDMETHOD."));
 	}
 
 	@Test
@@ -257,5 +257,66 @@ class AbapLintTest {
 				+ "IF sy-subrc = 0.\nENDIF."));
 		assertEquals(List.of("obsolete_statement"), rules("ON CHANGE OF x.\nENDON."));
 		assertEquals(List.of("obsolete_statement"), rules("LOCAL x."));
+	}
+
+	private static List<String> rules(String source, AbapLint.Target target) {
+		return AbapLint.check(source, null, target).stream().map(AbapLint.Finding::rule).toList();
+	}
+
+	@Test
+	void releaseSyntax() {
+		AbapLint.Target old = AbapLint.Target.of("702", false);
+		String modern = "METHOD m.\n  DATA(lv_n) = lines( lt ).\n  out->write( lv_n ).\nENDMETHOD.";
+		assertEquals(List.of("release_syntax"), rules(modern, old));
+		assertTrue(AbapLint.check(modern, null, old).get(0).message().contains("this system has SAP_BASIS 7.02"));
+		assertEquals(List.of(), rules(modern, AbapLint.Target.of("750", false)));
+		assertEquals(List.of(), rules(modern, AbapLint.Target.UNKNOWN));
+		assertEquals(List.of("release_syntax"), rules("METHOD m.\n  lo = NEW zcl_x( ).\nENDMETHOD.", old));
+		assertEquals(List.of("release_syntax"), rules("METHOD m.\n  out->write( lt[ 1 ] ).\nENDMETHOD.", old));
+		// NEW #( ) does not exist on 7.02, so CREATE OBJECT gets no hint there
+		assertEquals(List.of(), rules("METHOD m.\n  CREATE OBJECT lo.\nENDMETHOD.", old));
+		assertEquals(List.of("release_syntax"), rules("METHOD m.\n  RAISE EXCEPTION NEW zcx_x( ).\nENDMETHOD.",
+				AbapLint.Target.of("750", false)));
+		assertEquals(List.of("release_syntax"), rules("METHOD m.\n  FINAL(lv) = 1.\n  out->write( lv ).\nENDMETHOD.",
+				AbapLint.Target.of("7.54", false)));
+	}
+
+	@Test
+	void abapCloud() {
+		AbapLint.Target cloud = new AbapLint.Target(0, true);
+		List<AbapLint.Finding> f = AbapLint.check("REPORT zrep.\nSELECT matnr FROM mara INTO TABLE lt_mara.\n"
+				+ "MOVE a TO b.\nWRITE 'x'(001).", null, cloud);
+		assertTrue(f.stream().anyMatch(x -> x.rule().equals("cloud_types") && x.line() == 1), f.toString());
+		assertTrue(f.stream().anyMatch(x -> x.rule().equals("strict_sql") && x.severity() == AbapLint.Severity.ERROR),
+				f.toString());
+		assertTrue(f.stream().anyMatch(x -> x.rule().equals("obsolete_move") && x.severity() == AbapLint.Severity.ERROR
+				&& x.message().endsWith("Not allowed in ABAP Cloud.")), f.toString());
+		assertTrue(f.stream().anyMatch(x -> x.rule().equals("cloud_types") && x.line() == 4), f.toString());
+	}
+
+	@Test
+	void modernForms() {
+		assertEquals(List.of("prefer_inline"), rules("METHOD m.\n  DATA lv_n TYPE i.\n  lv_n = lines( lt ).\n"
+				+ "  out->write( lv_n ).\nENDMETHOD."));
+		// first used other than as an assignment target, or counting up: stays as it is
+		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_n TYPE i.\n  lv_n = lv_n + 1.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_n TYPE i.\n  out->write( lv_n ).\nENDMETHOD."));
+		assertEquals(List.of("prefer_xsdbool"), rules("METHOD m.\n  out->write( boolc( a = b ) ).\nENDMETHOD."));
+		assertEquals(List.of("prefer_raise_exception_new"), rules("METHOD m.\n  RAISE EXCEPTION TYPE zcx_x.\nENDMETHOD."));
+		assertEquals(List.of("use_line_exists"), rules("METHOD m.\n  READ TABLE lt WITH KEY id = 1 TRANSPORTING NO FIELDS.\n"
+				+ "  IF sy-subrc = 0.\n    RETURN.\n  ENDIF.\nENDMETHOD."));
+	}
+
+	@Test
+	void cdsRules() {
+		String legacy = "@AbapCatalog.sqlViewName: 'ZV_TRAVEL'\ndefine view ZI_Travel as select from ztravel\n"
+				+ "  association [0..*] to ZI_Booking as Booking on $projection.Id = Booking.TravelId\n"
+				+ "{ key id as Id, Booking }";
+		assertEquals(List.of("cds_legacy_view", "cds_association_name"), rules(legacy));
+		assertEquals(AbapLint.Severity.ERROR, AbapLint.check(legacy, null, new AbapLint.Target(0, true)).get(0).severity());
+		// view entities do not exist before 7.55, so the hint would be wrong there
+		assertEquals(List.of("cds_association_name"), rules(legacy, AbapLint.Target.of("750", false)));
+		assertEquals(List.of(), rules("// travel\ndefine view entity ZI_Travel as select from ztravel\n"
+				+ "  composition [0..*] of ZI_Booking as _Booking\n{ key id as Id, _Booking }"));
 	}
 }

@@ -129,7 +129,8 @@ abstract class EditorHandler extends AbstractHandler {
 						error(part, Messages.get("generate.empty"));
 						return Status.OK_STATUS;
 					}
-					List<AbapLint.Finding> findings = AbapLint.check(code, naming);
+					List<AbapLint.Finding> findings = AbapLint.check(code, naming,
+							sap == null ? AbapLint.Target.UNKNOWN : sap.lintTarget(cancel));
 					Log.info("editor", "proposal for " + objectName + ": " + code.length() + " chars, "
 							+ findings.size() + " style findings, definitions " + used);
 					String notes = CodeActions.previewNotes(used, definitionsError, findings);
@@ -181,6 +182,16 @@ abstract class EditorHandler extends AbstractHandler {
 						.map(AdtClient.SystemInfo::describe).orElse(null);
 			} catch (RuntimeException | LinkageError e) {
 				return null;
+			}
+		}
+
+		/** Release and cloud flag of the editor's system for the style check; unknown if the system does not tell. */
+		AbapLint.Target lintTarget(CancelToken cancel) {
+			try {
+				return AdtSystemInfo.of(destinationId, new AdtClient(adt.stateless(destinationId)), cancel)
+						.map(AdtClient.SystemInfo::lintTarget).orElse(AbapLint.Target.UNKNOWN);
+			} catch (RuntimeException | LinkageError e) {
+				return AbapLint.Target.UNKNOWN;
 			}
 		}
 
