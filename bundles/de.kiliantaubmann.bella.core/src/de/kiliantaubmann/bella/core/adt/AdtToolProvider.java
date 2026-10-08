@@ -238,10 +238,16 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "The logon state does not test the network connection.",
 				schema(new String[0]), null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_search_objects",
-				"Search repository objects by name pattern (wildcard *), e.g. ZCL_SALES*. Returns name, type, package and description.",
-				schema(new String[] { "query" }, "query", "string", "Name pattern, * as wildcard.", "type", "string",
-						"Optional object type filter, e.g. CLAS.", "max_results", "integer", "Default 50.", "system",
-						"string", SYSTEM_DESC),
+				"Search repository objects by name pattern (wildcard *), e.g. ZCL_SALES*; returns name, type, package "
+						+ "and description. With 'search_in' 'source' it searches the text of ABAP sources instead "
+						+ "(e.g. a literal, a field or a statement) and returns the objects with their matching lines; "
+						+ "narrow it with 'package' and 'type'.",
+				schema(new String[] { "query" }, "query", "string",
+						"Name pattern with * as wildcard, or with search_in 'source' the text to find.", "search_in",
+						"string", "names (default) or source.", "type", "string",
+						"Optional object type filter, e.g. CLAS.", "package", "string",
+						"search_in 'source': only objects of this package.", "max_results", "integer",
+						"Default 50 (objects).", "system", "string", SYSTEM_DESC),
 				Capability.SEARCH, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_read_source",
 				"Read the saved source or definition of a repository object: classes, interfaces, programs, CDS views, function modules, "
@@ -727,6 +733,13 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult searchObjects(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		int max = Math.max(1, Math.min(200, Json.integer(in, "max_results", 50)));
+		String searchIn = Json.str(in, "search_in");
+		if (searchIn != null && searchIn.trim().equalsIgnoreCase("source")) {
+			return searchSource(c, in, max, cancel);
+		}
+		if (searchIn != null && !searchIn.isBlank() && !searchIn.trim().equalsIgnoreCase("names")) {
+			return ToolResult.error("search_in is names or source.");
+		}
 		List<AdtObjectRef> refs = c.search(Json.str(in, "query"), Json.str(in, "type"), max, cancel);
 		if (refs.isEmpty()) {
 			return ToolResult.ok("No objects found.");
@@ -741,6 +754,40 @@ public final class AdtToolProvider implements ToolProvider {
 				sb.append(" – ").append(r.description());
 			}
 			sb.append('\n');
+		}
+		return ToolResult.ok(sb.toString());
+	}
+
+	/** Matching lines shown per object; the rest is only counted. */
+	static final int SOURCE_LINES_PER_OBJECT = 5;
+
+	private static ToolResult searchSource(AdtClient c, JsonObject in, int max, CancelToken cancel)
+			throws IOException {
+		String text = Json.str(in, "query");
+		if (text == null || text.isBlank()) {
+			return ToolResult.error("Give the text to find in 'query'.");
+		}
+		List<AdtClient.SourceHit> hits;
+		try {
+			hits = c.searchSource(text, Json.str(in, "type"), Json.str(in, "package"), max, cancel);
+		} catch (AdtException e) {
+			return ToolResult.error(e.getMessage());
+		}
+		if (hits.isEmpty()) {
+			return ToolResult.ok("No source contains \"" + text + "\".");
+		}
+		StringBuilder sb = new StringBuilder();
+		for (AdtClient.SourceHit h : hits) {
+			sb.append(h.name()).append(h.type().isEmpty() ? "" : " (" + h.type() + ")").append('\n');
+			h.lines().stream().limit(SOURCE_LINES_PER_OBJECT).forEach(l -> sb.append("  ")
+					.append(l.line() > 0 ? l.line() + ": " : "").append(l.text()).append('\n'));
+			if (h.lines().size() > SOURCE_LINES_PER_OBJECT) {
+				sb.append("  … ").append(h.lines().size() - SOURCE_LINES_PER_OBJECT)
+						.append(" more lines; read them with adt_read_source 'grep'\n");
+			}
+		}
+		if (hits.size() >= max) {
+			sb.append("Stopped at ").append(max).append(" objects; narrow the search with 'package' or 'type'.\n");
 		}
 		return ToolResult.ok(sb.toString());
 	}

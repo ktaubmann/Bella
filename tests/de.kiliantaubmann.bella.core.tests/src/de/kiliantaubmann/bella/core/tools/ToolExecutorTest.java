@@ -193,4 +193,17 @@ class ToolExecutorTest {
 		assertTrue(provider.inputs.isEmpty(), "nothing reached the SAP system");
 		assertTrue(confirmations.isEmpty());
 	}
+
+	@Test
+	void longResultsAreCut() {
+		ToolResult small = ToolResult.ok("short");
+		assertEquals(small, ToolExecutor.limit(small));
+		String line = "x".repeat(99) + "\n";
+		ToolResult big = ToolExecutor.limit(ToolResult.ok(line.repeat(ToolExecutor.MAX_RESULT_CHARS / 100 + 50)));
+		assertTrue(big.content().length() < ToolExecutor.MAX_RESULT_CHARS + 400, "length " + big.content().length());
+		assertTrue(big.content().contains("x\n\n[Bella cut this result after"), big.content().substring(
+				ToolExecutor.MAX_RESULT_CHARS - 200));
+		assertTrue(big.content().contains("never write it back as a complete source"));
+		assertFalse(big.isError());
+	}
 }

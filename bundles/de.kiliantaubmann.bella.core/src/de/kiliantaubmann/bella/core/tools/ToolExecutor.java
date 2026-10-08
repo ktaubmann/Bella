@@ -37,6 +37,11 @@ public final class ToolExecutor {
 	}
 
 	private static final String AREA = "tool";
+	/**
+	 * Longest result handed to the model, in characters (about 30,000 tokens). Larger results (table
+	 * contents, traces, very long sources) are cut so one tool call cannot fill the context window.
+	 */
+	static final int MAX_RESULT_CHARS = 120_000;
 	/** Input of {@code adt_activate} that runs ABAP Unit after a successful activation. */
 	static final String AUTO_TEST = "run_unit_tests";
 
@@ -77,6 +82,7 @@ public final class ToolExecutor {
 		} else {
 			result = decideAndRun(tool, call.input(), cancel);
 		}
+		result = limit(result);
 		ToolResult r = result;
 		String content = r.content() == null ? "" : r.content();
 		if (r.isError()) {
@@ -87,6 +93,23 @@ public final class ToolExecutor {
 		Log.debug(AREA, () -> tool.name() + " result:\n" + Log.clip(content));
 		observer.onToolResult(tool, call, result);
 		return result;
+	}
+
+	/** Cuts a result longer than {@link #MAX_RESULT_CHARS} at a line end and says so. */
+	static ToolResult limit(ToolResult result) {
+		String content = result.content();
+		if (content == null || content.length() <= MAX_RESULT_CHARS) {
+			return result;
+		}
+		int cut = content.lastIndexOf('\n', MAX_RESULT_CHARS);
+		if (cut < MAX_RESULT_CHARS / 2) {
+			cut = MAX_RESULT_CHARS;
+		}
+		Log.info(AREA, "result cut from " + content.length() + " to " + cut + " chars");
+		String note = "\n\n[Bella cut this result after " + cut + " of " + content.length() + " characters. It is "
+				+ "incomplete: never write it back as a complete source. Ask for less instead, e.g. one 'method', "
+				+ "'grep', fewer rows ('max_rows', 'where') or a narrower filter.]";
+		return new ToolResult(content.substring(0, cut) + note, result.isError());
 	}
 
 	private ToolResult decideAndRun(ToolSpec tool, JsonObject input, CancelToken cancel) {

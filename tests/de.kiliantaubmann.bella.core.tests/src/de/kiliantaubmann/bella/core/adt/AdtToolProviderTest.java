@@ -614,4 +614,38 @@ class AdtToolProviderTest {
 		assertFalse(off.content().contains("ATC"), off.content());
 		assertTrue(adt.log.subList(before, adt.log.size()).stream().noneMatch(l -> l.contains("/atc/")));
 	}
+
+	static final String TEXT_SEARCH = "<tsr:textSearchResult xmlns:tsr=\"http://www.sap.com/adt/ris/textSearch\" "
+			+ "xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+			+ "<tsr:textSearchObject adtcore:uri=\"/sap/bc/adt/ris/proxy?content=objectName%3AZCL_SALES%2CobjectType%3ACLAS\">"
+			+ "<tsr:adtMainObject adtcore:type=\"CLAS/OC\" adtcore:name=\"ZCL_SALES\"/>"
+			+ "<tsr:textLine adtcore:uri=\"/sap/bc/adt/oo/classes/zcl_sales/source/main%23start%3D12%2C4\">"
+			+ "<tsr:content>    lv_x = <b>'DELIVERY_BLOCK'</b>.</tsr:content></tsr:textLine></tsr:textSearchObject>"
+			+ "<tsr:textSearchObject adtcore:uri=\"/sap/bc/adt/packages/zsd\"/></tsr:textSearchResult>";
+
+	@Test
+	void searchesInSources() throws Exception {
+		List<AdtClient.SourceHit> hits = AdtClient.parseSourceHits(TEXT_SEARCH);
+		assertEquals(List.of(new AdtClient.SourceHit("ZCL_SALES", "CLAS/OC",
+				"/sap/bc/adt/ris/proxy?content=objectName%3AZCL_SALES%2CobjectType%3ACLAS",
+				List.of(new AdtClient.SourceLine(12, "lv_x = 'DELIVERY_BLOCK'.")))), hits);
+
+		List<String> paths = new ArrayList<>();
+		FakeAdt adt = twoSystems().route("GET /sap/bc/adt/repository/informationsystem/textsearch", r -> {
+			paths.add(r.path());
+			return FakeAdt.ok(TEXT_SEARCH);
+		});
+		ToolResult r = new AdtToolProvider(adt, () -> null).call("adt_search_objects", Json.parseObject(
+				"{\"query\":\"DELIVERY_BLOCK\",\"search_in\":\"source\",\"package\":\"zsd\",\"type\":\"CLAS/OC\"}"),
+				CancelToken.NONE);
+		assertFalse(r.isError(), r.content());
+		assertEquals("ZCL_SALES (CLAS/OC)\n  12: lv_x = 'DELIVERY_BLOCK'.\n", r.content());
+		assertTrue(paths.get(0).contains("searchString=DELIVERY_BLOCK&searchFromIndex=1&searchToIndex=50"), paths.get(0));
+		assertTrue(paths.get(0).endsWith("&objectType=CLAS&packageName=ZSD"), paths.get(0));
+
+		ToolResult unsupported = new AdtToolProvider(twoSystems(), () -> null).call("adt_search_objects",
+				Json.parseObject("{\"query\":\"x\",\"search_in\":\"source\"}"), CancelToken.NONE);
+		assertTrue(unsupported.isError() && unsupported.content().contains("no source code search"),
+				unsupported.content());
+	}
 }
