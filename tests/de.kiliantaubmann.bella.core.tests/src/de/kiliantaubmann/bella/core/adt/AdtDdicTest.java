@@ -121,6 +121,39 @@ class AdtDdicTest {
 	}
 
 	@Test
+	void changedMessageKeepsItsLongTextFlags() throws Exception {
+		String xml = AdtDdic.messageClassXml("ZSD", "Deliveries", "ZPKG", "DE",
+				List.of(new AdtDdic.Message("001", "Old", false, true)));
+		List<AdtDdic.Message> current = AdtDdic.parseMessageClass(xml).messages();
+		assertEquals(List.of(new AdtDdic.Message("001", "Old", false, true)), current);
+		List<AdtDdic.Message> merged = AdtDdic.mergeMessages(current,
+				List.of(new AdtDdic.Message("001", "Changed"), new AdtDdic.Message("005", "New")), List.of());
+		assertEquals(List.of(new AdtDdic.Message("001", "Changed", false, true), new AdtDdic.Message("005", "New")),
+				merged);
+		String out = AdtDdic.messageClassXml("ZSD", "Deliveries", "ZPKG", "DE", merged);
+		assertTrue(out.contains("mc:msgno=\"001\" mc:msgtext=\"Changed\" mc:selfexplainatory=\"false\" mc:documented=\"true\""),
+				out);
+	}
+
+	@Test
+	void tableTypeUpdateKeepsKeysAndAccessType() throws Exception {
+		String current = "<?xml version=\"1.0\"?><ttyp:tableType xmlns:ttyp=\"http://www.sap.com/dictionary/tabletype\""
+				+ " xmlns:adtcore=\"http://www.sap.com/adt/core\" adtcore:description=\"Old\" adtcore:name=\"ZT\">"
+				+ "<ttyp:rowType><ttyp:typeKind>dictionaryType</ttyp:typeKind><ttyp:typeName>ZSTR1</ttyp:typeName></ttyp:rowType>"
+				+ "<ttyp:initialRowCount>00010</ttyp:initialRowCount><ttyp:accessType>sorted</ttyp:accessType>"
+				+ "<ttyp:primaryKey><ttyp:definition>keyComponents</ttyp:definition><ttyp:kind>unique</ttyp:kind></ttyp:primaryKey>"
+				+ "</ttyp:tableType>";
+		String xml = AdtDdic.updateTableTypeXml(current, "New", "zstr2", null);
+		assertTrue(xml.contains("<ttyp:typeName>ZSTR2</ttyp:typeName>"), xml);
+		assertFalse(xml.contains("ZSTR1"), xml);
+		assertTrue(xml.contains("<ttyp:accessType>sorted</ttyp:accessType>"), xml);
+		assertTrue(xml.contains("<ttyp:kind>unique</ttyp:kind>"), xml);
+		assertTrue(xml.contains("<ttyp:initialRowCount>00010</ttyp:initialRowCount>"), xml);
+		assertTrue(xml.contains("adtcore:description=\"New\""), xml);
+		assertFalse(xml.startsWith("<?xml"), xml);
+	}
+
+	@Test
 	void functionModuleHelpers() throws AdtException {
 		String meta = "<fmodule:abapFunctionModule xmlns:fmodule=\"x\" fmodule:processingType=\"normal\" adtcore:name=\"Z_X\"><a/></fmodule:abapFunctionModule>";
 		String rfc = AdtDdic.withProcessingType(meta, "rfc", null);

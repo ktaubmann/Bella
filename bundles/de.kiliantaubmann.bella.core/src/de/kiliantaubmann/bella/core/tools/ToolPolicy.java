@@ -95,6 +95,7 @@ public final class ToolPolicy {
 			new Rule("adt_write_text_elements", Decision.CONFIRM),
 			// table contents leave the system for the model provider: ask first
 			new Rule("adt_table_contents", Decision.CONFIRM),
+			new Rule("adt_diagnose:authorization_trace", Decision.CONFIRM),
 			new Rule("mcp_*SAPQuery", Decision.CONFIRM),
 			new Rule("adt_*", Decision.AUTO),
 			new Rule("mcp_*SAPRead", Decision.AUTO),
@@ -114,7 +115,8 @@ public final class ToolPolicy {
 		for (String key : List.of("action", "operation", "op")) {
 			JsonElement e = input.get(key);
 			if (e != null && e.isJsonPrimitive()) {
-				return e.getAsString();
+				// the tools trim the action before dispatching, so the rules must see it the same way
+				return e.getAsString().trim();
 			}
 		}
 		return null;

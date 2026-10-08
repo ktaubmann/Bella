@@ -2,6 +2,7 @@ package de.kiliantaubmann.bella.core.adt;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -1012,9 +1013,13 @@ public final class AdtToolProvider implements ToolProvider {
 		sb.append("\n```diff\n").append(LineDiff.unified(source, fixed, "before", "after", 2).text()).append("```");
 		int first = own.stream().mapToInt(TextDeltas.Delta::startLine).min().orElse(line);
 		int last = own.stream().mapToInt(TextDeltas.Delta::endLine).max().orElse(line);
+		// the delta lines count in the original source: check there that all changes are in one method, then take
+		// that method's body from the fixed source (the first changed line is at the same place in both)
+		Optional<AbapStructureScanner.Block> before = AbapStructureScanner.routineAt(source, offsetOfLine(source, first));
 		Optional<AbapStructureScanner.Block> routine = AbapStructureScanner.routineAt(fixed, offsetOfLine(fixed, first));
-		if (routine.isPresent() && routine.get().kind() == AbapStructureScanner.Kind.METHOD
-				&& routine.get().contains(offsetOfLine(fixed, last))) {
+		if (before.isPresent() && before.get().kind() == AbapStructureScanner.Kind.METHOD
+				&& before.get().contains(offsetOfLine(source, last)) && routine.isPresent()
+				&& routine.get().name().equalsIgnoreCase(before.get().name())) {
 			return ToolResult.ok(sb.append("\nApply it with adt_write_source, 'method' ").append(routine.get().name())
 					.append(", and this body:\n```abap\n").append(routine.get().body(fixed).strip()).append("\n```")
 					.toString());
@@ -1226,10 +1231,13 @@ public final class AdtToolProvider implements ToolProvider {
 	private static Optional<String> newSyntaxErrors(AdtClient c, String uri, String before, String after,
 			CancelToken cancel) {
 		try {
-			List<String> old = c.syntaxCheck(uri, before, cancel).stream().filter(m -> m.severity().equals("Error"))
-					.map(AdtClient.Message::text).toList();
+			// compared by text and count: line numbers move with the change, and the same text more often than
+			// before (e.g. one more use of an unknown type) is a new error
+			Map<String, Integer> old = new HashMap<>();
+			c.syntaxCheck(uri, before, cancel).stream().filter(m -> m.severity().equals("Error"))
+					.forEach(m -> old.merge(m.text(), 1, Integer::sum));
 			List<AdtClient.Message> now = c.syntaxCheck(uri, after, cancel).stream()
-					.filter(m -> m.severity().equals("Error") && !old.contains(m.text())).toList();
+					.filter(m -> m.severity().equals("Error") && old.merge(m.text(), -1, Integer::sum) < 0).toList();
 			return now.isEmpty() ? Optional.empty() : Optional.of(format(now));
 		} catch (IOException | RuntimeException e) {
 			return Optional.empty();
@@ -2093,7 +2101,7 @@ public final class AdtToolProvider implements ToolProvider {
 			if (rowType == null || rowType.isBlank()) {
 				return ToolResult.error("Give 'row_type'; it is the only table type field Bella changes.");
 			}
-			body = AdtDdic.tableTypeXml(name, description, h.pkg(), lang, null, rowType, Json.str(in, "row_type_kind"));
+			body = AdtDdic.updateTableTypeXml(current, description, rowType, Json.str(in, "row_type_kind"));
 			contentType = AdtDdic.TABLETYPE_TYPE;
 			summary = "table type";
 		}

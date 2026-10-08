@@ -51,9 +51,13 @@ final class AdtManage {
 				throw new AdtException(r.status(), "Could not create the transport request: " + AdtErrors.message(r));
 			}
 			for (Element e : AdtXml.elements(AdtXml.parse(r.body()), "request")) {
-				return AdtXml.attr(e, "number");
+				String number = AdtXml.attr(e, "number");
+				if (!number.isBlank()) {
+					return number;
+				}
 			}
-			return "";
+			throw new AdtException(502, "SAP did not return the number of the new transport request; check the "
+					+ "Transport Organizer before creating another one.");
 		}
 		String devclass = pkg == null || pkg.isBlank() ? "$TMP" : pkg.trim().toUpperCase(Locale.ROOT);
 		String body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\">\n"
@@ -68,7 +72,12 @@ final class AdtManage {
 			throw new AdtException(r.status(), "Could not create the transport request: " + AdtErrors.message(r));
 		}
 		String id = r.body() == null ? "" : r.body().trim();
-		return id.substring(id.lastIndexOf('/') + 1);
+		id = id.substring(id.lastIndexOf('/') + 1);
+		if (id.isBlank()) {
+			throw new AdtException(502, "SAP did not return the number of the new transport request; check the "
+					+ "Transport Organizer before creating another one.");
+		}
+		return id;
 	}
 
 	/** Gives a request (and with {@code withTasks} its open tasks) to another owner. */

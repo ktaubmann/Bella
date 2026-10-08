@@ -32,6 +32,7 @@ final class AdtRap {
 			"(?im)^\\s*define\\s+behavior\\s+for\\s+([^\\s{]+)(?:\\s+alias\\s+([A-Za-z_]\\w*))?");
 	private static final Pattern ACTION = Pattern.compile(
 			"(?i)^\\s*(?:static\\s+)?(?:(?:internal|factory)\\s+)*action(?:\\s*\\([^)]*\\))?\\s+([A-Za-z_]\\w*)\\b");
+	private static final Pattern SIDE_EFFECTS = Pattern.compile("(?i)^\\s*side\\s+effects\\b");
 	private static final Pattern DETERMINATION = Pattern.compile(
 			"(?i)^\\s*determination\\s+([A-Za-z_]\\w*)\\s+on\\s+(modify|save)\\b");
 	private static final Pattern VALIDATION = Pattern.compile(
@@ -77,10 +78,28 @@ final class AdtRap {
 	private static List<Handler> handlersOf(String alias, List<String> block) {
 		List<Handler> h = new ArrayList<>();
 		String body = String.join("\n", block);
+		java.util.Set<String> actions = new java.util.HashSet<>();
+		boolean inSideEffects = false;
+		int sideDepth = 0;
 		for (int k = 0; k < block.size(); k++) {
 			String line = block.get(k);
+			if (!inSideEffects && SIDE_EFFECTS.matcher(line).find()) {
+				inSideEffects = true;
+				sideDepth = 0;
+			}
+			if (inSideEffects) {
+				// "action X affects ..." there refers to an action declared elsewhere
+				for (char ch : line.toCharArray()) {
+					if (ch == '{') {
+						sideDepth++;
+					} else if (ch == '}' && --sideDepth == 0) {
+						inSideEffects = false;
+					}
+				}
+				continue;
+			}
 			Matcher a = ACTION.matcher(line);
-			if (a.find()) {
+			if (a.find() && actions.add(a.group(1).toLowerCase(Locale.ROOT))) {
 				String statement = statement(block, k);
 				String name = a.group(1);
 				h.add(new Handler(alias, name.toLowerCase(Locale.ROOT), "METHODS " + name.toLowerCase(Locale.ROOT)
