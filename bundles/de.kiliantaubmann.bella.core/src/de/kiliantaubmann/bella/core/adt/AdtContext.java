@@ -235,7 +235,41 @@ public final class AdtContext {
 			return AdtXml.truncate(functionSignature(client.readSource(uri, null, cancel)), SHORT_CHARS);
 		}
 		String def = client.readDefinition(obj, cancel).strip();
+		if (type.startsWith("TABL")) {
+			def = compactTable(def);
+		}
 		return AdtXml.truncate(def, AdtClient.xmlOnly(type) ? SHORT_CHARS : SOURCE_CHARS);
+	}
+
+	/**
+	 * A table or structure as its fields: without annotations, foreign keys
+	 * and value helps, which fill most of a standard table's source (LIKP) so
+	 * the fields were cut off. The label stays.
+	 */
+	static String compactTable(String source) {
+		StringBuilder sb = new StringBuilder();
+		boolean inClause = false;
+		for (String raw : source.split("\r?\n")) {
+			String line = raw.strip();
+			if (inClause) {
+				inClause = !line.endsWith(";");
+				continue;
+			}
+			if (line.isEmpty() || line.startsWith("@") && !line.startsWith("@EndUserText.label")) {
+				continue;
+			}
+			if (line.startsWith("with foreign key") || line.startsWith("with value help")) {
+				// the field line before it ends here; the clause runs to its semicolon
+				if (!sb.isEmpty() && sb.charAt(sb.length() - 2) != ';') {
+					sb.insert(sb.length() - 1, ';');
+				}
+				inClause = !line.endsWith(";");
+				continue;
+			}
+			boolean member = !line.startsWith("@") && !line.startsWith("define ") && !line.equals("}");
+			sb.append(member ? "  " : "").append(line.replaceAll("\\s{2,}", " ")).append('\n');
+		}
+		return sb.toString().strip();
 	}
 
 	/** {@code CLASS … DEFINITION} up to the protected or private section. */

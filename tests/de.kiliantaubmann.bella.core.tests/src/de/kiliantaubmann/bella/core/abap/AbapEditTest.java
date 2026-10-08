@@ -52,4 +52,21 @@ class AbapEditTest {
 		assertArrayEquals(new int[] { sel + 9, 6 }, AbapEdit.relocate(twice, then, sel, 6).orElseThrow(),
 				"the closest occurrence wins");
 	}
+
+	@Test
+	void multiLineSelectionsBecomeWholeLines() {
+		String src = "*&----*\n*& Report Z\nREPORT z.\nIF a = 1.\n  b = 2.\nENDIF.\n";
+		// from column 1 of the first line (without its *) to before ENDIF on the last line
+		int start = 1;
+		int end = src.indexOf("ENDIF.") + 2;
+		org.junit.jupiter.api.Assertions.assertArrayEquals(new int[] { 0, src.indexOf("ENDIF.") + 6 },
+				AbapEdit.wholeLines(src, start, end - start));
+		int b = src.indexOf("b = 2");
+		org.junit.jupiter.api.Assertions.assertArrayEquals(new int[] { b, 1 }, AbapEdit.wholeLines(src, b, 1),
+				"a part of one line stays");
+		int ifLine = src.indexOf("IF a");
+		int endLine = src.indexOf("ENDIF.");
+		org.junit.jupiter.api.Assertions.assertArrayEquals(new int[] { ifLine, endLine - ifLine },
+				AbapEdit.wholeLines(src, ifLine, endLine - ifLine), "whole lines stay");
+	}
 }

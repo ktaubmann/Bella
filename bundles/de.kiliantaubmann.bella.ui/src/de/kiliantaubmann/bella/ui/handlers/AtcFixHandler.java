@@ -69,10 +69,11 @@ public class AtcFixHandler extends EditorHandler {
 			@Override
 			protected IStatus run(IProgressMonitor monitor) {
 				try {
-					List<AdtClient.Message> findings = new AdtClient(adt.stateless(obj.destinationId()))
-							.atcVariant(BellaPlugin.getDefault().atcVariant(obj.destinationId()))
-							.atcCheck(AdtObjectRef.objectUri(obj.uri()), null, cancel);
-					Log.info("editor", "ATC on " + obj.name() + ": " + findings.size() + " findings");
+					AdtClient client = new AdtClient(adt.stateless(obj.destinationId()))
+							.atcVariant(BellaPlugin.getDefault().atcVariant(obj.destinationId()));
+					List<AdtClient.Message> findings = client.atcCheck(AdtObjectRef.objectUri(obj.uri()), null, cancel);
+					Log.info("editor", "ATC on " + obj.name() + ": " + findings.size() + " findings"
+							+ (client.atcNote().isEmpty() ? "" : "; " + client.atcNote()));
 					Display.getDefault().asyncExec(() -> show(part, editor, obj, findings));
 				} catch (Exception e) {
 					Log.warn("editor", "ATC on " + obj.name() + " failed: " + e);

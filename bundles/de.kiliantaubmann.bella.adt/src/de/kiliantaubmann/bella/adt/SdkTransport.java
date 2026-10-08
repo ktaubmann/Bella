@@ -290,5 +290,12 @@ final class SdkTransport implements AdtTransport.Session {
 		public InputStream getContent() {
 			return new ByteArrayInputStream(bytes);
 		}
+
+		/** The SDK prints the body into the request dump of its exceptions. */
+		@Override
+		public String toString() {
+			String text = new String(bytes, StandardCharsets.UTF_8);
+			return text.length() <= 2_000 ? text : text.substring(0, 2_000) + "…";
+		}
 	}
 }

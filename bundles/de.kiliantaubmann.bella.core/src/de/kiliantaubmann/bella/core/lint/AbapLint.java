@@ -613,6 +613,8 @@ public final class AbapLint {
 		return parts;
 	}
 
+	private static final Set<String> ASSIGNMENT = Set.of("=", "?=", "+=", "-=", "*=", "/=", "&&=");
+
 	/** Keywords in one case: reports statements whose first keyword breaks the case the rest of the code uses. */
 	private static void keywordCase(List<Statement> statements, int[] lineStarts, List<Finding> out) {
 		int upper = 0;
@@ -620,6 +622,12 @@ public final class AbapLint {
 		int firstLower = -1;
 		int firstUpper = -1;
 		for (Statement st : statements) {
+			String[] tokens = st.text().trim().split("\\s+");
+			// method calls (display( ), lo_x->run( )) and assignments (result-flag = …) start with a name, not a keyword
+			if (tokens[0].endsWith("(") || tokens[0].contains("->") || tokens[0].contains("=>")
+					|| tokens.length > 1 && ASSIGNMENT.contains(tokens[1])) {
+				continue;
+			}
 			String word = st.text().trim().split("[\\s.:(]+")[0];
 			if (!word.matches("[A-Za-z][A-Za-z-]*") || word.length() < 2) {
 				continue;

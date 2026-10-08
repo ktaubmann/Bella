@@ -365,7 +365,8 @@ public final class TransportReview {
 		}
 		try {
 			List<AdtClient.Message> atc = c.atcCheck(checkUris, null, cancel);
-			sb.append("### ATC\n").append(atc.isEmpty() ? "No findings.\n" : messages(atc, uriToName));
+			sb.append("### ATC\n").append(c.atcNote().isEmpty() ? "" : c.atcNote() + "\n")
+					.append(atc.isEmpty() ? "No findings.\n" : messages(atc, uriToName));
 		} catch (IOException e) {
 			sb.append("### ATC\nNot possible: ").append(e.getMessage()).append('\n');
 		}

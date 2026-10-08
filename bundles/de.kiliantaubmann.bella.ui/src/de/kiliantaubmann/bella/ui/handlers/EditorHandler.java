@@ -75,7 +75,9 @@ abstract class EditorHandler extends AbstractHandler {
 		String objectName = EditorBridge.objectName(part);
 		Log.info("editor", target + " on " + objectName + ", SAP definitions "
 				+ (sap == null ? "off (no ADT object, not logged on or switched off)" : "on"));
-		Log.debug("editor", () -> "instruction: " + instruction);
+		if (instruction != null && !instruction.isBlank()) {
+			Log.debug("editor", () -> "instruction: " + instruction);
+		}
 		String model = plugin.chatModel();
 		var settings = plugin.chatSettings();
 		NamingRules naming = plugin.conventions(EditorBridge.adtObject(part).map(AdtEditorObject::destinationId)

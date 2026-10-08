@@ -931,7 +931,8 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtObjectRef ref = resolve(c, in, cancel);
 		List<AdtClient.Message> msgs = c.atcCheck(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "check_variant"),
 				cancel);
-		return ToolResult.ok(msgs.isEmpty() ? "No ATC findings." : formatAtc(msgs, false));
+		String note = c.atcNote().isEmpty() ? "" : c.atcNote() + "\n\n";
+		return ToolResult.ok(note + (msgs.isEmpty() ? "No ATC findings." : formatAtc(msgs, false)));
 	}
 
 	/** ATC findings by priority (1 = error, 2 = warning, 3 = information), with the object when several were checked. */
@@ -1962,7 +1963,9 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		sb.append("changes are recorded in a transport request.\n");
 		if (!t.lockedIn().isEmpty()) {
-			sb.append("Already locked in request ").append(t.lockedIn()).append("; use it.\n");
+			// SAP records further changes in that request; other open requests do not matter
+			return ToolResult.ok(sb.append("Already locked in request ").append(t.lockedIn())
+					.append("; changes go there, pass it as 'transport'.").toString());
 		}
 		if (t.candidates().isEmpty()) {
 			sb.append("No open request of the developer fits; ask them for one or offer to create one with adt_transport_manage 'create' (Bella never releases requests).");
@@ -2394,10 +2397,11 @@ public final class AdtToolProvider implements ToolProvider {
 		try {
 			List<AdtClient.Message> msgs = c.atcCheck(
 					refs.stream().map(r -> AdtObjectRef.objectUri(r.uri())).toList(), null, cancel);
+			String note = c.atcNote().isEmpty() ? "" : c.atcNote() + "\n";
 			if (msgs.isEmpty()) {
-				return "ATC: no findings.";
+				return note + "ATC: no findings.";
 			}
-			return "ATC findings:\n" + formatAtc(msgs, refs.size() > 1)
+			return note + "ATC findings:\n" + formatAtc(msgs, refs.size() > 1)
 					+ "Fix priority 1 and 2 findings now, then save, activate and check again; fix priority 3 where it "
 					+ "is simple. For each finding you leave, tell the developer why (e.g. a false positive that needs "
 					+ "an exemption)." + QUICKFIX_HINT;

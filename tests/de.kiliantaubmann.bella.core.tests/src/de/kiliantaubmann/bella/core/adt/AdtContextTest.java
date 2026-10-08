@@ -203,4 +203,18 @@ class AdtContextTest {
 		assertEquals(List.of(), r.notFound());
 		assertEquals(List.of("MARA: connection to partner broken"), r.failed());
 	}
+
+	@Test
+	void tablesAreRenderedAsFields() {
+		String likp = "@EndUserText.label : 'SD Document: Delivery Header Data'\n@AbapCatalog.tableCategory : #TRANSPARENT\n"
+				+ "define table likp {\n\n  @AbapCatalog.foreignKey.keyType : #KEY\n"
+				+ "  key mandt        : mandt not null\n    with foreign key [0..*,1] t000\n      where mandt = likp.mandt;\n"
+				+ "  ernam            : ernam;\n  inco1            : inco1\n    with foreign key [0..*,0..1] tinc\n"
+				+ "      where mandt = likp.mandt\n        and inco1 = likp.inco1\n    with value help h_collective_tinc\n"
+				+ "      where inco1 = likp.inco1\n        and incov = likp.incov;\n"
+				+ "  @Semantics.quantity.unitOfMeasure : 'likp.gewei'\n  btgew            : gsgew;\n  include zsd_s_append;\n\n}";
+		org.junit.jupiter.api.Assertions.assertEquals("@EndUserText.label : 'SD Document: Delivery Header Data'\n"
+				+ "define table likp {\n  key mandt : mandt not null;\n  ernam : ernam;\n  inco1 : inco1;\n  btgew : gsgew;\n"
+				+ "  include zsd_s_append;\n}", AdtContext.compactTable(likp));
+	}
 }

@@ -149,16 +149,33 @@ public final class CopilotSession implements Conversation {
 		turnListener = null;
 	}
 
+	/**
+	 * The ACP prompt. Leading {@code <instructions>} go into a second block:
+	 * Copilot names the session after the first one, and the session list
+	 * should show the question, not Bella's system prompt.
+	 */
 	static JsonObject promptParams(String sessionId, String text) {
-		JsonObject block = new JsonObject();
-		block.addProperty("type", "text");
-		block.addProperty("text", text);
 		JsonArray prompt = new JsonArray();
-		prompt.add(block);
+		String end = "</instructions>";
+		int close = text.startsWith("<instructions>") ? text.indexOf(end) : -1;
+		String rest = close < 0 ? "" : text.substring(close + end.length()).strip();
+		if (close >= 0 && !rest.isEmpty()) {
+			prompt.add(textBlock(rest));
+			prompt.add(textBlock(text.substring(0, close + end.length())));
+		} else {
+			prompt.add(textBlock(text));
+		}
 		JsonObject p = new JsonObject();
 		p.addProperty("sessionId", sessionId);
 		p.add("prompt", prompt);
 		return p;
+	}
+
+	private static JsonObject textBlock(String text) {
+		JsonObject block = new JsonObject();
+		block.addProperty("type", "text");
+		block.addProperty("text", text);
+		return block;
 	}
 
 	/** Asks the CLI to stop the turn; ends the process if it does not stop in time. */

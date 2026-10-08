@@ -147,6 +147,7 @@ class CopilotSessionTest {
 		assertEquals(1, fake.started.size());
 		FakeAcp.Proc p = fake.started.get(0);
 		assertTrue(p.prompts.get(0).startsWith("<instructions>\nDu bist Bella.\n</instructions>"));
+		assertEquals("Hallo", p.firstBlocks.get(0), "Copilot titles the session after the first block");
 		assertEquals("Noch was", p.prompts.get(1));
 		assertTrue(p.command.contains("--acp"));
 		assertEquals("claude-sonnet-4.5", p.arg("--model"));

@@ -365,8 +365,8 @@ class AdtToolProviderTest {
 				.route("GET /sap/bc/adt/runtime/dump/abc%20d/formatted", r -> new AdtResponse(200, "text/plain", "Runtime error x"));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
 		String info = call(p, "adt_transports", "{\"action\":\"for_object\",\"name\":\"ZCL_A\",\"type\":\"CLAS\"}").content();
-		assertTrue(info.startsWith("ZCL_A in package ZSALES: changes are recorded in a transport request.\n"
-				+ "Already locked in request DEVK900099; use it.\nOpen requests that fit:\n- DEVK900101 First candidate (DEVELOPER)"), info);
+		assertEquals("ZCL_A in package ZSALES: changes are recorded in a transport request.\n"
+				+ "Already locked in request DEVK900099; changes go there, pass it as 'transport'.", info);
 		assertTrue(call(p, "adt_transports", "{\"action\":\"for_object\",\"name\":\"ZNEW\",\"create\":true,\"package\":\"ZSALES\"}").isError(),
 				"type is needed for a new object");
 
@@ -635,6 +635,30 @@ class AdtToolProviderTest {
 		assertTrue(r.content().contains("Syntax check of the saved version:\nWarning line 4: Unused variable"),
 				r.content());
 		assertTrue(adt.log.stream().anyMatch(l -> l.startsWith("POST /sap/bc/adt/checkruns")), adt.log.toString());
+	}
+
+	@Test
+	void unreachableRemoteAtcVariantFallsBackToTheLocalOne() {
+		String error = "<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\">"
+				+ "<message lang=\"EN\">Comm failure for dest A4C_BTP</message></exc:exception>";
+		FakeAdt adt = twoSystems()
+				.route("POST /sap/bc/adt/atc/worklists?checkVariant=Z_REMOTE_FB", r -> new AdtResponse(200, "text/plain", "WR"))
+				.route("POST /sap/bc/adt/atc/worklists?checkVariant=DEFAULT", r -> new AdtResponse(200, "text/plain", "WL"))
+				.route("POST /sap/bc/adt/atc/runs?worklistId=WR", r -> new AdtResponse(500, "application/xml", error))
+				.route("POST /sap/bc/adt/atc/runs?worklistId=WL", r -> FakeAdt.ok(""))
+				.route("GET /sap/bc/adt/atc/worklists/WL", r -> FakeAdt.ok(
+						"<atcworklist:worklist xmlns:atcworklist=\"http://www.sap.com/adt/atc/worklist\"/>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev", () -> "", d -> "Z_REMOTE_FB");
+		ToolResult r = call(p, "adt_atc_check", "{\"name\":\"ZREP\",\"type\":\"PROG\"}");
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("ATC ran with the local variant DEFAULT instead of Z_REMOTE_FB"), r.content());
+		assertTrue(r.content().endsWith("No ATC findings."), r.content());
+		// the next run does not wait for the remote system again
+		int before = adt.log.size();
+		ToolResult again = call(p, "adt_atc_check", "{\"name\":\"ZREP\",\"type\":\"PROG\"}");
+		assertTrue(again.content().contains("it failed a few minutes ago"), again.content());
+		assertTrue(adt.log.subList(before, adt.log.size()).stream().noneMatch(l -> l.contains("worklistId=WR")),
+				adt.log.toString());
 	}
 
 	@Test

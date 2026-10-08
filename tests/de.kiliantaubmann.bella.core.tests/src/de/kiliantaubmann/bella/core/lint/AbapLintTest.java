@@ -247,6 +247,9 @@ class AbapLintTest {
 		assertEquals(List.of("keyword_case"), rules("DATA a TYPE i.\nDATA b TYPE i.\nDATA c TYPE i.\n"
 				+ "DATA d TYPE i.\nDATA e TYPE i.\ndata f type i.\na = b + c + d + e + f."));
 		assertEquals(List.of(), rules("data a type i.\ndata b type i.\na = b."));
+		// method calls and assignments start with names, not keywords
+		assertEquals(List.of(), rules("DATA a TYPE i.\nDATA b TYPE i.\nDATA c TYPE i.\nDATA d TYPE i.\nDATA e TYPE i.\n"
+				+ "display( ).\nresult-deletable = abap_true.\nlo_alv->display( ).\ncl_x=>run( ).\nb += 1."));
 	}
 
 	@Test

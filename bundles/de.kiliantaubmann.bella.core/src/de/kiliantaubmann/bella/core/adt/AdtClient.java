@@ -9,7 +9,9 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -88,7 +90,8 @@ public final class AdtClient {
 			Log.warn(AREA, what + " failed after " + Log.millisSince(start) + " ms: " + e);
 			throw e;
 		}
-		if (response.ok()) {
+		if (response.ok() || response.status() == 304) {
+			// 304: the cached source is still current
 			Log.info(AREA, what + " -> " + response.status() + " (" + Log.millisSince(start) + " ms)");
 		} else {
 			Log.warn(AREA, what + " -> " + response.status() + " (" + Log.millisSince(start) + " ms): "
@@ -1095,12 +1098,67 @@ public final class AdtClient {
 		return atcCheck(List.of(objectUri), variant, cancel);
 	}
 
-	/** One ATC run over several objects with the given variant (or the configured one, or the system default). */
+	/**
+	 * One ATC run over several objects with the given variant (or the
+	 * configured one, or the system default). A variant whose checks run in
+	 * another system (remote ATC over an RFC destination) that cannot be
+	 * reached is replaced by the system's own default, see {@link #atcNote()}.
+	 */
 	public List<Message> atcCheck(List<String> objectUris, String variant, CancelToken cancel) throws IOException {
-		String v = variant == null || variant.isBlank() ? atcVariant : variant;
+		atcNote = "";
+		String v = variant == null || variant.isBlank() ? atcVariant : variant.trim().toUpperCase(Locale.ROOT);
 		if (v.isBlank()) {
 			v = atcDefaultVariant(cancel);
 		}
+		String key = cacheScope + "|" + v;
+		Long failed = UNREACHABLE_VARIANTS.get(key);
+		String reason = null;
+		if (failed != null && System.currentTimeMillis() - failed < UNREACHABLE_FOR_MILLIS) {
+			reason = "it failed a few minutes ago";
+		} else {
+			try {
+				return runAtc(objectUris, v, cancel);
+			} catch (AdtException e) {
+				if (!isRemoteFailure(e)) {
+					throw e;
+				}
+				UNREACHABLE_VARIANTS.put(key, System.currentTimeMillis());
+				reason = e.getMessage();
+			}
+		}
+		String fallback = atcDefaultVariant(cancel);
+		if (fallback.equalsIgnoreCase(v)) {
+			fallback = "DEFAULT";
+		}
+		if (fallback.equalsIgnoreCase(v)) {
+			throw new AdtException(500, "ATC with variant " + v + " is not possible: " + reason);
+		}
+		List<Message> out = runAtc(objectUris, fallback, cancel);
+		atcNote = "ATC ran with the local variant " + fallback + " instead of " + v + ", whose checks run in another "
+				+ "system that is not reachable (" + reason + "). Tell the developer; the remote checks are missing.";
+		return out;
+	}
+
+	/** Variants whose remote check system failed, by system and variant, with the time of the failure. */
+	private static final Map<String, Long> UNREACHABLE_VARIANTS = new ConcurrentHashMap<>();
+	/** How long a variant whose remote system failed is skipped; each try costs about 45 seconds. */
+	static final long UNREACHABLE_FOR_MILLIS = 15 * 60_000L;
+
+	private String atcNote = "";
+
+	/** How the last {@link #atcCheck} deviated from the asked variant; empty when it did not. */
+	public String atcNote() {
+		return atcNote;
+	}
+
+	/** A remote ATC run whose central check system cannot be reached, e.g. "Comm failure for dest A4C_BTP". */
+	static boolean isRemoteFailure(AdtException e) {
+		String m = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
+		return e.status() >= 500 && (m.contains("comm failure") || m.contains("communication failure")
+				|| m.contains("system failure") || m.contains("for dest") || m.contains("rfc destination"));
+	}
+
+	private List<Message> runAtc(List<String> objectUris, String v, CancelToken cancel) throws IOException {
 		String worklist = send(AdtRequest.post("/sap/bc/adt/atc/worklists?checkVariant=" + enc(v), "text/plain", null,
 				null), cancel).body().trim();
 		String run = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><atc:run maximumVerdicts=\"100\" xmlns:atc=\"http://www.sap.com/adt/atc\">"
