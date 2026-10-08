@@ -70,6 +70,9 @@ public final class AbapPrompts {
 				  SAP's pretty printer (adt_format) before writing it.
 				- Before writing code that depends on the release, check it with adt_list_systems (SAP_BASIS release
 				  or ABAP Cloud) and use only syntax and APIs that release offers.
+				- Search repository objects with specific patterns: the name you plan to create, or its prefix plus
+				  a key word (ZSD*DELIVER*). Never list Z* or Y*: a system has thousands of customer objects, and the
+				  first hits say nothing. Before creating an object, check that its exact name is free.
 				- To review a transport request, start with adt_transport_review; never change or release anything.
 				- For a runtime error, read the short dump (adt_diagnose 'short_dumps'). Before writing a non-local
 				  object, ask adt_transports 'for_object' which transport request to use. If none fits, offer to create one

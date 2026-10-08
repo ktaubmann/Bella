@@ -240,14 +240,16 @@ public final class AdtToolProvider implements ToolProvider {
 				schema(new String[0]), null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_search_objects",
 				"Search repository objects by name pattern (wildcard *), e.g. ZCL_SALES*; returns name, type, package "
-						+ "and description. With 'search_in' 'source' it searches the text of ABAP sources instead "
+						+ "and description. Use a specific pattern: Z* or Y* alone is refused, a system has thousands "
+						+ "of customer objects; to see what a package holds, give 'package'. A cut list says so. "
+						+ "With 'search_in' 'source' it searches the text of ABAP sources instead "
 						+ "(e.g. a literal, a field or a statement) and returns the objects with their matching lines; "
 						+ "narrow it with 'package' and 'type'.",
 				schema(new String[] { "query" }, "query", "string",
 						"Name pattern with * as wildcard, or with search_in 'source' the text to find.", "search_in",
 						"string", "names (default) or source.", "type", "string",
 						"Optional object type filter, e.g. CLAS.", "package", "string",
-						"search_in 'source': only objects of this package.", "max_results", "integer",
+						"Only objects of this package.", "max_results", "integer",
 						"Default 50 (objects).", "system", "string", SYSTEM_DESC),
 				Capability.SEARCH, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_read_source",
@@ -749,11 +751,30 @@ public final class AdtToolProvider implements ToolProvider {
 		if (searchIn != null && !searchIn.isBlank() && !searchIn.trim().equalsIgnoreCase("names")) {
 			return ToolResult.error("search_in is names or source.");
 		}
-		List<AdtObjectRef> refs = c.search(Json.str(in, "query"), Json.str(in, "type"), max, cancel);
+		String query = Json.str(in, "query");
+		String pkg = Json.str(in, "package");
+		if (query == null || query.isBlank()) {
+			return ToolResult.error("Give a name pattern in 'query', e.g. ZCL_SD_DELIV*.");
+		}
+		if ((pkg == null || pkg.isBlank()) && tooBroad(query)) {
+			return ToolResult.error("'" + query.trim() + "' matches thousands of objects in an SAP system, so a "
+					+ "list of the first hits says nothing. Search for the name you plan to use, or a pattern with "
+					+ "its prefix (e.g. ZCL_SD_DELIV*, ZSD*DELIVER*), or give 'package'.");
+		}
+		// one more than shown, to tell a complete list from a cut one
+		List<AdtObjectRef> refs = c.search(query, Json.str(in, "type"), pkg, max + 1, cancel);
 		if (refs.isEmpty()) {
 			return ToolResult.ok("No objects found.");
 		}
+		boolean cut = refs.size() > max;
+		if (cut) {
+			refs = refs.subList(0, max);
+		}
 		StringBuilder sb = new StringBuilder();
+		if (cut) {
+			sb.append("The first ").append(max).append(" hits; there are more, so an object missing here may still "
+					+ "exist. Search with a narrower pattern, 'type' or 'package' before concluding it does not.\n");
+		}
 		for (AdtObjectRef r : refs) {
 			sb.append(r.name()).append(" (").append(r.type()).append(')');
 			if (!r.packageName().isEmpty()) {
@@ -765,6 +786,14 @@ public final class AdtToolProvider implements ToolProvider {
 			sb.append('\n');
 		}
 		return ToolResult.ok(sb.toString());
+	}
+
+	/**
+	 * Patterns that say almost nothing: Z*, Y*, *, ZS* … (fewer than three
+	 * characters besides the wildcards).
+	 */
+	static boolean tooBroad(String query) {
+		return query.replace("*", "").replace("?", "").strip().length() < 3;
 	}
 
 	/** Matching lines shown per object; the rest is only counted. */

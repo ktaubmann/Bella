@@ -146,6 +146,37 @@ class AdtToolProviderTest {
 	}
 
 	@Test
+	void searchRefusesBroadPatternsAndSaysWhenTheListIsCut() {
+		List<String> searches = new ArrayList<>();
+		FakeAdt adt = twoSystems().route(AdtContextTest.SEARCH, r -> {
+			searches.add(r.path());
+			return FakeAdt.ok(AdtContextTest.hits("/sap/bc/adt/programs/programs/zsd_a", "PROG/P", "ZSD_A", "A",
+					"/sap/bc/adt/programs/programs/zsd_b", "PROG/P", "ZSD_B", "B",
+					"/sap/bc/adt/programs/programs/zsd_c", "PROG/P", "ZSD_C", "C"));
+		});
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+
+		for (String broad : List.of("Z*", "y*", "*", "ZS*")) {
+			ToolResult r = call(p, "adt_search_objects", "{\"query\":\"" + broad + "\"}");
+			assertTrue(r.isError() && r.content().contains("thousands of objects"), broad + ": " + r.content());
+		}
+		assertTrue(searches.isEmpty(), searches.toString());
+
+		ToolResult cut = call(p, "adt_search_objects", "{\"query\":\"ZSD*\",\"max_results\":2}");
+		assertFalse(cut.isError(), cut.content());
+		assertTrue(cut.content().startsWith("The first 2 hits; there are more"), cut.content());
+		assertTrue(cut.content().contains("ZSD_B (PROG/P)") && !cut.content().contains("ZSD_C"), cut.content());
+		assertTrue(searches.get(0).contains("maxResults=3"), searches.toString());
+
+		ToolResult all = call(p, "adt_search_objects", "{\"query\":\"ZSD*\",\"max_results\":3}");
+		assertTrue(all.content().startsWith("ZSD_A (PROG/P)"), all.content());
+
+		ToolResult inPackage = call(p, "adt_search_objects", "{\"query\":\"Z*\",\"package\":\"zsd_pkg\"}");
+		assertFalse(inPackage.isError(), inPackage.content());
+		assertTrue(searches.get(searches.size() - 1).contains("&packageName=ZSD_PKG"), searches.toString());
+	}
+
+	@Test
 	void contextTypeAppliesToNames() {
 		List<String> searches = new ArrayList<>();
 		FakeAdt adt = twoSystems()

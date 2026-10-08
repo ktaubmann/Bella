@@ -123,10 +123,19 @@ public final class AdtClient {
 	// ---- search ----------------------------------------------------------
 
 	public List<AdtObjectRef> search(String query, String type, int max, CancelToken cancel) throws IOException {
+		return search(query, type, null, max, cancel);
+	}
+
+	/** @param pkg only objects of this package, or {@code null} */
+	public List<AdtObjectRef> search(String query, String type, String pkg, int max, CancelToken cancel)
+			throws IOException {
 		StringBuilder path = new StringBuilder("/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=")
 				.append(enc(query)).append("&maxResults=").append(max);
 		if (type != null && !type.isBlank()) {
 			path.append("&objectType=").append(enc(type.toUpperCase(Locale.ROOT)));
+		}
+		if (pkg != null && !pkg.isBlank()) {
+			path.append("&packageName=").append(enc(pkg.trim().toUpperCase(Locale.ROOT)));
 		}
 		AdtResponse r = send(AdtRequest.get(path.toString(), "application/xml"), cancel);
 		return parseObjectReferences(r.body());
