@@ -256,4 +256,12 @@ class AdtClientTest {
 		assertEquals("Error line 3: y",
 				new AdtClient.Message("Error", "y", "/sap/bc/adt/oo/classes/zcl_a/source/main#start=3,1", 3).format());
 	}
+
+	@Test
+	void logLeavesOutTheBase64SourceOfASyntaxCheck() {
+		String body = "<chkrun:artifact><chkrun:content>IiBMaXN0cyBvdXRib3Vu\nZCBkZWxpdmVyaWVz</chkrun:content></chkrun:artifact>";
+		assertEquals("<chkrun:artifact><chkrun:content>[source, 37 characters base64]</chkrun:content></chkrun:artifact>",
+				AdtClient.withoutBase64(body));
+		assertEquals("SELECT * FROM mara", AdtClient.withoutBase64("SELECT * FROM mara"));
+	}
 }

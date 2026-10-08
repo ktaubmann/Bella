@@ -104,6 +104,21 @@ class MaskerTest {
 	}
 
 	@Test
+	void encodedPathsTransportNumbersAndNamedUsersAreMasked() {
+		Masker m = new Masker(() -> all(List.of(), List.of("S4H"), List.of("MUELLER")));
+		String masked = m.mask("POST /usageReferences?uri=%2Fsap%2Fbc%2Fadt%2Fddic%2Fddl%2Fsources%2Fzc_acme_material "
+				+ "with corrNr=S4HK903503: Object R3TR DDLS ZI_ACME is already locked in request S4HK902998 of user "
+				+ "SCHMIDT; Benutzer MUELLER; user ID");
+		for (String secret : List.of("acme", "ACME", "S4H", "SCHMIDT", "MUELLER")) {
+			assertFalse(masked.contains(secret), secret + " in " + masked);
+		}
+		assertTrue(masked.contains("K903503"), "the request number keeps its shape: " + masked);
+		assertTrue(masked.contains("user ID"), "too short for a user: " + masked);
+		assertEquals(masked, m.mask(masked), "placeholders are not masked again");
+		assertEquals("S4HANA and S4H2", m.mask("S4HANA and S4H2"), "no other words");
+	}
+
+	@Test
 	void offChangesNothing() {
 		AtomicReference<Masker.Settings> s = new AtomicReference<>(Masker.Settings.OFF);
 		Masker m = new Masker(s::get);

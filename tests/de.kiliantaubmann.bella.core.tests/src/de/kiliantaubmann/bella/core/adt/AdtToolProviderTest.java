@@ -89,7 +89,11 @@ class AdtToolProviderTest {
 		FakeAdt adt = twoSystems()
 				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=LOCK", r -> FakeAdt.ok(
 						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
-				.route("PUT /sap/bc/adt/oo/classes/zcl_a/source/main", r -> FakeAdt.ok(""))
+				.route("PUT /sap/bc/adt/oo/classes/zcl_a/source/main", r -> {
+					// service definitions answer 400 "Accept header missing" without it
+					assertEquals("text/plain", r.headers().get("Accept"));
+					return FakeAdt.ok("");
+				})
 				.route("POST /sap/bc/adt/oo/classes/zcl_a?_action=UNLOCK", r -> FakeAdt.ok(""));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
 		ToolSpec write = p.listTools().stream().filter(t -> t.name().equals("adt_write_source")).findFirst().orElseThrow();

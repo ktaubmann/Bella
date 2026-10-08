@@ -78,11 +78,28 @@ public final class AdtClient {
 		return response;
 	}
 
+	private static final Pattern BASE64_CONTENT = Pattern.compile("(<chkrun:content>)([A-Za-z0-9+/=\\s]+)(</chkrun:content>)");
+
+	/**
+	 * A request body for the log without the base64 source a syntax check
+	 * carries: masking cannot see into it, so names and code would leak.
+	 */
+	static String withoutBase64(String body) {
+		Matcher m = BASE64_CONTENT.matcher(body);
+		StringBuilder sb = new StringBuilder();
+		while (m.find()) {
+			m.appendReplacement(sb, Matcher.quoteReplacement(
+					m.group(1) + "[source, " + m.group(2).length() + " characters base64]" + m.group(3)));
+		}
+		m.appendTail(sb);
+		return sb.toString();
+	}
+
 	/** Sends a request and writes method, path, status and duration to Bella's log. */
 	static AdtResponse exchange(AdtTransport t, AdtRequest r, CancelToken cancel) throws IOException {
 		long start = System.nanoTime();
 		String what = (t.isStateful() ? "[stateful] " : "") + r.method() + " " + r.path();
-		Log.debug(AREA, () -> r.body() == null ? what : what + " body:\n" + Log.clip(r.body(), 4_000));
+		Log.debug(AREA, () -> r.body() == null ? what : what + " body:\n" + Log.clip(withoutBase64(r.body()), 4_000));
 		AdtResponse response;
 		try {
 			response = t.send(r, cancel);
@@ -719,8 +736,9 @@ public final class AdtClient {
 			if (!tr.isBlank()) {
 				path.append("&corrNr=").append(enc(tr));
 			}
-			AdtResponse put = exchange(session, AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8"),
-					cancel);
+			// service definitions answer 400 "Accept header missing" without one
+			AdtResponse put = exchange(session, AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8")
+					.withHeader("Accept", "text/plain"), cancel);
 			if (!put.ok()) {
 				throw new AdtException(put.status(), "Could not write source: " + AdtErrors.message(put));
 			}

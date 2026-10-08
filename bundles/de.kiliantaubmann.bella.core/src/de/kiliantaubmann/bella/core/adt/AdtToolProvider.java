@@ -2273,7 +2273,13 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			}
 			if (written) {
-				AdtClient.writeSource(session, ref.uri(), null, source, transport, cancel);
+				try {
+					AdtClient.writeSource(session, ref.uri(), null, source, transport, cancel);
+				} catch (AdtException e) {
+					return ToolResult.error("Created " + ref.name() + " (" + type + ") on " + s.label()
+							+ ", but writing its source failed, so it exists empty and inactive: " + e.getMessage()
+							+ "\nWrite the source with adt_write_source, or remove the object with adt_delete_object.");
+				}
 			}
 		} finally {
 			c.invalidate(ref.uri());

@@ -195,6 +195,26 @@ class AdtDdicTest {
 	}
 
 	@Test
+	void createSaysWhenTheObjectStaysEmpty() {
+		FakeAdt adt = systems()
+				.route("GET /sap/bc/adt/cts/transportrequests/DEVK900001", r -> FakeAdt.ok(TRANSPORT))
+				.route("POST /sap/bc/adt/ddic/srvd/sources/zapi_x?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR>DEVK900001</CORRNR><IS_LOCAL></IS_LOCAL></DATA>"))
+				.route("POST /sap/bc/adt/ddic/srvd/sources/zapi_x?_action=UNLOCK", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/ddic/srvd/sources", r -> new AdtResponse(201, "application/xml", ""))
+				.route("PUT /sap/bc/adt/ddic/srvd/sources/zapi_x/source/main",
+						r -> new AdtResponse(400, "text/plain", "Accept header missing"));
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").call("adt_create_object", Json.parseObject(
+				"{\"name\":\"ZAPI_X\",\"type\":\"SRVD\",\"description\":\"x\",\"package\":\"zpkg\","
+						+ "\"transport\":\"DEVK900001\",\"source\":\"define service ZAPI_X { expose ZR_X; }\"}"),
+				CancelToken.NONE);
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("exists empty and inactive"), r.content());
+		assertTrue(r.content().contains("adt_write_source"), r.content());
+		assertEquals(0, adt.openSessions);
+	}
+
+	@Test
 	void toolChangesMessagesKeepingTheOthers() {
 		List<String> bodies = new ArrayList<>();
 		FakeAdt adt = systems()
