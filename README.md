@@ -132,7 +132,7 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 
 The chat mode can tighten or loosen this (see *Chat modes*); refusals stay refusals in every mode.
 
-- Add your own rules under *Preferences → Bella → SAP-Tools & ARC-1*, one per line as `pattern=AUTO|CONFIRM|ASK|DENY`; `ASK` asks even in Automode, and `tool:action=…` matches only one action of a multi-purpose tool (e.g. `mcp_arc1_SAPTransport:create=ASK`).
+- Add your own rules under *Preferences → Bella → SAP-Tools & ARC-1*, one per line as `pattern=AUTO|CONFIRM|ASK|DENY`; `ASK` asks even in Automode, and `tool:action=…` matches only one action of a multi-purpose tool (e.g. `mcp_arc1_SAPTransport:create=ASK`). Rules that still name tools Bella has merged keep their effect: `adt_short_dumps` applies to `adt_diagnose 'short_dumps'`, `adt_where_used` to `adt_navigate 'references'`, `adt_transport_info` and `adt_list_transports` to `adt_transports`, `adt_settings_write` to `adt_format_settings`.
 - **Allowed packages** (same page, default `$TMP, Z*, Y*`): Bella's tools write, create and activate only there; other writes are refused before you are asked. Empty allows all packages. Writing into an open editor is not affected.
 - With ARC-1, its server-side safety flags apply in addition.
 

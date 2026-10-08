@@ -15,6 +15,9 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
 public final class AdtSystemInfo {
 
 	private static final Map<String, AdtClient.SystemInfo> KNOWN = new ConcurrentHashMap<>();
+	/** When asking a system failed; it is not asked again for a while (old systems lack the endpoint). */
+	private static final Map<String, Long> FAILED = new ConcurrentHashMap<>();
+	static final long RETRY_AFTER_MILLIS = 10 * 60_000L;
 
 	private AdtSystemInfo() {
 	}
@@ -25,11 +28,17 @@ public final class AdtSystemInfo {
 		if (known != null) {
 			return Optional.of(known);
 		}
+		Long failed = FAILED.get(destinationId);
+		if (failed != null && System.currentTimeMillis() - failed < RETRY_AFTER_MILLIS) {
+			return Optional.empty();
+		}
 		try {
 			AdtClient.SystemInfo info = client.systemInfo(cancel);
 			KNOWN.put(destinationId, info);
+			FAILED.remove(destinationId);
 			return Optional.of(info);
 		} catch (IOException e) {
+			FAILED.put(destinationId, System.currentTimeMillis());
 			return Optional.empty();
 		}
 	}
@@ -41,5 +50,6 @@ public final class AdtSystemInfo {
 
 	static void clear() {
 		KNOWN.clear();
+		FAILED.clear();
 	}
 }

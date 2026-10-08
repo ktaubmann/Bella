@@ -319,4 +319,37 @@ class AbapLintTest {
 		assertEquals(List.of(), rules("// travel\ndefine view entity ZI_Travel as select from ztravel\n"
 				+ "  composition [0..*] of ZI_Booking as _Booking\n{ key id as Id, _Booking }"));
 	}
+
+	@Test
+	void viewEntityWithLineBreakIsNoLegacyView() {
+		assertEquals(List.of(), rules("define view  entity ZI_X as select from ztab { key id }"));
+		assertEquals(List.of(), rules("define root view\n    entity ZI_X as select from ztab { key id }"));
+	}
+
+	@Test
+	void preferInlineOnlyWhereTheTypeStays() {
+		// a literal or a calculation would give the inline variable another type
+		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_text TYPE string.\n  lv_text = 'A'.\n"
+				+ "  out->write( lv_text ).\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_n TYPE i.\n  lv_n = lines( lt ) + 1.\n"
+				+ "  out->write( lv_n ).\nENDMETHOD."));
+		// lengths and decimals come from the declaration only
+		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_amount TYPE p LENGTH 15 DECIMALS 2.\n"
+				+ "  lv_amount = lo->total( ).\n  out->write( lv_amount ).\nENDMETHOD."));
+		assertEquals(List.of("prefer_inline"), rules("METHOD m.\n  DATA lo_log TYPE REF TO zcl_log.\n"
+				+ "  lo_log = NEW zcl_log( ).\n  lo_log->add( ).\nENDMETHOD."));
+		assertEquals(List.of("prefer_inline"), rules("METHOD m.\n  DATA lt_items TYPE ty_items.\n"
+				+ "  lt_items = zcl_repo=>get_items( iv_id ).\n  out->write( lt_items ).\nENDMETHOD."));
+	}
+
+	@Test
+	void onlyBasisReleasesCount() {
+		assertEquals(750, AbapLint.Target.of("7.50", false).release());
+		assertEquals(758, AbapLint.Target.of("758", false).release());
+		assertEquals(816, AbapLint.Target.of("SAP_BASIS 816", false).release());
+		// product releases say nothing about the ABAP syntax
+		assertEquals(0, AbapLint.Target.of("2022", false).release());
+		assertEquals(0, AbapLint.Target.of("S/4HANA 2022", false).release());
+		assertEquals(0, AbapLint.Target.of("", false).release());
+	}
 }

@@ -2,6 +2,7 @@ package de.kiliantaubmann.bella.core.lint;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,7 +21,7 @@ final class CdsLint {
 	private static final Pattern START = Pattern.compile(
 			"(?is)^\\s*(?:@|define\\s+(?:root\\s+)?(?:view|table\\s+function|abstract|custom|hierarchy|transient)\\b"
 					+ "|extend\\s+view\\b)");
-	private static final Pattern LEGACY_VIEW = Pattern.compile("(?i)\\bdefine\\s+(?:root\\s+)?view\\s+(?!entity\\b)");
+	private static final Pattern LEGACY_VIEW = Pattern.compile("(?i)\\bdefine\\s+(?:root\\s+)?view\\s++(?!entity\\b)");
 	private static final Pattern ASSOCIATION = Pattern.compile(
 			"(?i)\\b(association|composition)\\b(?:\\s*\\[[^\\]]*\\])?\\s+(?:to|of)\\s+(?:parent\\s+)?[\\w/]+\\s+as\\s+([\\w/]+)");
 
@@ -51,7 +52,7 @@ final class CdsLint {
 		while (a.find()) {
 			if (!a.group(2).startsWith("_")) {
 				out.add(new Finding(AbapLint.lineOf(lineStarts, a.start()), "cds_association_name", Severity.INFO,
-						"Name the " + a.group(1).toLowerCase() + " _" + a.group(2)
+						"Name the " + a.group(1).toLowerCase(Locale.ROOT) + " _" + a.group(2)
 								+ " (with a leading underscore), as SAP's VDM guidelines and abaplint expect."));
 			}
 		}

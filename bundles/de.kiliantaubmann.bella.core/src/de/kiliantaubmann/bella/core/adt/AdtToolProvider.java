@@ -719,7 +719,16 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private AdtObjectRef resolve(AdtClient c, JsonObject in, CancelToken cancel) throws IOException {
-		return c.resolve(Json.str(in, "name").trim(), Json.str(in, "type"), cancel);
+		return c.resolve(requiredName(in), Json.str(in, "type"), cancel);
+	}
+
+	/** 'name' of the call; tools whose schema cannot require it for every action get a clear error instead of an NPE. */
+	private static String requiredName(JsonObject in) throws AdtException {
+		String name = Json.str(in, "name");
+		if (name == null || name.isBlank()) {
+			throw new AdtException(400, "Give 'name', the object, e.g. ZCL_SALES_ORDER.");
+		}
+		return name.trim();
 	}
 
 	private ToolResult searchObjects(JsonObject in, CancelToken cancel) throws IOException {
@@ -1894,7 +1903,7 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult transportInfo(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		boolean create = in.has("create") && in.get("create").isJsonPrimitive() && in.get("create").getAsBoolean();
-		String name = Json.str(in, "name").trim();
+		String name = requiredName(in);
 		String pkg = Json.str(in, "package");
 		String uri;
 		if (create) {
@@ -1995,7 +2004,8 @@ public final class AdtToolProvider implements ToolProvider {
 					.append(" without a transport request (e.g. the active or a local one).\n");
 		}
 		if (ref.type().startsWith("CLAS")) {
-			sb.append("Only the ").append(Json.str(in, "include") == null ? "main" : Json.str(in, "include"))
+			String include = Json.str(in, "include");
+			sb.append("Only the ").append(include == null || include.isBlank() ? "main" : include.trim())
 					.append(" include; other includes (testclasses, implementations) have their own history.\n");
 		}
 		return ToolResult.ok(sb.toString());
