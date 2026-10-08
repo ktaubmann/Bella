@@ -44,10 +44,15 @@ public final class AbapLint {
 
 		public static final Target UNKNOWN = new Target(0, false);
 
-		/** From the SAP_BASIS release ADT reports, e.g. "758" or "7.50"; anything else counts as unknown. */
+		private static final Pattern RELEASE = Pattern.compile("(?i)(?:SAP_BASIS\\s*)?([7-9])\\.?(\\d{2})");
+
+		/**
+		 * From the SAP_BASIS release ADT reports, e.g. "758", "7.50" or "SAP_BASIS 816". Anything else (a product
+		 * release like "S/4HANA 2022" or "2022") counts as unknown, so it can never turn modern code into errors.
+		 */
 		public static Target of(String basisRelease, boolean cloud) {
-			String digits = basisRelease == null ? "" : basisRelease.replaceAll("[^0-9]", "");
-			int release = digits.length() >= 3 ? Integer.parseInt(digits.substring(0, 3)) : 0;
+			Matcher m = RELEASE.matcher(basisRelease == null ? "" : basisRelease.trim());
+			int release = m.matches() ? Integer.parseInt(m.group(1) + m.group(2)) : 0;
 			return new Target(release, cloud);
 		}
 

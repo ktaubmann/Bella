@@ -151,6 +151,19 @@ public final class ToolPolicy {
 	 * Parses rules from preference text, one {@code pattern=DECISION} per line;
 	 * blank lines and lines starting with {@code #} are ignored.
 	 */
+	/**
+	 * Tools that were merged or renamed, old name → the rule that matches the same calls now. User rules
+	 * written for the old names keep their effect instead of silently matching nothing; a DENY on short
+	 * dumps, for example, must still hold for adt_diagnose 'short_dumps'.
+	 */
+	static final Map<String, String> RENAMED = Map.of(
+			"adt_short_dumps", "adt_diagnose:short_dumps",
+			"adt_where_used", "adt_navigate:references",
+			"adt_transport_info", "adt_transports:for_object",
+			// list was the default action, and all actions of adt_transports only read
+			"adt_list_transports", "adt_transports",
+			"adt_settings_write", "adt_format_settings");
+
 	public static List<Rule> parseRules(String text) {
 		List<Rule> rules = new ArrayList<>();
 		if (text == null) {
@@ -167,7 +180,8 @@ public final class ToolPolicy {
 			}
 			try {
 				Decision d = Decision.valueOf(line.substring(eq + 1).trim().toUpperCase(Locale.ROOT));
-				rules.add(new Rule(line.substring(0, eq).trim(), d));
+				String glob = line.substring(0, eq).trim();
+				rules.add(new Rule(RENAMED.getOrDefault(glob.toLowerCase(Locale.ROOT), glob), d));
 			} catch (IllegalArgumentException e) {
 				// ignore malformed line
 			}

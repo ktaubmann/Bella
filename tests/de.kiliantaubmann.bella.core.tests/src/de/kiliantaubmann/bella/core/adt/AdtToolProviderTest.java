@@ -693,4 +693,59 @@ class AdtToolProviderTest {
 		assertTrue(clean.content().contains("Syntax check: no errors."), clean.content());
 		assertEquals(1, checked.size(), "a clean change costs one check, also standing in for the check after saving");
 	}
+
+	@Test
+	void transportsWithoutNameAskForIt() {
+		AdtToolProvider p = new AdtToolProvider(twoSystems(), () -> "dev");
+		for (String action : List.of("for_object", "history")) {
+			ToolResult r = call(p, "adt_transports", "{\"action\":\"" + action + "\"}");
+			assertTrue(r.isError() && r.content().contains("Give 'name'"), r.content());
+		}
+	}
+
+	@Test
+	void nestedSearchHitsCountOnce() throws Exception {
+		String xml = "<tsr:textSearchResult xmlns:tsr=\"http://www.sap.com/adt/ris/textSearch\" "
+				+ "xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+				+ "<tsr:textSearchObject adtcore:uri=\"/sap/bc/adt/ris/proxy?content=objectName%3AZCL_A\">"
+				+ "<tsr:adtMainObject adtcore:type=\"CLAS/OC\" adtcore:name=\"ZCL_A\"/>"
+				+ "<tsr:textSearchObject adtcore:uri=\"/sap/bc/adt/ris/proxy?content=objectName%3AZCL_A%2Cinclude\">"
+				+ "<tsr:adtMainObject adtcore:type=\"CLAS/OC\" adtcore:name=\"ZCL_A\"/>"
+				+ "<tsr:textLine adtcore:uri=\"/x%23start%3D3%2C0\"><tsr:content>a</tsr:content></tsr:textLine>"
+				+ "<tsr:textLine adtcore:uri=\"/x%23start%3D9%2C0\"><tsr:content>b</tsr:content></tsr:textLine>"
+				+ "</tsr:textSearchObject></tsr:textSearchObject></tsr:textSearchResult>";
+		List<AdtClient.SourceHit> hits = AdtClient.parseSourceHits(xml);
+		assertEquals(1, hits.size(), hits.toString());
+		assertEquals(2, hits.get(0).lines().size());
+	}
+
+	@Test
+	void unsupportedSearchIsRecognizedByItsMessageKey() {
+		String sadt = "<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\">"
+				+ "<message lang=\"EN\">%s</message><properties><entry key=\"T100KEY-ID\">SADT_REST</entry>"
+				+ "<entry key=\"T100KEY-NO\">%s</entry></properties></exc:exception>";
+		FakeAdt adt = twoSystems().route("GET /sap/bc/adt/repository/informationsystem/textsearch",
+				r -> new AdtResponse(400, "application/xml", String.format(sadt, "Not supported", "020")));
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_search_objects",
+				"{\"query\":\"x\",\"search_in\":\"source\"}");
+		assertTrue(r.content().contains("does not support source code search"), r.content());
+
+		// another SADT_REST message that only mentions 2020 somewhere is no "unsupported"
+		FakeAdt denied = twoSystems().route("GET /sap/bc/adt/repository/informationsystem/textsearch",
+				r2 -> new AdtResponse(403, "application/xml", String.format(sadt, "No authorization since 2020", "102")));
+		ToolResult d = call(new AdtToolProvider(denied, () -> "dev"), "adt_search_objects",
+				"{\"query\":\"x\",\"search_in\":\"source\"}");
+		assertTrue(d.content().contains("No authorization for source code search"), d.content());
+	}
+
+	@Test
+	void systemWithoutComponentsIsNotAskedOnEveryWrite() {
+		AdtSystemInfo.clear();
+		FakeAdt adt = twoSystems();
+		AdtClient c = new AdtClient(adt.stateless("dev"));
+		assertTrue(AdtSystemInfo.of("dev", c, CancelToken.NONE).isEmpty());
+		assertTrue(AdtSystemInfo.of("dev", c, CancelToken.NONE).isEmpty());
+		assertEquals(1, adt.log.stream().filter(l -> l.contains("/system/components")).count(), adt.log.toString());
+		AdtSystemInfo.clear();
+	}
 }

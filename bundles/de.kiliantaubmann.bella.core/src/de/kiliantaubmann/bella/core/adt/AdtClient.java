@@ -147,7 +147,8 @@ public final class AdtClient {
 	private static String textSearchError(AdtResponse r) {
 		String msg = AdtErrors.message(r);
 		String body = r.body() == null ? "" : r.body();
-		if (body.contains("SADT_REST") && body.contains("020") || msg.toLowerCase(Locale.ROOT).contains("not supported")) {
+		if (UNSUPPORTED_ID.matcher(body).find() && UNSUPPORTED_NO.matcher(body).find()
+				|| msg.toLowerCase(Locale.ROOT).contains("action is not supported")) {
 			return "This SAP system does not support source code search (SADT_REST 020).";
 		}
 		return switch (r.status()) {
@@ -158,6 +159,9 @@ public final class AdtClient {
 		};
 	}
 
+	/** T100 key SADT_REST 020 in an ADT exception: the system has no text search. */
+	private static final Pattern UNSUPPORTED_ID = Pattern.compile("T100KEY-ID\"\\s*>\\s*SADT_REST\\s*<");
+	private static final Pattern UNSUPPORTED_NO = Pattern.compile("T100KEY-NO\"\\s*>\\s*0*20\\s*<");
 	private static final Pattern START_LINE = Pattern.compile("#start=(\\d+)|\\bposition:(\\d+)");
 	private static final Pattern OBJECT_NAME = Pattern.compile("(?i)objectName:([^,#]+)");
 
@@ -168,6 +172,10 @@ public final class AdtClient {
 		for (Element o : objects) {
 			List<SourceLine> lines = new ArrayList<>();
 			for (Element l : AdtXml.elements(o, "textLine")) {
+				// nested objects (a class and its include) list their own lines; count each line once
+				if (nearestSearchObject(l) != o) {
+					continue;
+				}
 				String content = "";
 				for (Element c : AdtXml.elements(l, "content")) {
 					content = AdtXml.text(c);
@@ -204,6 +212,15 @@ public final class AdtClient {
 			out.add(new SourceHit(AdtXml.attr(r, "name"), AdtXml.attr(r, "type"), AdtXml.attr(r, "uri"), lines));
 		}
 		return out;
+	}
+
+	private static Element nearestSearchObject(Element e) {
+		for (Node n = e.getParentNode(); n != null; n = n.getParentNode()) {
+			if (n instanceof Element p && "textSearchObject".equals(p.getLocalName())) {
+				return p;
+			}
+		}
+		return null;
 	}
 
 	private static String decode(String s) {

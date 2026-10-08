@@ -148,4 +148,16 @@ class ToolPolicyTest {
 				.decide(tool("adt_delete_object", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(List.of(new ToolPolicy.Rule("x:delete", Decision.ASK)), ToolPolicy.parseRules("x:delete=ASK"));
 	}
+
+	@Test
+	void rulesForMergedToolsKeepTheirEffect() {
+		ToolPolicy p = new ToolPolicy(ToolPolicy.parseRules("adt_short_dumps=DENY\nADT_SETTINGS_WRITE=AUTO\n"
+				+ "adt_list_transports=ASK"));
+		assertEquals(Decision.DENY, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"short_dumps\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"system_messages\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_format_settings", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_transports", ToolSpec.Kind.READ), new JsonObject()));
+	}
 }
