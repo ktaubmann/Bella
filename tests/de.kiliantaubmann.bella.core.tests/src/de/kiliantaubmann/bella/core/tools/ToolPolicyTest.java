@@ -126,7 +126,7 @@ class ToolPolicyTest {
 			ToolPolicy p = ToolPolicy.defaults().withMode(mode);
 			Decision expected = mode == ChatMode.PLAN ? Decision.DENY : Decision.CONFIRM;
 			assertEquals(expected, p.decide(tool("adt_delete_object", ToolSpec.Kind.WRITE), new JsonObject()), mode.name());
-			for (String ask : List.of("adt_settings_write", "adt_transport_manage", "adt_git_write", "adt_trace_control")) {
+			for (String ask : List.of("adt_format_settings", "adt_transport_manage", "adt_git_write", "adt_trace_control")) {
 				assertEquals(expected, p.decide(tool(ask, ToolSpec.Kind.WRITE), new JsonObject()), mode + " " + ask);
 			}
 		}

@@ -48,6 +48,7 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 		case "FUGR" -> "/sap/bc/adt/functions/groups/";
 		case "DDLS" -> "/sap/bc/adt/ddic/ddl/sources/";
 		case "DCLS" -> "/sap/bc/adt/acm/dcl/sources/";
+		case "DDLX" -> "/sap/bc/adt/ddic/ddlx/sources/";
 		case "BDEF" -> "/sap/bc/adt/bo/behaviordefinitions/";
 		case "SRVD" -> "/sap/bc/adt/ddic/srvd/sources/";
 		case "DTEL" -> "/sap/bc/adt/ddic/dataelements/";

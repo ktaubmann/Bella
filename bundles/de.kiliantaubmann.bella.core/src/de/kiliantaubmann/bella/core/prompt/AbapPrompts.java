@@ -71,8 +71,8 @@ public final class AbapPrompts {
 				- Before writing code that depends on the release, check it with adt_list_systems (SAP_BASIS release
 				  or ABAP Cloud) and use only syntax and APIs that release offers.
 				- To review a transport request, start with adt_transport_review; never change or release anything.
-				- For a runtime error, read the short dump (adt_short_dumps). Before writing a non-local object, ask
-				  adt_transport_info which transport request to use. If none fits, offer to create one
+				- For a runtime error, read the short dump (adt_diagnose 'short_dumps'). Before writing a non-local
+				  object, ask adt_transports 'for_object' which transport request to use. If none fits, offer to create one
 				  (adt_transport_manage 'create'); the developer confirms it.
 				- Read table or CDS view contents with adt_table_contents when data helps (select few columns and
 				  rows; the developer may have to confirm each read, depending on the chat mode).

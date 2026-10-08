@@ -207,7 +207,7 @@ class TransportReviewTest {
 		assertEquals("Request DEVK900100 contains no object NOPE.", missing);
 		assertTrue(p.call("adt_transport_review", Json.parseObject("{\"request\":\"DEVK999999\"}"), CancelToken.NONE).isError());
 
-		String list = p.call("adt_list_transports", Json.parseObject("{}"), CancelToken.NONE).content();
+		String list = p.call("adt_transports", Json.parseObject("{}"), CancelToken.NONE).content();
 		assertEquals("DEVK900100  Calculator  (DEV, target QAS, 1 tasks, 4 objects)\n", list);
 		assertTrue(adt.log.contains("GET /sap/bc/adt/cts/transportrequests?user=DEV&target=true&requestType=KWT&requestStatus=D"),
 				adt.log.toString());
