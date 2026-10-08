@@ -94,14 +94,19 @@ public final class Masker {
 	private static final String CDS_ANNOTATIONS = "(?:AbapCatalog|AccessControl|Aggregation|Analytics|AnalyticsDetails"
 			+ "|ClientHandling|Consumption|DataAging|DefaultAggregation|EndUserText|Environment|Hierarchy|Metadata"
 			+ "|ObjectModel|OData|Search|Semantics|UI|VDM)";
-	private static final Pattern CUSTOMER_OBJECT = Pattern.compile("(?<![" + IDENT + "])[ZzYy][" + IDENT + "]{2,39}(?![" + IDENT + "])");
 	/**
-	 * Not after a backslash: in JSON {@code \n@EndUserText.label} is a line
-	 * break before a CDS annotation, no address.
+	 * Escaped line breaks and tabs in JSON or ABAP strings ({@code \nZREPORT})
+	 * also start a word, although the character before the name is a letter.
 	 */
-	private static final Pattern MAIL = Pattern.compile("(?<![" + IDENT + ".+\\\\-])[A-Za-z0-9._%+-]+@(?!" + CDS_ANNOTATIONS
+	private static final String AFTER_ESCAPE = "(?<=\\\\[nrt])";
+	private static final Pattern CUSTOMER_OBJECT = Pattern.compile("(?:(?<![" + IDENT + "])|" + AFTER_ESCAPE + ")[ZzYy][" + IDENT + "]{2,39}(?![" + IDENT + "])");
+	/**
+	 * Not right after a backslash: in JSON {@code \n@EndUserText.label} is a
+	 * line break before a CDS annotation, no address.
+	 */
+	private static final Pattern MAIL = Pattern.compile("(?:(?<![" + IDENT + ".+\\\\-])|" + AFTER_ESCAPE + ")[A-Za-z0-9._%+-]+@(?!" + CDS_ANNOTATIONS
 			+ "\\.)[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?![" + IDENT + "])");
-	private static final Pattern IBAN = Pattern.compile("(?<![" + IDENT + "])[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?(?![" + IDENT + "])");
+	private static final Pattern IBAN = Pattern.compile("(?:(?<![" + IDENT + "])|" + AFTER_ESCAPE + ")[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?(?![" + IDENT + "])");
 	/** Upper-case words starting with Z or Y that are no customer objects. */
 	private static final Set<String> NOT_OBJECTS = Set.of("YES", "YEAR", "YEARS", "YET", "YOU", "YOUR", "YOURS", "YTD",
 			"ZERO", "ZEROS", "ZONE", "ZONES", "ZIP", "ZOOM", "YAML", "YIELD");
@@ -265,7 +270,9 @@ public final class Masker {
 	}
 
 	private static String boundaryBefore(String value) {
-		return Character.isLetterOrDigit(value.charAt(0)) || value.charAt(0) == '_' ? "(?<![" + IDENT + "])" : "";
+		return Character.isLetterOrDigit(value.charAt(0)) || value.charAt(0) == '_'
+				? "(?:(?<![" + IDENT + "])|" + AFTER_ESCAPE + ")"
+				: "";
 	}
 
 	private static String boundaryAfter(String value) {

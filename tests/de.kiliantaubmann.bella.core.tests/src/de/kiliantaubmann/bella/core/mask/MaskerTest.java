@@ -90,6 +90,20 @@ class MaskerTest {
 	}
 
 	@Test
+	void namesAfterEscapedLineBreaksInJsonAreMasked() {
+		Masker m = new Masker(() -> all(List.of(), List.of("S4H"), List.of("MUELLER")));
+		// a tool result as the CLI's stream-json carries it: line breaks escaped as \n
+		String line = """
+				{"text":"ZAPI_ACME_ONE (IWSG) package $TMP\\nZSD_ACME_DELETE (PROG/P)\\r\\nZ1ACME_MSG\\tS4H\\nMUELLER\\nanna@acme.de\\nDE89 3704 0044 0532 0130 00"}""";
+		String masked = m.mask(line);
+		for (String secret : List.of("ACME", "S4H", "MUELLER", "anna", "DE89")) {
+			assertFalse(masked.contains(secret), secret + " in " + masked);
+		}
+		assertTrue(masked.contains("\\nZSD_MASK"), "the escape stays: " + masked);
+		assertTrue(masked.contains("\\nmaskmail"), "the escape stays: " + masked);
+	}
+
+	@Test
 	void offChangesNothing() {
 		AtomicReference<Masker.Settings> s = new AtomicReference<>(Masker.Settings.OFF);
 		Masker m = new Masker(s::get);
