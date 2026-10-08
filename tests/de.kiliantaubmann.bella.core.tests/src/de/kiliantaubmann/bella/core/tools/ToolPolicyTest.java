@@ -54,6 +54,11 @@ class ToolPolicyTest {
 		ToolPolicy p = ToolPolicy.defaults();
 		assertEquals(Decision.CONFIRM, p.decide(tool("adt_table_contents", ToolSpec.Kind.READ), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("mcp_arc1_SAPQuery", ToolSpec.Kind.READ), new JsonObject()));
+		// the authorization trace reads table SUAUTHVALTRC: user names and authorization values
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"authorization_trace\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"short_dumps\"}")));
 	}
 
 	@Test
@@ -129,6 +134,9 @@ class ToolPolicyTest {
 		// rules with an action only match that action
 		assertEquals(Decision.CONFIRM, auto.decide(tool("adt_package_manage", ToolSpec.Kind.WRITE),
 				Json.parseObject("{\"action\":\"delete\"}")));
+		// the tools trim the action, so surrounding blanks must not slip past the rule
+		assertEquals(Decision.CONFIRM, auto.decide(tool("adt_package_manage", ToolSpec.Kind.WRITE),
+				Json.parseObject("{\"action\":\" delete \"}")));
 		assertEquals(Decision.AUTO, auto.decide(tool("adt_package_manage", ToolSpec.Kind.WRITE),
 				Json.parseObject("{\"action\":\"create\"}")));
 		assertEquals(Decision.CONFIRM, auto.decide(tool("mcp_arc1_SAPTransport", ToolSpec.Kind.UNKNOWN),

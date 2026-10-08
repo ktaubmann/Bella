@@ -438,6 +438,15 @@ class AdtOpsTest {
 	}
 
 	@Test
+	void rapSideEffectsDoNotDeclareActions() {
+		var plain = AdtRap.handlers(BDEF);
+		var withSideEffects = AdtRap.handlers(BDEF.replace("  association _Booking { create; }\n",
+				"  association _Booking { create; }\n  side effects\n  {\n    action acceptTravel affects $self;\n"
+						+ "    field BeginDate affects field EndDate;\n  }\n"));
+		assertEquals(plain, withSideEffects);
+	}
+
+	@Test
 	void rapGenerateHandlersTool() {
 		List<String> written = new ArrayList<>();
 		FakeAdt adt = adt()

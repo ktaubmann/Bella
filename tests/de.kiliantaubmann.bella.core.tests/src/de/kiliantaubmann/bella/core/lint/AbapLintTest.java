@@ -210,6 +210,11 @@ class AbapLintTest {
 		// a name that only appears in a text literal is not a use
 		assertEquals(List.of("unused_variables"), rules("METHOD m.\n  DATA lv_x TYPE i.\n"
 				+ "  out->write( 'lv_x' ).\nENDMETHOD."));
+		// structure components are used as ls_x-a, not on their own
+		assertEquals(List.of(), rules("METHOD m.\n  DATA: BEGIN OF ls_x,\n          a TYPE i,\n          b TYPE i,\n"
+				+ "        END OF ls_x.\n  ls_x-a = 1.\n  ls_x-b = 2.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  DATA BEGIN OF ls_x.\n  DATA a TYPE i.\n  DATA END OF ls_x.\n"
+				+ "  DATA lv_y TYPE i.\n  lv_y = ls_x-a.\nENDMETHOD."));
 	}
 
 	@Test

@@ -487,6 +487,8 @@ public final class AbapLint {
 			List<Finding> out) {
 		Map<String, Integer> declared = new LinkedHashMap<>();
 		Map<String, Integer> declaredIn = new HashMap<>();
+		// components between BEGIN OF and END OF are used as struct-comp, not on their own
+		int structDepth = 0;
 		for (int j = start + 1; j < end; j++) {
 			String code = normalized(statements.get(j));
 			String first = code.split("\\s+")[0].replace(":", "");
@@ -496,7 +498,15 @@ public final class AbapLint {
 			String rest = code.substring(code.indexOf(first) + first.length()).replaceFirst("^\\s*:", "").trim();
 			for (String part : topLevelParts(rest)) {
 				String p = part.trim();
-				if (p.startsWith("BEGIN OF") || p.startsWith("END OF")) {
+				if (p.startsWith("BEGIN OF")) {
+					structDepth++;
+					continue;
+				}
+				if (p.startsWith("END OF")) {
+					structDepth = Math.max(0, structDepth - 1);
+					continue;
+				}
+				if (structDepth > 0) {
 					continue;
 				}
 				Matcher m = DECLARED.matcher(p);

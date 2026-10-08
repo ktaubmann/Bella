@@ -261,8 +261,18 @@ final class AdtDdic {
 
 	// ---- message classes -------------------------------------------------------
 
-	/** One message of a message class. */
-	record Message(String number, String text) {
+	/**
+	 * One message of a message class.
+	 *
+	 * @param selfExplanatory no long text needed (T100U-SELFDEF)
+	 * @param documented      has a long text
+	 */
+	record Message(String number, String text, boolean selfExplanatory, boolean documented) {
+
+		/** A new message: self-explanatory, without long text. */
+		Message(String number, String text) {
+			this(number, text, true, false);
+		}
 	}
 
 	static String messageClassXml(String name, String description, String pkg, String language, List<Message> messages) {
@@ -273,7 +283,8 @@ final class AdtDdic {
 		for (Message m : messages) {
 			// adtcore:language keys the texts (T100-SPRSL); without it they are stored under a blank language
 			sb.append("\n  <mc:messages mc:msgno=\"").append(x(m.number())).append("\" mc:msgtext=\"")
-					.append(x(m.text())).append("\" mc:selfexplainatory=\"true\" mc:documented=\"false\"/>");
+					.append(x(m.text())).append("\" mc:selfexplainatory=\"").append(m.selfExplanatory())
+					.append("\" mc:documented=\"").append(m.documented()).append("\"/>");
 		}
 		return sb.append("\n</mc:messageClass>").toString();
 	}
@@ -320,7 +331,10 @@ final class AdtDdic {
 		}
 		List<Message> messages = new ArrayList<>();
 		for (Element e : AdtXml.elements(d, "messages")) {
-			messages.add(new Message(AdtXml.attr(e, "msgno"), AdtXml.attr(e, "msgtext")));
+			// flags missing in the response keep the defaults of a new message
+			String self = AdtXml.attr(e, "selfexplainatory");
+			messages.add(new Message(AdtXml.attr(e, "msgno"), AdtXml.attr(e, "msgtext"), !"false".equals(self),
+					"true".equals(AdtXml.attr(e, "documented"))));
 		}
 		String language = AdtXml.attr(root, "language");
 		return new MessageClass(AdtXml.attr(root, "description"), pkg,
@@ -329,13 +343,13 @@ final class AdtDdic {
 
 	/** The messages after adding or changing {@code changes} and removing {@code remove}, sorted by number. */
 	static List<Message> mergeMessages(List<Message> current, List<Message> changes, List<String> remove) {
-		Map<String, String> byNumber = new java.util.TreeMap<>();
-		current.forEach(m -> byNumber.put(m.number(), m.text()));
-		changes.forEach(m -> byNumber.put(m.number(), m.text()));
+		Map<String, Message> byNumber = new java.util.TreeMap<>();
+		current.forEach(m -> byNumber.put(m.number(), m));
+		// a changed text keeps the flags (long text) of the existing message
+		changes.forEach(m -> byNumber.merge(m.number(), m,
+				(old, neu) -> new Message(old.number(), neu.text(), old.selfExplanatory(), old.documented())));
 		remove.forEach(n -> byNumber.remove(n.matches("\\d{1,3}") ? String.format("%03d", Integer.parseInt(n)) : n));
-		List<Message> out = new ArrayList<>();
-		byNumber.forEach((k, v) -> out.add(new Message(k, v)));
-		return out;
+		return new ArrayList<>(byNumber.values());
 	}
 
 	// ---- data elements ---------------------------------------------------------
@@ -576,19 +590,7 @@ final class AdtDdic {
 
 	static String tableTypeXml(String name, String description, String pkg, String language, String responsible,
 			String rowType, String rowTypeKind) throws AdtException {
-		String row = rowType.trim().toUpperCase(Locale.ROOT);
-		if (!DDIC_NAME.matcher(row).matches()) {
-			throw new AdtException(400, "Invalid row type " + rowType + ".");
-		}
-		boolean builtin = rowTypeKind == null || rowTypeKind.isBlank() ? BUILTIN.contains(row)
-				: rowTypeKind.trim().equalsIgnoreCase("builtin");
-		String rowXml = builtin
-				? "<ttyp:typeKind>predefinedAbapType</ttyp:typeKind><ttyp:typeName/><ttyp:builtInType><ttyp:dataType>"
-						+ x(row) + "</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals>"
-						+ "</ttyp:builtInType><ttyp:rangeType/>"
-				: "<ttyp:typeKind>dictionaryType</ttyp:typeKind><ttyp:typeName>" + x(row)
-						+ "</ttyp:typeName><ttyp:builtInType><ttyp:dataType>STRU</ttyp:dataType><ttyp:length>000000"
-						+ "</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>";
+		String rowXml = tableTypeRowXml(rowType, rowTypeKind);
 		return "<ttyp:tableType xmlns:ttyp=\"http://www.sap.com/dictionary/tabletype\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
 				+ " adtcore:description=\"" + x(description) + "\" adtcore:name=\"" + x(name)
 				+ "\" adtcore:type=\"TTYP/DA\" adtcore:masterLanguage=\"" + language + "\"" + responsible(responsible)
@@ -599,6 +601,49 @@ final class AdtDdic {
 				+ "<ttyp:kind>nonUnique</ttyp:kind><ttyp:components ttyp:isVisible=\"false\"/><ttyp:alias/></ttyp:primaryKey>"
 				+ "\n  <ttyp:secondaryKeys ttyp:isVisible=\"true\" ttyp:isEditable=\"true\"><ttyp:allowed>notSpecified</ttyp:allowed>"
 				+ "</ttyp:secondaryKeys>\n</ttyp:tableType>";
+	}
+
+	private static final Pattern TTYP_ROW = Pattern.compile("<(\\w+:)?rowType\\b[^>]*>.*?</\\1?rowType>",
+			Pattern.DOTALL);
+	private static final Pattern ROOT_DESCRIPTION = Pattern.compile("(adtcore:description=\")[^\"]*(\")");
+
+	/**
+	 * Changes row type and description of an existing table type and keeps everything else (access type, keys,
+	 * initial row count) as read from the system.
+	 */
+	static String updateTableTypeXml(String current, String description, String rowType, String rowTypeKind)
+			throws AdtException {
+		String xml = current.replaceFirst("^\\s*<\\?xml[^>]*\\?>\\s*", "");
+		Matcher m = TTYP_ROW.matcher(xml);
+		if (!m.find()) {
+			throw new AdtException(500, "The table type has no row type element Bella can change.");
+		}
+		// the system may use another prefix for the table type namespace
+		String prefix = m.group(1) == null ? "" : m.group(1);
+		String row = ("<ttyp:rowType>" + tableTypeRowXml(rowType, rowTypeKind) + "</ttyp:rowType>")
+				.replace("<ttyp:", "<" + prefix).replace("</ttyp:", "</" + prefix);
+		xml = xml.substring(0, m.start()) + row + xml.substring(m.end());
+		Matcher d = ROOT_DESCRIPTION.matcher(xml);
+		if (d.find()) {
+			xml = xml.substring(0, d.start()) + d.group(1) + x(description) + d.group(2) + xml.substring(d.end());
+		}
+		return xml;
+	}
+
+	private static String tableTypeRowXml(String rowType, String rowTypeKind) throws AdtException {
+		String row = rowType.trim().toUpperCase(Locale.ROOT);
+		if (!DDIC_NAME.matcher(row).matches()) {
+			throw new AdtException(400, "Invalid row type " + rowType + ".");
+		}
+		boolean builtin = rowTypeKind == null || rowTypeKind.isBlank() ? BUILTIN.contains(row)
+				: rowTypeKind.trim().equalsIgnoreCase("builtin");
+		return builtin
+				? "<ttyp:typeKind>predefinedAbapType</ttyp:typeKind><ttyp:typeName/><ttyp:builtInType><ttyp:dataType>"
+						+ x(row) + "</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals>"
+						+ "</ttyp:builtInType><ttyp:rangeType/>"
+				: "<ttyp:typeKind>dictionaryType</ttyp:typeKind><ttyp:typeName>" + x(row)
+						+ "</ttyp:typeName><ttyp:builtInType><ttyp:dataType>STRU</ttyp:dataType><ttyp:length>000000"
+						+ "</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>";
 	}
 
 	// ---- service bindings ------------------------------------------------------
