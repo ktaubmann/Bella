@@ -62,6 +62,11 @@ public class ClassSurgeryTest {
 		assertThrows(SurgeryException.class, () -> ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS run.", "public"));
 		assertThrows(SurgeryException.class, () -> ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS x.", "protected"));
 		assertThrows(SurgeryException.class, () -> ClassSurgery.addMethod(CLASS, "ZCL_A", "DATA x TYPE i.", "public"));
+		String wrapped = ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS\n      size RETURNING VALUE(rv) TYPE i.", "public");
+		assertTrue(wrapped.contains("METHOD size.\n  ENDMETHOD."), wrapped);
+		SurgeryException chained = assertThrows(SurgeryException.class,
+				() -> ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS: size.", "public"));
+		assertTrue(chained.getMessage().contains("chain colon"), chained.getMessage());
 	}
 
 	@Test

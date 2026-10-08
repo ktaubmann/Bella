@@ -1140,8 +1140,9 @@ public final class AdtClient {
 		if (v.isBlank()) {
 			v = atcDefaultVariant(cancel);
 		}
-		String key = cacheScope + "|" + v;
-		Long failed = UNREACHABLE_VARIANTS.get(key);
+		// without a scope the failure cannot be told apart from another system's
+		String key = cacheScope == null ? null : cacheScope + "|" + v;
+		Long failed = key == null ? null : UNREACHABLE_VARIANTS.get(key);
 		String reason = null;
 		if (failed != null && System.currentTimeMillis() - failed < UNREACHABLE_FOR_MILLIS) {
 			reason = "it failed a few minutes ago";
@@ -1152,7 +1153,9 @@ public final class AdtClient {
 				if (!isRemoteFailure(e)) {
 					throw e;
 				}
-				UNREACHABLE_VARIANTS.put(key, System.currentTimeMillis());
+				if (key != null) {
+					UNREACHABLE_VARIANTS.put(key, System.currentTimeMillis());
+				}
 				reason = e.getMessage();
 			}
 		}

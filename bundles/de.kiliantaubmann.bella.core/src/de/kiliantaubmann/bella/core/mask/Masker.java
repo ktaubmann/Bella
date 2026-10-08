@@ -110,11 +110,18 @@ public final class Masker {
 	private static final Pattern MAIL = Pattern.compile("(?:(?<![" + IDENT + ".+\\\\-])|" + AFTER_ESCAPE + ")[A-Za-z0-9._%+-]+@(?!" + CDS_ANNOTATIONS
 			+ "\\.)[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?![" + IDENT + "])");
 	private static final Pattern IBAN = Pattern.compile("(?:(?<![" + IDENT + "])|" + AFTER_ESCAPE + ")[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?(?![" + IDENT + "])");
+	/** Keywords that follow a data object's name in ABAP statements. */
+	private static final String ABAP_KEYWORDS_AFTER_NAME = "(?:TYPE|LIKE|VALUE|REF|TABLE|DEFAULT|OPTIONAL|BOXED"
+			+ "|AND|NOT|INTO|FROM|WHERE|ORDER|GROUP|USING|CHANGING|EXPORTING|IMPORTING|RETURNING|RAISING"
+			+ "|EXCEPTIONS|STRUCTURE|FOR|ASSIGNING|REFERENCE|WITH|BINARY|TRANSPORTING|ELSE|THEN|DIV|MOD|BIT)";
 	/**
 	 * A logon name SAP names in its messages ("locked in request … of user
-	 * MUELLER"): any user, not only the configured ones.
+	 * MUELLER"): any user, not only the configured ones. Not in ABAP code: a
+	 * component ({@code ls_x-user}, {@code me->user}) or a variable called
+	 * user followed by a keyword ({@code DATA user TYPE syuname}).
 	 */
-	private static final Pattern NAMED_USER = Pattern.compile("(?<=\\b(?:[Uu]ser|USER|[Bb]enutzer|BENUTZER) )"
+	private static final Pattern NAMED_USER = Pattern.compile("(?<=(?<![-~>])\\b(?:[Uu]ser|USER|[Bb]enutzer|BENUTZER) )"
+			+ "(?!" + ABAP_KEYWORDS_AFTER_NAME + "(?![" + IDENT + "-]))"
 			+ "[A-Z][A-Z0-9_]{2,11}(?![" + IDENT + "])");
 	/** A transport request starts with the system id: {@code S4HK900123}. */
 	private static final String TRANSPORT_NUMBER = "(?=K\\d{6}(?![" + IDENT + "]))";

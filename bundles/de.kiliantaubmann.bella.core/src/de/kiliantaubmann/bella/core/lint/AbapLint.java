@@ -530,7 +530,7 @@ public final class AbapLint {
 		unusedVariables(statements, start, end, lineStarts, out);
 	}
 
-	private static final Pattern DECLARED = Pattern.compile("^([A-Z_][A-Z0-9_]*|<[A-Z0-9_]+>)\\b");
+	private static final Pattern DECLARED = Pattern.compile("^([A-Z_][A-Z0-9_]*\\b|<[A-Z0-9_]+>)");
 	private static final Pattern QUOTED = Pattern.compile("'(?:[^']|'')*'|`(?:[^`]|``)*`");
 
 	/** Local DATA and FIELD-SYMBOLS of a routine that no other statement of it mentions. */

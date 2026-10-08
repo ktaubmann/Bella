@@ -258,11 +258,11 @@ public final class ClassSurgery {
 	private static String clause(String clause) {
 		String c = clause == null ? "" : clause.strip();
 		String upper = c.toUpperCase(Locale.ROOT);
-		if (!upper.startsWith("METHODS ") && !upper.startsWith("CLASS-METHODS ")) {
-			throw new SurgeryException("Give the complete METHODS clause, e.g. METHODS run IMPORTING iv_id TYPE i.");
-		}
-		if (upper.startsWith("METHODS:") || upper.startsWith("CLASS-METHODS:")) {
+		if (upper.matches("(?s)(CLASS-)?METHODS\\s*:.*")) {
 			throw new SurgeryException("Give one METHODS clause without the chain colon.");
+		}
+		if (!upper.matches("(?s)(CLASS-)?METHODS\\s+\\S.*")) {
+			throw new SurgeryException("Give the complete METHODS clause, e.g. METHODS run IMPORTING iv_id TYPE i.");
 		}
 		return c.endsWith(".") ? c : c + ".";
 	}

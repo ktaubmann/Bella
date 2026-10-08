@@ -30,11 +30,13 @@ public final class DevScope {
 
 	/**
 	 * The chat works on this editor object; its package becomes the
-	 * development package. Another object than before drops the chosen
-	 * package and transport request.
+	 * development package. Only the first one binds the chat: later editor
+	 * objects (another include, another class) keep the package and the
+	 * transport request, and writes to objects of other packages are refused.
+	 * A package the developer named before is replaced and its request dropped.
 	 */
 	public synchronized void editorObject(AdtEditorObject object) {
-		if (object == null || object.equals(editor)) {
+		if (object == null || editor != null) {
 			return;
 		}
 		editor = object;

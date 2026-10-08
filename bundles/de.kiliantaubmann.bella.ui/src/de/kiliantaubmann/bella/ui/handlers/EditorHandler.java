@@ -20,6 +20,7 @@ import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtClient;
 import de.kiliantaubmann.bella.core.adt.AdtContext;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
+import de.kiliantaubmann.bella.core.adt.AdtObjectRef;
 import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
@@ -201,7 +202,7 @@ abstract class EditorHandler extends AbstractHandler {
 		/**
 		 * Loads the definitions; {@code null} when that fails, the action then
 		 * runs without them. Customer objects of other packages than the edited
-		 * object's are left out.
+		 * object's are left out; when that package cannot be read, none are.
 		 */
 		AdtContext.Result load(CancelToken cancel) throws CancelToken.CancelledException {
 			try {
@@ -212,13 +213,28 @@ abstract class EditorHandler extends AbstractHandler {
 					return null;
 				}
 				AdtClient client = new AdtClient(adt.stateless(destinationId));
-				String pkg = client.packageOf(objectUri, cancel);
-				return AdtContext.build(client, candidates, AdtContext.Limits.DEFAULT,
-						AdtContext.inPackage(client, pkg.isEmpty() ? null : pkg, cancel), cancel);
-			} catch (java.io.IOException | RuntimeException | LinkageError e) {
+				return AdtContext.build(client, candidates, AdtContext.Limits.DEFAULT, inOwnPackage(client, cancel),
+						cancel);
+			} catch (RuntimeException | LinkageError e) {
 				BellaPlugin.log("Cannot load SAP definitions", e);
 				return null;
 			}
+		}
+
+		/** Customer objects of the edited object's package; all objects when its package is unknown. */
+		private java.util.function.Predicate<AdtObjectRef> inOwnPackage(AdtClient client, CancelToken cancel) {
+			try {
+				// an include's URI has no package of its own; its object has
+				String pkg = client.packageOf(AdtObjectRef.objectUri(objectUri), cancel);
+				if (!pkg.isEmpty()) {
+					return AdtContext.inPackage(client, pkg, cancel);
+				}
+				Log.info("editor", "No package for " + objectUri + "; SAP definitions are not limited to it");
+			} catch (java.io.IOException | RuntimeException e) {
+				Log.info("editor", "Cannot read the package of " + objectUri + " (" + e.getMessage()
+						+ "); SAP definitions are not limited to it");
+			}
+			return r -> true;
 		}
 	}
 

@@ -207,6 +207,8 @@ class AbapLintTest {
 		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_n TYPE i.\n  out->write( |{ lv_n } rows| ).\nENDMETHOD."));
 		assertEquals(List.of(), rules("METHOD m.\n  FIELD-SYMBOLS <ls_row> TYPE any.\n"
 				+ "  LOOP AT lt ASSIGNING <ls_row>.\n  ENDLOOP.\nENDMETHOD."));
+		assertEquals(List.of("unused_variables"), rules("METHOD m.\n  FIELD-SYMBOLS <ls_row> TYPE any.\n"
+				+ "  x = 1.\nENDMETHOD."));
 		// a name that only appears in a text literal is not a use
 		assertEquals(List.of("unused_variables"), rules("METHOD m.\n  DATA lv_x TYPE i.\n"
 				+ "  out->write( 'lv_x' ).\nENDMETHOD."));

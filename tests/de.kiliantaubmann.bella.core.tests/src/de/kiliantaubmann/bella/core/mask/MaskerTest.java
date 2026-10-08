@@ -119,6 +119,14 @@ class MaskerTest {
 	}
 
 	@Test
+	void abapCodeAboutUsersStaysIntact() {
+		Masker m = new Masker(() -> new Masker.Settings(true, false, true, List.of(), List.of(), List.of()));
+		String code = "DATA user TYPE syuname. ls_x-user = me->user. user LIKE sy-uname. user VALUE 'X'.";
+		assertEquals(code, m.mask(code));
+		assertFalse(m.mask("locked by user SCHMIDT").contains("SCHMIDT"));
+	}
+
+	@Test
 	void offChangesNothing() {
 		AtomicReference<Masker.Settings> s = new AtomicReference<>(Masker.Settings.OFF);
 		Masker m = new Masker(s::get);

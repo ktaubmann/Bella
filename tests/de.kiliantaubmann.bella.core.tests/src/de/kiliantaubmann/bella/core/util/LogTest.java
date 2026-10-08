@@ -77,6 +77,14 @@ class LogTest {
 	}
 
 	@Test
+	void hyphenatedHeadersAndOtherSchemesAreRedacted() {
+		assertEquals("x-csrf-token: *** X-Auth-Token: *** Proxy-Authorization: ***",
+				Log.redact("x-csrf-token: AbC123xyz X-Auth-Token: t0k3n Proxy-Authorization: Basic dXNlcjpwdw=="));
+		assertEquals("Authorization: *** next", Log.redact("Authorization: Negotiate YIIGhgYGKwYBBQUCoIIGejCCBnag next"));
+		assertEquals("password: ***", Log.redact("password: *abc"));
+	}
+
+	@Test
 	void clipsLongContent() {
 		assertEquals("abc", Log.clip("abc", 5));
 		assertEquals("abcde … [3 more characters]", Log.clip("abcdefgh", 5));

@@ -146,6 +146,47 @@ class DevScopeTest {
 	}
 
 	@Test
+	void freeSqlReadsOnlyTablesOfTheDevelopmentPackage() {
+		AdtToolProvider p = provider(system(), new DevScope());
+		call(p, "adt_dev_package", "{\"action\":\"set\",\"package\":\"ZSD_DELIV\"}");
+		Optional<String> other = refuse(p, "adt_table_contents",
+				"{\"sql\":\"SELECT * FROM mara INNER JOIN zcl_other ON mara~matnr = zcl_other~matnr\"}");
+		assertTrue(other.isPresent() && other.get().contains("ZCL_OTHER belongs to package ZMM_OTHER"), other.toString());
+		assertEquals(Optional.empty(), refuse(p, "adt_table_contents", "{\"sql\":\"SELECT * FROM mara\"}"));
+	}
+
+	@Test
+	void aNewPackageBecomesTheDevelopmentPackage() {
+		DevScope scope = new DevScope();
+		FakeAdt adt = system();
+		adt.route("POST /sap/bc/adt/packages", r -> FakeAdt.ok(""));
+		AdtToolProvider p = provider(adt, scope);
+		String create = "{\"action\":\"create\",\"name\":\"ZNEW\",\"description\":\"d\",\"transport\":\"%s\"}";
+		Optional<String> foreign = refuse(p, "adt_package_manage", create.formatted("DEVK900002"));
+		assertTrue(foreign.isPresent() && foreign.get().contains("belongs to OTHER"), foreign.toString());
+		assertEquals(Optional.empty(), refuse(p, "adt_package_manage", create.formatted("DEVK900001")));
+		ToolResult created = call(p, "adt_package_manage", create.formatted("DEVK900001"));
+		assertFalse(created.isError(), created.content());
+		assertEquals("ZNEW", scope.developerPackage("dev"));
+		assertEquals("DEVK900001", scope.transport("dev"));
+	}
+
+	@Test
+	void laterEditorObjectsKeepPackageAndTransport() {
+		DevScope scope = new DevScope();
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_own", "ZCL_OWN", "CLAS/OC"));
+		scope.transport("dev", "DEVK900123");
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_own/includes/testclasses",
+				"ZCL_OWN", "CLAS/OC"));
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_next", "ZCL_NEXT", "CLAS/OC"));
+		assertEquals("ZCL_OWN", scope.editorObject().name());
+		assertEquals("DEVK900123", scope.transport("dev"));
+		scope.reset();
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_next", "ZCL_NEXT", "CLAS/OC"));
+		assertEquals("ZCL_NEXT", scope.editorObject().name());
+	}
+
+	@Test
 	void theEditorObjectSetsThePackage() {
 		DevScope scope = new DevScope();
 		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_own", "ZCL_OWN", "CLAS/OC"));

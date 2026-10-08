@@ -80,6 +80,15 @@ public final class AdtContext {
 	 * other; three at a time stays well below what ADT itself sends.
 	 */
 	static final int PARALLEL = 3;
+	/**
+	 * Shared by all builds, each with at most {@link #PARALLEL} loads in
+	 * flight; idle threads end after a minute.
+	 */
+	private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {
+		Thread t = new Thread(r, "bella-adt-context");
+		t.setDaemon(true);
+		return t;
+	});
 
 	/** One candidate as loaded: the object and its definition, not found ({@code obj == null}), or a failure. */
 	private record Loaded(AdtObjectRef obj, String body, Exception failure) {
@@ -137,11 +146,6 @@ public final class AdtContext {
 		List<String> failed = new ArrayList<>();
 		List<String> ignored = new ArrayList<>();
 		String error = null;
-		ExecutorService pool = Executors.newFixedThreadPool(PARALLEL, r -> {
-			Thread t = new Thread(r, "bella-adt-context");
-			t.setDaemon(true);
-			return t;
-		});
 		List<Future<Loaded>> loads = new ArrayList<>();
 		try {
 			// a window of PARALLEL loads ahead of the candidate being assembled; results are used in order, so
@@ -153,7 +157,7 @@ public final class AdtContext {
 						|| System.nanoTime() >= deadline;
 				while (!full && loads.size() < Math.min(candidates.size(), i + PARALLEL)) {
 					Reference next = candidates.get(loads.size());
-					loads.add(pool.submit(() -> load(client, next, allowed, cancel)));
+					loads.add(POOL.submit(() -> load(client, next, allowed, cancel)));
 				}
 				if (full) {
 					if (error == null) {
@@ -210,7 +214,8 @@ public final class AdtContext {
 				used.add(l.obj().name());
 			}
 		} finally {
-			pool.shutdownNow();
+			// loads beyond the limits are not needed any more
+			loads.forEach(f -> f.cancel(true));
 		}
 		if (!notFound.isEmpty() && !used.isEmpty()) {
 			text.append("Not found: ").append(String.join(", ", notFound)).append('\n');
