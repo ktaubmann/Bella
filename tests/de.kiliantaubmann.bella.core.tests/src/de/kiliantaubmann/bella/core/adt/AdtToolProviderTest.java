@@ -172,7 +172,8 @@ class AdtToolProviderTest {
 		assertEquals(CLASS_SRC, call(p, "adt_read_source", json).content());
 		assertFalse(call(p, "adt_write_source", "{\"name\":\"ZCL_A\",\"type\":\"CLAS\",\"source\":\"x\"}").isError());
 		call(p, "adt_read_source", json);
-		assertEquals(List.of("null", "\"v1\"", "null"), ifNoneMatch);
+		// the write reads the source once more (from the cache) for the syntax check before saving
+		assertEquals(List.of("null", "\"v1\"", "\"v1\"", "null"), ifNoneMatch);
 	}
 
 	@Test
@@ -636,5 +637,60 @@ class AdtToolProviderTest {
 				Json.parseObject("{\"query\":\"x\",\"search_in\":\"source\"}"), CancelToken.NONE);
 		assertTrue(unsupported.isError() && unsupported.content().contains("no source code search"),
 				unsupported.content());
+	}
+
+	private static String checkMessages(String... errors) {
+		StringBuilder sb = new StringBuilder("<chkrun:checkRunReports xmlns:chkrun=\"http://www.sap.com/adt/checkrun\">"
+				+ "<chkrun:checkReport><chkrun:checkMessageList>");
+		for (String e : errors) {
+			sb.append("<chkrun:checkMessage chkrun:uri=\"/sap/bc/adt/programs/programs/zrep/source/main#start=2,0\" "
+					+ "chkrun:type=\"E\" chkrun:shortText=\"").append(e).append("\"/>");
+		}
+		return sb.append("</chkrun:checkMessageList></chkrun:checkReport></chkrun:checkRunReports>").toString();
+	}
+
+	@Test
+	void writeIsCheckedBeforeSaving() {
+		List<String> checked = new ArrayList<>();
+		List<String> saved = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/programs/programs/zrep/source/main",
+						r -> new AdtResponse(200, "text/plain", "REPORT zrep.\nWRITE x."))
+				.route("POST /sap/bc/adt/checkruns", r -> {
+					String source = new String(java.util.Base64.getDecoder().decode(
+							r.body().replaceAll("(?s).*<chkrun:content>(.*)</chkrun:content>.*", "$1")),
+							java.nio.charset.StandardCharsets.UTF_8);
+					checked.add(source);
+					// the old source has one error, the new one with "y" a second one
+					return FakeAdt.ok(source.contains("y") ? checkMessages("Field X is unknown", "Field Y is unknown")
+							: source.contains("x") ? checkMessages("Field X is unknown") : checkMessages());
+				})
+				.route("POST /sap/bc/adt/programs/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/programs/programs/zrep/source/main", r -> {
+					saved.add(r.body());
+					return FakeAdt.ok("");
+				})
+				.route("POST /sap/bc/adt/programs/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+
+		ToolResult refused = call(p, "adt_write_source",
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"source\":\"REPORT zrep.\\nWRITE: x, y.\"}");
+		assertTrue(refused.isError() && refused.content().startsWith("Not saved: the new source adds syntax errors:\n"
+				+ "Error line 2: Field Y is unknown"), refused.content());
+		assertTrue(saved.isEmpty());
+		assertEquals(2, checked.size(), "new source, then the old one for comparison");
+
+		ToolResult allowed = call(p, "adt_write_source",
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"allow_errors\":true,\"source\":\"REPORT zrep.\\nWRITE: x, y.\"}");
+		assertFalse(allowed.isError(), allowed.content());
+		assertEquals(1, saved.size());
+
+		checked.clear();
+		ToolResult clean = call(p, "adt_write_source",
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"source\":\"REPORT zrep.\\nWRITE 'ok'(001).\"}");
+		assertFalse(clean.isError(), clean.content());
+		assertTrue(clean.content().contains("Syntax check: no errors."), clean.content());
+		assertEquals(1, checked.size(), "a clean change costs one check, also standing in for the check after saving");
 	}
 }

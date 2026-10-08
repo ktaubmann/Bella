@@ -34,6 +34,7 @@ import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
 import de.kiliantaubmann.bella.core.util.LineDiff;
+import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * Bella's own SAP tools, executed through the developer's ADT logon. No
@@ -373,12 +374,14 @@ public final class AdtToolProvider implements ToolProvider {
 		t.add(ToolSpec.of("adt_write_source",
 				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. "
 						+ "Works for ABAP (classes, interfaces, programs, includes, function modules) and for CDS views (DDLS), "
-						+ "access controls (DCLS), metadata extensions (DDLX), behavior definitions (BDEF) and service definitions (SRVD). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system.",
+						+ "access controls (DCLS), metadata extensions (DDLX), behavior definitions (BDEF) and service definitions (SRVD). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system. "
+						+ "ABAP main sources are checked by SAP before saving; a write that adds syntax errors is refused.",
 				schema(new String[] { "name", "source" }, objectProps("source", "string",
 						"Complete new source code, or with 'method' the new method body.", "method", "string",
 						"Replace only the body of this method (between METHOD and ENDMETHOD).",
 						"include", "string", "Class include, default main.", "transport", "string",
-						"Transport request, required for non-local objects unless already assigned.")),
+						"Transport request, required for non-local objects unless already assigned.", "allow_errors",
+						"boolean", "Save even though the new source adds syntax errors; only for an intended step.")),
 				Capability.WRITE_SOURCE, ToolSpec.Kind.WRITE));
 		JsonObject createSchema = schema(new String[] { "name", "type", "description" }, createProps());
 		addArrays(createSchema);
@@ -1222,12 +1225,11 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.ok("Nothing to change in " + ref.name() + ".");
 		}
 		String action = Json.str(in, "action").trim().toLowerCase(Locale.ROOT);
-		if (!action.equals("edit_method_signature")) {
-			// a signature change may break the body until it is rewritten; everything else must stay compilable
-			Optional<String> added = newSyntaxErrors(c, uri, before, after, cancel);
-			if (added.isPresent()) {
-				return ToolResult.error("Not saved: the change would add syntax errors:\n" + added.get());
-			}
+		// a signature change may break the body until it is rewritten; everything else must stay compilable
+		boolean signature = action.equals("edit_method_signature");
+		PreCheck pre = preWriteCheck(c, uri, before, after, !signature, cancel);
+		if (!signature && pre.added().isPresent()) {
+			return ToolResult.error("Not saved: the change would add syntax errors:\n" + pre.added().get());
 		}
 		String tr;
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
@@ -1239,24 +1241,52 @@ public final class AdtToolProvider implements ToolProvider {
 		return ToolResult.ok("Saved " + action + " in " + ref.name() + " in " + s.label()
 				+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet."
 				+ "\n```diff\n" + LineDiff.unified(before, after, "before", "after", 1).text() + "```"
-				+ syntaxAfterWrite(c, uri, cancel));
+				+ (pre.after() != null ? syntaxReport(pre.after()) : syntaxAfterWrite(c, uri, cancel)));
 	}
 
-	/** Syntax errors the new source has and the old one did not; empty when none or when the check cannot run. */
-	private static Optional<String> newSyntaxErrors(AdtClient c, String uri, String before, String after,
+	/**
+	 * Result of SAP's syntax check before a write.
+	 *
+	 * @param after the messages for the new source, {@code null} when the check could not run
+	 * @param added errors the new source has and the old one did not
+	 */
+	record PreCheck(List<AdtClient.Message> after, Optional<String> added) {
+	}
+
+	/**
+	 * Checks the new source before it is saved. The old source is only checked when the new one has errors,
+	 * so a clean change costs one check, whose result also stands in for the check after saving.
+	 *
+	 * @param compare whether to find the errors the change adds; without, only {@code after} is filled
+	 */
+	private static PreCheck preWriteCheck(AdtClient c, String uri, String before, String after, boolean compare,
 			CancelToken cancel) {
+		List<AdtClient.Message> now;
+		try {
+			now = c.syntaxCheck(uri, after, cancel);
+		} catch (IOException | RuntimeException e) {
+			return new PreCheck(null, Optional.empty());
+		}
+		List<AdtClient.Message> errors = now.stream().filter(m -> m.severity().equals("Error")).toList();
+		if (!compare || errors.isEmpty()) {
+			return new PreCheck(now, Optional.empty());
+		}
 		try {
 			// compared by text and count: line numbers move with the change, and the same text more often than
 			// before (e.g. one more use of an unknown type) is a new error
 			Map<String, Integer> old = new HashMap<>();
 			c.syntaxCheck(uri, before, cancel).stream().filter(m -> m.severity().equals("Error"))
 					.forEach(m -> old.merge(m.text(), 1, Integer::sum));
-			List<AdtClient.Message> now = c.syntaxCheck(uri, after, cancel).stream()
-					.filter(m -> m.severity().equals("Error") && old.merge(m.text(), -1, Integer::sum) < 0).toList();
-			return now.isEmpty() ? Optional.empty() : Optional.of(format(now));
+			List<AdtClient.Message> added = errors.stream()
+					.filter(m -> old.merge(m.text(), -1, Integer::sum) < 0).toList();
+			return new PreCheck(now, added.isEmpty() ? Optional.empty() : Optional.of(format(added)));
 		} catch (IOException | RuntimeException e) {
-			return Optional.empty();
+			return new PreCheck(now, Optional.empty());
 		}
+	}
+
+	private static String syntaxReport(List<AdtClient.Message> msgs) {
+		return msgs.isEmpty() ? "\n\nSyntax check: no errors." : "\n\nSyntax check of the saved version:\n" + format(msgs);
 	}
 
 	private ToolResult deleteObject(JsonObject in, CancelToken cancel) throws IOException {
@@ -1823,22 +1853,35 @@ public final class AdtToolProvider implements ToolProvider {
 	 * fixes them before activating, as ARC-1 does on SAPWrite.
 	 */
 	private String checksAfterWrite(AdtClient c, String objectUri, String written, boolean methodBody,
-			CancelToken cancel) {
+			AbapLint.Target target, List<AdtClient.Message> syntax, CancelToken cancel) {
 		StringBuilder sb = new StringBuilder();
-		List<AbapLint.Finding> lint = AbapLint.check(written, naming.get());
+		List<AbapLint.Finding> lint = AbapLint.check(written, naming.get(), target);
 		if (!lint.isEmpty()) {
 			sb.append("\n\nBella's style check of the code written")
 					.append(methodBody ? " (line numbers count within the method body)" : "")
 					.append("; fix the findings that apply before activating:\n").append(AbapLint.format(lint));
 		}
 		try {
-			List<AdtClient.Message> msgs = c.syntaxCheck(objectUri, null, true, cancel);
+			// the check before writing ran on exactly the saved source; no need to ask SAP again
+			List<AdtClient.Message> msgs = syntax != null ? syntax : c.syntaxCheck(objectUri, null, true, cancel);
 			sb.append(msgs.isEmpty() ? "\n\nSyntax check: no errors."
 					: "\n\nSyntax check of the saved version:\n" + format(msgs) + QUICKFIX_HINT);
 		} catch (IOException | RuntimeException e) {
 			sb.append("\n\nSyntax check could not run: ").append(e.getMessage());
 		}
 		return sb.toString();
+	}
+
+	/** Release and cloud flag of a system for the style check; asked once per system, then cached. */
+	private static AbapLint.Target lintTarget(AdtSystem s, AdtClient c, CancelToken cancel) {
+		return AdtSystemInfo.of(s.destinationId(), c, cancel).map(AdtClient.SystemInfo::lintTarget)
+				.orElse(AbapLint.Target.UNKNOWN);
+	}
+
+	/** Bella's CDS rules for a data definition just written, or an empty string. */
+	private String cdsChecks(String source, AbapLint.Target target) {
+		List<AbapLint.Finding> lint = AbapLint.check(source, naming.get(), target);
+		return lint.isEmpty() ? "" : "\n\nBella's CDS check of the code written:\n" + AbapLint.format(lint);
 	}
 
 	private ToolResult transportInfo(JsonObject in, CancelToken cancel) throws IOException {
@@ -2042,14 +2085,38 @@ public final class AdtToolProvider implements ToolProvider {
 		String include = Json.str(in, "include");
 		String source = Json.str(in, "source");
 		String method = Json.str(in, "method");
+		String current = null;
 		if (method != null && !method.isBlank()) {
-			String current = c.readSource(uri, include, cancel);
+			current = c.readSource(uri, include, cancel);
 			Optional<String> updated = AbapEdit.replaceMethod(current, method, source == null ? "" : source);
 			if (updated.isEmpty()) {
 				return ToolResult.error("Method " + method.toUpperCase(Locale.ROOT) + " is not implemented in "
 						+ ref.name() + ". Implemented methods: " + String.join(", ", AbapSlices.methodNames(current)));
 			}
 			source = updated.get();
+		}
+		// CDS, access controls, metadata extensions, behavior and service definitions: Bella's style check
+		// understands only ABAP
+		String kind = ref.type().replaceFirst("/.*", "");
+		boolean abap = AdtDdic.ABAP_SOURCE.contains(kind) || kind.isEmpty();
+		boolean mainSource = include == null || include.isBlank() || include.equalsIgnoreCase("main");
+		PreCheck pre = null;
+		if (abap && mainSource && source != null) {
+			// SAP's syntax check before saving: the compiler knows the real DDIC, unlike a local parser
+			if (current == null) {
+				try {
+					current = c.readSource(uri, null, cancel);
+				} catch (IOException | RuntimeException e) {
+					// without the old source the check cannot tell new errors from old ones; the write goes on
+					Log.info("adt", "no check before writing " + ref.name() + ": " + e.getMessage());
+				}
+			}
+			pre = current == null ? null : preWriteCheck(c, uri, current, source, true, cancel);
+			if (pre != null && pre.added().isPresent() && !flag(in, "allow_errors", false)) {
+				return ToolResult.error("Not saved: the new source adds syntax errors:\n" + pre.added().get()
+						+ QUICKFIX_HINT + "\nFix them and write again. Only if the errors are an intended step "
+						+ "(e.g. a method another write adds next), write with 'allow_errors': true.");
+			}
 		}
 		String tr;
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
@@ -2059,12 +2126,11 @@ public final class AdtToolProvider implements ToolProvider {
 			inactive.remove(s.destinationId());
 		}
 		boolean oneMethod = method != null && !method.isBlank();
-		// CDS, access controls, metadata extensions, behavior and service definitions: Bella's style check
-		// understands only ABAP
-		String kind = ref.type().replaceFirst("/.*", "");
-		String checks = AdtDdic.ABAP_SOURCE.contains(kind) || kind.isEmpty()
-				? checksAfterWrite(c, uri, oneMethod ? Json.str(in, "source") : source, oneMethod, cancel)
-				: syntaxAfterWrite(c, uri, cancel);
+		String checks = abap
+				? checksAfterWrite(c, uri, oneMethod ? Json.str(in, "source") : source, oneMethod,
+						lintTarget(s, c, cancel), pre == null ? null : pre.after(), cancel)
+				: syntaxAfterWrite(c, uri, cancel)
+						+ (kind.equals("DDLS") ? cdsChecks(source, lintTarget(s, c, cancel)) : "");
 		return ToolResult.ok("Saved " + (oneMethod ? "method " + method.toUpperCase(Locale.ROOT) + " of " : "")
 				+ ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet."
 				+ checks);
@@ -2149,8 +2215,10 @@ public final class AdtToolProvider implements ToolProvider {
 				? "function group " + Json.str(in, "group").trim().toUpperCase(Locale.ROOT)
 				: "package " + pkg.trim().toUpperCase(Locale.ROOT);
 		String checks = !written ? ""
-				: AdtDdic.ABAP_SOURCE.contains(type) ? checksAfterWrite(c, ref.uri(), source, false, cancel)
-						: syntaxAfterWrite(c, ref.uri(), cancel);
+				: AdtDdic.ABAP_SOURCE.contains(type)
+						? checksAfterWrite(c, ref.uri(), source, false, lintTarget(s, c, cancel), null, cancel)
+						: syntaxAfterWrite(c, ref.uri(), cancel)
+								+ (type.equals("DDLS") ? cdsChecks(source, lintTarget(s, c, cancel)) : "");
 		return ToolResult.ok("Created " + ref.name() + " (" + type + ") in " + where + " on " + s.label() + "."
 				+ notes + (type.equals("MSAG") ? "" : " Not activated yet.") + checks);
 	}
@@ -2224,8 +2292,7 @@ public final class AdtToolProvider implements ToolProvider {
 	/** Syntax check of a saved source that Bella's style check does not understand (CDS, RAP, DDIC sources). */
 	private static String syntaxAfterWrite(AdtClient c, String objectUri, CancelToken cancel) {
 		try {
-			List<AdtClient.Message> msgs = c.syntaxCheck(objectUri, null, true, cancel);
-			return msgs.isEmpty() ? "\n\nSyntax check: no errors." : "\n\nSyntax check of the saved version:\n" + format(msgs);
+			return syntaxReport(c.syntaxCheck(objectUri, null, true, cancel));
 		} catch (IOException | RuntimeException e) {
 			return "\n\nSyntax check could not run: " + e.getMessage();
 		}

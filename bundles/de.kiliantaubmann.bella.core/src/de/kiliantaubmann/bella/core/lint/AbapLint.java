@@ -34,6 +34,34 @@ public final class AbapLint {
 		}
 	}
 
+	/**
+	 * The system the code is for. Release rules apply only when the release is known.
+	 *
+	 * @param release SAP_BASIS release as a number, e.g. 702, 750, 816; 0 when unknown
+	 * @param cloud   ABAP Cloud (BTP ABAP Environment or a cloud development package)
+	 */
+	public record Target(int release, boolean cloud) {
+
+		public static final Target UNKNOWN = new Target(0, false);
+
+		/** From the SAP_BASIS release ADT reports, e.g. "758" or "7.50"; anything else counts as unknown. */
+		public static Target of(String basisRelease, boolean cloud) {
+			String digits = basisRelease == null ? "" : basisRelease.replaceAll("[^0-9]", "");
+			int release = digits.length() >= 3 ? Integer.parseInt(digits.substring(0, 3)) : 0;
+			return new Target(release, cloud);
+		}
+
+		/** Whether the system is known to be older than {@code release}; ABAP Cloud has every feature. */
+		boolean below(int minimum) {
+			return !cloud && release > 0 && release < minimum;
+		}
+
+		/** e.g. "SAP_BASIS 7.02". */
+		String label() {
+			return cloud ? "ABAP Cloud" : "SAP_BASIS " + release / 100 + "." + String.format("%02d", release % 100);
+		}
+	}
+
 	/** One finding; {@code line} is 1-based and relative to the checked text. */
 	public record Finding(int line, String rule, Severity severity, String message) {
 
@@ -85,12 +113,28 @@ public final class AbapLint {
 
 	/** The style rules plus the project's naming rules (rule {@code naming}). */
 	public static List<Finding> check(String source, NamingRules naming) {
+		return check(source, naming, Target.UNKNOWN);
+	}
+
+	/**
+	 * The style rules, the project's naming rules (rule {@code naming}) and the rules of the target system:
+	 * syntax its release does not know, what ABAP Cloud forbids, and modern forms it offers. CDS data
+	 * definitions get the CDS rules instead.
+	 */
+	public static List<Finding> check(String source, NamingRules naming, Target target) {
 		List<Finding> out = new ArrayList<>();
 		if (source == null || source.isBlank()) {
 			return out;
 		}
+		if (target == null) {
+			target = Target.UNKNOWN;
+		}
+		if (CdsLint.isCds(source)) {
+			return CdsLint.check(source, target);
+		}
 		int[] lineStarts = lineStarts(source);
 		List<Statement> statements = AbapStructureScanner.statements(source);
+		List<String> codes = statements.stream().map(AbapLint::normalized).toList();
 		int loopDepth = 0;
 		int itabLoops = 0;
 		int openSelect = -1;
@@ -279,6 +323,7 @@ public final class AbapLint {
 			}
 		}
 		structureRules(statements, lineStarts, out);
+		ReleaseRules.apply(statements, codes, lineStarts, target, out);
 		lineRules(source, out);
 		out.addAll(NamingCheck.check(source, naming, lineStarts));
 		out.sort(Comparator.comparingInt(Finding::line));
@@ -516,15 +561,23 @@ public final class AbapLint {
 				}
 			}
 		}
+		if (declared.isEmpty()) {
+			return;
+		}
+		// prepared once per routine, not once per variable
+		List<String> texts = new ArrayList<>(end - start);
+		for (int j = start + 1; j < end; j++) {
+			texts.add(QUOTED.matcher(statements.get(j).text()).replaceAll("''").toUpperCase(Locale.ROOT));
+		}
 		for (Map.Entry<String, Integer> e : declared.entrySet()) {
 			String name = e.getKey();
 			Pattern use = Pattern.compile("(?<![\\w<>/~-])" + Pattern.quote(name) + "(?![\\w>])");
 			boolean used = false;
 			for (int j = start + 1; j < end && !used; j++) {
-				if (j == declaredIn.get(name)) {
+				String text = texts.get(j - start - 1);
+				if (j == declaredIn.get(name) || !text.contains(name)) {
 					continue;
 				}
-				String text = QUOTED.matcher(statements.get(j).text()).replaceAll("''").toUpperCase(Locale.ROOT);
 				used = use.matcher(text).find();
 			}
 			if (!used) {
@@ -640,7 +693,7 @@ public final class AbapLint {
 	}
 
 	/** Statement text upper-cased, literals blanked, without the final period. */
-	private static String normalized(Statement st) {
+	static String normalized(Statement st) {
 		String code = LITERAL.matcher(st.text()).replaceAll("''").trim().toUpperCase(Locale.ROOT);
 		return code.endsWith(".") ? code.substring(0, code.length() - 1).trim() : code;
 	}
@@ -738,7 +791,7 @@ public final class AbapLint {
 		return w.isEmpty() ? "" : w.get(0).replace(":", "");
 	}
 
-	private static int[] lineStarts(String s) {
+	static int[] lineStarts(String s) {
 		List<Integer> starts = new ArrayList<>();
 		starts.add(0);
 		for (int i = 0; i < s.length(); i++) {

@@ -22,7 +22,9 @@ import de.kiliantaubmann.bella.core.abap.AbapSlices;
 import de.kiliantaubmann.bella.core.abap.ClassSurgery;
 import de.kiliantaubmann.bella.core.abap.CodeEdits;
 import de.kiliantaubmann.bella.core.abap.ObjectTarget;
+import de.kiliantaubmann.bella.core.adt.AdtClient;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
+import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
@@ -100,7 +102,7 @@ public final class OpenEditorRouter implements WriteGuard {
 				.or(() -> Optional.of(ToolResult.ok(target.name()
 						+ " is open in the developer's editor, so the new source was written into the editor buffer. "
 						+ "It is NOT saved and NOT activated; the developer reviews it and saves/activates in ADT."
-						+ styleCheck(written, method != null && !method.isBlank()))));
+						+ styleCheck(written, method != null && !method.isBlank(), lintTarget(part)))));
 	}
 
 	/** adt_edit_code on an open object: the same change, applied to the editor buffer. */
@@ -150,11 +152,21 @@ public final class OpenEditorRouter implements WriteGuard {
 		return Optional.empty();
 	}
 
+	/** Release of the editor's system if Bella knows it already; this runs on the UI thread, so it never asks SAP. */
+	private static AbapLint.Target lintTarget(IEditorPart part) {
+		try {
+			return EditorBridge.adtObject(part).flatMap(o -> AdtSystemInfo.known(o.destinationId()))
+					.map(AdtClient.SystemInfo::lintTarget).orElse(AbapLint.Target.UNKNOWN);
+		} catch (RuntimeException | LinkageError e) {
+			return AbapLint.Target.UNKNOWN;
+		}
+	}
+
 	/** Bella's style check of the code written, as the ADT tools add it to a write in the SAP system. */
-	private static String styleCheck(String written, boolean methodBody) {
+	private static String styleCheck(String written, boolean methodBody, AbapLint.Target target) {
 		BellaPlugin plugin = BellaPlugin.getDefault();
 		List<AbapLint.Finding> findings = AbapLint.check(written,
-				plugin == null ? NamingRules.NONE : plugin.activeConventions().naming());
+				plugin == null ? NamingRules.NONE : plugin.activeConventions().naming(), target);
 		if (findings.isEmpty()) {
 			return "";
 		}

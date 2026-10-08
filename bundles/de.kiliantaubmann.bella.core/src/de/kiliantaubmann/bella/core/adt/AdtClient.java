@@ -445,6 +445,11 @@ public final class AdtClient {
 	/** Release and kind of a system, from its installed software components. */
 	public record SystemInfo(String basisRelease, boolean cloud) {
 
+		/** Release and cloud flag for Bella's style check. */
+		public de.kiliantaubmann.bella.core.lint.AbapLint.Target lintTarget() {
+			return de.kiliantaubmann.bella.core.lint.AbapLint.Target.of(basisRelease, cloud);
+		}
+
 		/** e.g. "SAP_BASIS 758, on-premise" or "SAP BTP ABAP Environment (ABAP Cloud only)". */
 		public String describe() {
 			if (cloud) {

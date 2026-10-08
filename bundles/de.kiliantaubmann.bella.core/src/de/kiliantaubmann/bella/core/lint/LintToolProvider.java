@@ -45,6 +45,16 @@ public final class LintToolProvider implements ToolProvider {
 		source.addProperty("description", "ABAP code to check.");
 		JsonObject props = new JsonObject();
 		props.add("source", source);
+		JsonObject release = new JsonObject();
+		release.addProperty("type", "string");
+		release.addProperty("description", "SAP_BASIS release of the target system, e.g. 750 (from adt_list_systems); "
+				+ "reports syntax the release does not know yet.");
+		props.add("release", release);
+		JsonObject cloud = new JsonObject();
+		cloud.addProperty("type", "boolean");
+		cloud.addProperty("description", "true for ABAP Cloud: classic statements, lists, dynpros and non-strict SQL "
+				+ "become errors.");
+		props.add("cloud", cloud);
 		JsonObject schema = new JsonObject();
 		schema.addProperty("type", "object");
 		schema.add("properties", props);
@@ -56,8 +66,11 @@ public final class LintToolProvider implements ToolProvider {
 						+ "CREATE OBJECT, header lines, FORM …), SELECT *, SELECT in loops, SELECT … ENDSELECT, unchecked "
 						+ "SELECT SINGLE, CATCH cx_root, empty CATCH, break-points and aborting messages, texts without text "
 						+ "symbols, unused variables, unreachable code, repeated ELSEIF conditions, BEGIN/END OF names, deep "
-						+ "nesting, long or complex methods, missing @ in strict Open SQL, long lines and keyword case, and the "
-						+ "project's naming rules. Run it on code you write and fix the findings that apply.",
+						+ "nesting, long or complex methods, missing @ in strict Open SQL, long lines and keyword case, the "
+						+ "project's naming rules and modern forms (inline declarations, xsdbool, line_exists, CORRESPONDING, "
+						+ "RAISE EXCEPTION NEW). With 'release' or 'cloud' also syntax the target system does not have. "
+						+ "CDS data definitions get CDS rules (obsolete DDIC-based views, association names). Run it on code "
+						+ "you write and fix the findings that apply.",
 				schema, null, ToolSpec.Kind.READ));
 	}
 
@@ -70,6 +83,8 @@ public final class LintToolProvider implements ToolProvider {
 		if (source == null || source.isBlank()) {
 			return ToolResult.error("No source given.");
 		}
-		return ToolResult.ok(AbapLint.format(AbapLint.check(source, naming.get())));
+		boolean cloud = input.has("cloud") && input.get("cloud").isJsonPrimitive() && input.get("cloud").getAsBoolean();
+		return ToolResult.ok(AbapLint.format(AbapLint.check(source, naming.get(),
+				AbapLint.Target.of(Json.str(input, "release"), cloud))));
 	}
 }
