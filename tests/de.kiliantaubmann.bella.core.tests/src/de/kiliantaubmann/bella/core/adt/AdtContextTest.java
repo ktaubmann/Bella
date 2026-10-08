@@ -148,7 +148,30 @@ class AdtContextTest {
 		assertTrue(r.isEmpty());
 		assertEquals(List.of(), r.notFound());
 		assertTrue(r.error().contains("Connection to SAP system DEMO lost"), r.error());
-		assertEquals(1, adt.log.size(), "no further requests after the connection broke");
+		assertTrue(adt.log.size() <= AdtContext.PARALLEL, "only the loads already under way: " + adt.log);
+		assertTrue(r.skipped().isEmpty(), r.skipped().toString());
+	}
+
+	@Test
+	void loadsSeveralObjectsAtOnce() throws Exception {
+		FakeAdt adt = system();
+		AdtTransport slow = adt.stateless("x");
+		// about 150 ms per request: one after the other, the 9 requests would need 1.35 s
+		AdtTransport delayed = (r, c) -> {
+			try {
+				Thread.sleep(150);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			return slow.send(r, c);
+		};
+		AdtContext.Result r = AdtContext.build(new AdtClient(delayed),
+				List.of(new Reference("MARA", Hint.TABLE), new Reference("MATNR", Hint.TYPE),
+						new Reference("ZCL_LOG", Hint.CLASS), new Reference("Z_GET", Hint.FUNCTION),
+						new Reference("ZNOPE", Hint.ANY)),
+				new AdtContext.Limits(12, 1_000, 40_000), CancelToken.NONE);
+		assertEquals(List.of("MARA", "MATNR", "ZCL_LOG", "Z_GET"), r.used(), "skipped " + r.skipped());
+		assertEquals(List.of("ZNOPE"), r.notFound());
 	}
 
 	@Test

@@ -5,6 +5,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.abap.AbapReferences.Hint;
@@ -66,6 +72,26 @@ public final class AdtContext {
 	private AdtContext() {
 	}
 
+	/**
+	 * Objects loaded at the same time. Each lookup is a search plus a read, so loading one after the other let
+	 * the time limit cut off the last objects on slow systems. Stateless ADT requests are independent of each
+	 * other; three at a time stays well below what ADT itself sends.
+	 */
+	static final int PARALLEL = 3;
+
+	/** One candidate as loaded: the object and its definition, not found ({@code obj == null}), or a failure. */
+	private record Loaded(AdtObjectRef obj, String body, Exception failure) {
+	}
+
+	private static Loaded load(AdtClient client, Reference ref, CancelToken cancel) {
+		try {
+			AdtObjectRef obj = find(client, ref, cancel);
+			return obj == null ? new Loaded(null, null, null) : new Loaded(obj, content(client, obj, cancel), null);
+		} catch (IOException | RuntimeException e) {
+			return new Loaded(null, null, e);
+		}
+	}
+
 	public static Result build(AdtClient client, List<Reference> candidates, Limits limits, CancelToken cancel)
 			throws CancelledException {
 		long start = System.nanoTime();
@@ -76,45 +102,76 @@ public final class AdtContext {
 		List<String> skipped = new ArrayList<>();
 		List<String> failed = new ArrayList<>();
 		String error = null;
-		for (Reference ref : candidates) {
-			cancel.throwIfCancelled();
-			if (used.size() >= limits.maxObjects() || text.length() >= limits.maxChars()
-					|| System.nanoTime() >= deadline) {
-				skipped.add(ref.name());
-				continue;
-			}
-			try {
-				AdtObjectRef obj = find(client, ref, cancel);
-				if (obj == null) {
+		ExecutorService pool = Executors.newFixedThreadPool(PARALLEL, r -> {
+			Thread t = new Thread(r, "bella-adt-context");
+			t.setDaemon(true);
+			return t;
+		});
+		List<Future<Loaded>> loads = new ArrayList<>();
+		try {
+			// a window of PARALLEL loads ahead of the candidate being assembled; results are used in order, so
+			// the limits and the text are the same as when loading one by one
+			for (int i = 0; i < candidates.size(); i++) {
+				cancel.throwIfCancelled();
+				Reference ref = candidates.get(i);
+				boolean full = error != null || used.size() >= limits.maxObjects() || text.length() >= limits.maxChars()
+						|| System.nanoTime() >= deadline;
+				while (!full && loads.size() < Math.min(candidates.size(), i + PARALLEL)) {
+					Reference next = candidates.get(loads.size());
+					loads.add(pool.submit(() -> load(client, next, cancel)));
+				}
+				if (full) {
+					if (error == null) {
+						skipped.add(ref.name());
+					}
+					continue;
+				}
+				Loaded l;
+				try {
+					l = loads.get(i).get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+				} catch (TimeoutException e) {
+					skipped.add(ref.name());
+					continue;
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new CancelledException();
+				} catch (ExecutionException e) {
+					l = new Loaded(null, null, e.getCause() instanceof Exception x ? x : e);
+				}
+				cancel.throwIfCancelled();
+				if (l.failure() instanceof AdtConnectionException e) {
+					// every further request would fail the same way
+					error = e.getMessage();
+					failed.add(ref.name() + ": " + error);
+					continue;
+				}
+				if (l.failure() != null) {
+					Log.info("adt", "context: " + ref.name() + " not readable: " + l.failure().getMessage());
+					if (l.failure() instanceof AdtException a && a.status() == 404) {
+						notFound.add(ref.name());
+					} else {
+						failed.add(ref.name() + ": " + l.failure().getMessage());
+					}
+					continue;
+				}
+				if (l.obj() == null) {
 					notFound.add(ref.name());
 					continue;
 				}
-				String body = content(client, obj, cancel);
-				String block = block(obj, body);
+				String block = block(l.obj(), l.body());
 				if (text.length() + block.length() > limits.maxChars()) {
 					int room = limits.maxChars() - text.length();
 					if (room < 500) {
 						skipped.add(ref.name());
 						continue;
 					}
-					block = block(obj, AdtXml.truncate(body, room - 200));
+					block = block(l.obj(), AdtXml.truncate(l.body(), room - 200));
 				}
 				text.append(block);
-				used.add(obj.name());
-			} catch (AdtConnectionException e) {
-				// every further request would fail the same way
-				error = e.getMessage();
-				failed.add(ref.name() + ": " + error);
-				break;
-			} catch (IOException | RuntimeException e) {
-				cancel.throwIfCancelled();
-				Log.info("adt", "context: " + ref.name() + " not readable: " + e.getMessage());
-				if (e instanceof AdtException a && a.status() == 404) {
-					notFound.add(ref.name());
-				} else {
-					failed.add(ref.name() + ": " + e.getMessage());
-				}
+				used.add(l.obj().name());
 			}
+		} finally {
+			pool.shutdownNow();
 		}
 		if (!notFound.isEmpty() && !used.isEmpty()) {
 			text.append("Not found: ").append(String.join(", ", notFound)).append('\n');

@@ -59,6 +59,76 @@ class McpClientTest {
 		}
 	}
 
+	/** Answers initialize and tools/list, or fails every request while {@code down}. */
+	static final class FlakyTransport implements McpTransport {
+		final List<String> methods = new ArrayList<>();
+		boolean down;
+
+		@Override
+		public JsonObject request(JsonObject request, CancelToken cancel) throws java.io.IOException {
+			String method = request.get("method").getAsString();
+			methods.add(method);
+			if (down) {
+				throw new java.io.IOException("MCP server not reachable");
+			}
+			JsonObject response = Json.parseObject(method.equals("initialize")
+					? "{\"result\":{\"protocolVersion\":\"2025-06-18\"}}"
+					: "{\"result\":{\"tools\":[{\"name\":\"SAPRead\"}]}}");
+			response.add("id", request.get("id"));
+			return response;
+		}
+
+		@Override
+		public void notify(JsonObject n) {
+		}
+
+		@Override
+		public void close() {
+		}
+
+		long lists() {
+			return methods.stream().filter("tools/list"::equals).count();
+		}
+	}
+
+	@Test
+	void toolListIsCachedBetweenChatQuestions() throws Exception {
+		long[] now = { 0 };
+		FlakyTransport t = new FlakyTransport();
+		McpToolProvider p = new McpToolProvider("arc1", "ARC-1", new McpClient(t), "0.1", () -> now[0]);
+		assertEquals(1, p.listTools().size());
+		now[0] += McpToolProvider.TOOLS_TTL_MILLIS - 1;
+		p.listTools();
+		assertEquals(1, t.lists(), "a question within the TTL asks the server nothing");
+		now[0] += 2;
+		p.listTools();
+		assertEquals(2, t.lists(), "after the TTL the list is fetched again");
+		// the server goes away: its tools leave the chat until it answers again
+		t.down = true;
+		now[0] += McpToolProvider.TOOLS_TTL_MILLIS;
+		assertThrows(java.io.IOException.class, p::listTools);
+		assertThrows(java.io.IOException.class, p::listTools);
+		t.down = false;
+		now[0] += McpToolProvider.RETRY_AFTER_MILLIS;
+		assertEquals(1, p.listTools().size());
+	}
+
+	@Test
+	void unreachableServerIsNotAskedOnEveryQuestion() {
+		long[] now = { 0 };
+		FlakyTransport t = new FlakyTransport();
+		t.down = true;
+		McpToolProvider p = new McpToolProvider("arc1", "ARC-1", new McpClient(t), "0.1", () -> now[0]);
+		assertThrows(java.io.IOException.class, p::listTools);
+		int asked = t.methods.size();
+		now[0] += McpToolProvider.RETRY_AFTER_MILLIS - 1;
+		assertThrows(java.io.IOException.class, p::listTools);
+		assertEquals(asked, t.methods.size(), "the failure is repeated without waiting for the server again");
+		now[0] += 2;
+		assertThrows(java.io.IOException.class, p::listTools);
+		assertTrue(t.methods.size() > asked);
+	}
+
 	@Test
 	void initializesListsWithPaginationAndCalls() throws Exception {
 		ScriptedTransport t = new ScriptedTransport(Map.of(

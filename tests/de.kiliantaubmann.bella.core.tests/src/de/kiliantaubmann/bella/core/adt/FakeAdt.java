@@ -12,7 +12,8 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
 /** Fake ADT backend: answers requests with a router function and records them. */
 final class FakeAdt implements AdtBackend {
 
-	final List<String> log = new ArrayList<>();
+	// AdtContext loads in parallel
+	final List<String> log = java.util.Collections.synchronizedList(new ArrayList<>());
 	final Map<String, Function<AdtRequest, AdtResponse>> routes = new LinkedHashMap<>();
 	final List<AdtSystem> systems = new ArrayList<>();
 	int openSessions;
