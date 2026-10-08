@@ -736,6 +736,13 @@ class AdtToolProviderTest {
 		ToolResult d = call(new AdtToolProvider(denied, () -> "dev"), "adt_search_objects",
 				"{\"query\":\"x\",\"search_in\":\"source\"}");
 		assertTrue(d.content().contains("No authorization for source code search"), d.content());
+
+		// a system that says so without the T100 key
+		FakeAdt plain = twoSystems().route("GET /sap/bc/adt/repository/informationsystem/textsearch",
+				r3 -> new AdtResponse(400, "text/plain", "Text search is not supported in this system"));
+		ToolResult n = call(new AdtToolProvider(plain, () -> "dev"), "adt_search_objects",
+				"{\"query\":\"x\",\"search_in\":\"source\"}");
+		assertTrue(n.content().contains("does not support source code search"), n.content());
 	}
 
 	@Test
@@ -746,6 +753,15 @@ class AdtToolProviderTest {
 		assertTrue(AdtSystemInfo.of("dev", c, CancelToken.NONE).isEmpty());
 		assertTrue(AdtSystemInfo.of("dev", c, CancelToken.NONE).isEmpty());
 		assertEquals(1, adt.log.stream().filter(l -> l.contains("/system/components")).count(), adt.log.toString());
+		AdtSystemInfo.clear();
+
+		// a passing problem (here: not logged on yet) is asked about again next time
+		FakeAdt later = twoSystems().route("GET /sap/bc/adt/system/components",
+				r -> new AdtResponse(401, "text/plain", "logon"));
+		AdtClient lc = new AdtClient(later.stateless("dev"));
+		AdtSystemInfo.of("dev", lc, CancelToken.NONE);
+		AdtSystemInfo.of("dev", lc, CancelToken.NONE);
+		assertEquals(2, later.log.stream().filter(l -> l.contains("/system/components")).count(), later.log.toString());
 		AdtSystemInfo.clear();
 	}
 }

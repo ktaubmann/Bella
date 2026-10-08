@@ -50,6 +50,9 @@ public final class ToolPolicy {
 				return false;
 			}
 			String action = action(input);
+			if (action == null) {
+				action = DEFAULT_ACTIONS.get(toolName.toLowerCase(Locale.ROOT));
+			}
 			return action != null && toRegex(glob.substring(colon + 1)).matcher(action).matches();
 		}
 
@@ -148,22 +151,26 @@ public final class ToolPolicy {
 	}
 
 	/**
-	 * Parses rules from preference text, one {@code pattern=DECISION} per line;
-	 * blank lines and lines starting with {@code #} are ignored.
-	 */
-	/**
-	 * Tools that were merged or renamed, old name → the rule that matches the same calls now. User rules
+	 * Tools that were merged or renamed, old name → the rules that match the same calls now. User rules
 	 * written for the old names keep their effect instead of silently matching nothing; a DENY on short
-	 * dumps, for example, must still hold for adt_diagnose 'short_dumps'.
+	 * dumps, for example, must still hold for adt_diagnose 'short_dumps'. Each old tool maps to exactly the
+	 * actions it covered, so a rule never reaches further than it did.
 	 */
-	static final Map<String, String> RENAMED = Map.of(
-			"adt_short_dumps", "adt_diagnose:short_dumps",
-			"adt_where_used", "adt_navigate:references",
-			"adt_transport_info", "adt_transports:for_object",
-			// list was the default action, and all actions of adt_transports only read
-			"adt_list_transports", "adt_transports",
-			"adt_settings_write", "adt_format_settings");
+	static final Map<String, List<String>> RENAMED = Map.of(
+			"adt_short_dumps", List.of("adt_diagnose:short_dumps"),
+			"adt_where_used", List.of("adt_navigate:references"),
+			"adt_transport_info", List.of("adt_transports:for_object"),
+			"adt_list_transports", List.of("adt_transports:list", "adt_transports:layers", "adt_transports:targets"),
+			"adt_settings_write", List.of("adt_format_settings"));
 
+	/** The action a multi-purpose tool runs when the call names none. */
+	static final Map<String, String> DEFAULT_ACTIONS = Map.of("adt_transports", "list");
+
+	/**
+	 * Parses rules from preference text, one {@code pattern=DECISION} per line;
+	 * blank lines and lines starting with {@code #} are ignored. Rules naming merged tools, also through a
+	 * wildcard such as {@code adt_short_dump*}, get rules for the tools that do the same now.
+	 */
 	public static List<Rule> parseRules(String text) {
 		List<Rule> rules = new ArrayList<>();
 		if (text == null) {
@@ -181,7 +188,21 @@ public final class ToolPolicy {
 			try {
 				Decision d = Decision.valueOf(line.substring(eq + 1).trim().toUpperCase(Locale.ROOT));
 				String glob = line.substring(0, eq).trim();
-				rules.add(new Rule(RENAMED.getOrDefault(glob.toLowerCase(Locale.ROOT), glob), d));
+				List<String> renamed = RENAMED.get(glob.toLowerCase(Locale.ROOT));
+				if (renamed != null) {
+					renamed.forEach(g -> rules.add(new Rule(g, d)));
+					continue;
+				}
+				rules.add(new Rule(glob, d));
+				if (glob.indexOf(':') < 0 && glob.contains("*")) {
+					// a wildcard that covered a merged tool covers its new place too
+					Pattern old = Rule.toRegex(glob);
+					RENAMED.forEach((name, now) -> {
+						if (old.matcher(name).matches()) {
+							now.forEach(g -> rules.add(new Rule(g, d)));
+						}
+					});
+				}
 			} catch (IllegalArgumentException e) {
 				// ignore malformed line
 			}

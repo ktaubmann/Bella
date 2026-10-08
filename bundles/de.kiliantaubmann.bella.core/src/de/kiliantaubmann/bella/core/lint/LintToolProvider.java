@@ -67,7 +67,7 @@ public final class LintToolProvider implements ToolProvider {
 						+ "SELECT SINGLE, CATCH cx_root, empty CATCH, break-points and aborting messages, texts without text "
 						+ "symbols, unused variables, unreachable code, repeated ELSEIF conditions, BEGIN/END OF names, deep "
 						+ "nesting, long or complex methods, missing @ in strict Open SQL, long lines and keyword case, the "
-						+ "project's naming rules and modern forms (inline declarations, xsdbool, line_exists, CORRESPONDING, "
+						+ "project's naming rules and modern forms (xsdbool, line_exists, CORRESPONDING, "
 						+ "RAISE EXCEPTION NEW). With 'release' or 'cloud' also syntax the target system does not have. "
 						+ "CDS data definitions get CDS rules (obsolete DDIC-based views, association names). Run it on code "
 						+ "you write and fix the findings that apply.",

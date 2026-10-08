@@ -159,5 +159,19 @@ class ToolPolicyTest {
 				Json.parseObject("{\"action\":\"system_messages\"}")));
 		assertEquals(Decision.AUTO, p.decide(tool("adt_format_settings", ToolSpec.Kind.WRITE), new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(tool("adt_transports", ToolSpec.Kind.READ), new JsonObject()));
+		// the old list tool covered listing only, not the check before writing (the old adt_transport_info)
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_transports", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"layers\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_transports", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"for_object\"}")));
+	}
+
+	@Test
+	void wildcardsForMergedToolsKeepTheirEffect() {
+		ToolPolicy p = new ToolPolicy(ToolPolicy.parseRules("adt_short_dump*=DENY"));
+		assertEquals(Decision.DENY, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"short_dumps\"}")));
+		assertEquals(Decision.AUTO, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"traces\"}")));
 	}
 }

@@ -15,7 +15,7 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
 public final class AdtSystemInfo {
 
 	private static final Map<String, AdtClient.SystemInfo> KNOWN = new ConcurrentHashMap<>();
-	/** When asking a system failed; it is not asked again for a while (old systems lack the endpoint). */
+	/** When a system turned out to lack the endpoint (old releases); it is not asked again for a while. */
 	private static final Map<String, Long> FAILED = new ConcurrentHashMap<>();
 	static final long RETRY_AFTER_MILLIS = 10 * 60_000L;
 
@@ -38,7 +38,10 @@ public final class AdtSystemInfo {
 			FAILED.remove(destinationId);
 			return Optional.of(info);
 		} catch (IOException e) {
-			FAILED.put(destinationId, System.currentTimeMillis());
+			// only a missing endpoint stays missing; a timeout, a cancel or a logon still under way does not
+			if (e instanceof AdtException a && (a.status() == 404 || a.status() == 405)) {
+				FAILED.put(destinationId, System.currentTimeMillis());
+			}
 			return Optional.empty();
 		}
 	}

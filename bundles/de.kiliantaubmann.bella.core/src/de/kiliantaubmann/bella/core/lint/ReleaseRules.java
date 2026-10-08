@@ -16,6 +16,9 @@ import de.kiliantaubmann.bella.core.lint.AbapLint.Target;
  * Rules that depend on the system the code is for: syntax a release does not
  * know yet, what ABAP Cloud forbids (after ARC-1's cloud preset for abaplint),
  * and the modern forms Clean ABAP prefers where the release offers them.
+ * Inline declarations are not suggested: whether DATA( ) keeps the declared
+ * type needs the types of the right-hand side, which only a parser with the
+ * system's DDIC knows.
  */
 final class ReleaseRules {
 
@@ -28,21 +31,6 @@ final class ReleaseRules {
 	private static final Pattern RAISE_NEW = Pattern.compile("^RAISE\\s+(?:RESUMABLE\\s+)?EXCEPTION\\s+NEW\\b");
 	private static final Pattern INTO_HOST = Pattern.compile(
 			"\\b(?:INTO|APPENDING)\\s+(?:CORRESPONDING\\s+FIELDS\\s+OF\\s+)?(?:TABLE\\s+)?([^\\s,]+)");
-	private static final Pattern SIMPLE_DATA = Pattern.compile("^DATA\\s+([A-Z_][A-Z0-9_]*)\\s+TYPE\\s+(?!.*\\bVALUE\\b)([^,]*)$");
-	/**
-	 * Declared types an inline declaration would not reproduce: lengths and decimals (c, n, p, x …) come from
-	 * the declaration, while DATA( ) takes the type of the right-hand side.
-	 */
-	private static final Pattern SHAPED_TYPE = Pattern.compile(
-			"^(?:C|N|P|X|D|T|F|DECFLOAT16|DECFLOAT34)\\b.*|.*\\b(?:LENGTH|DECIMALS)\\b.*");
-	/**
-	 * A right-hand side whose type is fixed by what it calls or constructs: a functional method or function
-	 * call, or NEW / VALUE / CONV / CAST / REF / CORRESPONDING with an explicit type. Literals, templates and
-	 * calculations are left out, because their type is not the declared one.
-	 */
-	private static final Pattern TYPED_CALL = Pattern.compile(
-			"^(?:(?:NEW|VALUE|CONV|CAST|REF|CORRESPONDING)\\s+[A-Z_/][A-Z0-9_/]*|[A-Z_/][A-Z0-9_/]*(?:(?:->|=>)[A-Z0-9_~/]+)*)\\(");
-
 	/** Rules whose findings are errors in ABAP Cloud, where the statements do not compile. */
 	private static final Set<String> CLOUD_ERRORS = Set.of("obsolete_move", "obsolete_compute", "obsolete_arithmetic",
 			"obsolete_refresh", "obsolete_ranges", "obsolete_occurs", "header_line", "obsolete_tables",
@@ -68,7 +56,6 @@ final class ReleaseRules {
 			out.removeIf(f -> f.rule().equals("create_object") || f.rule().equals("read_table"));
 		}
 		Set<Integer> lineExists = new HashSet<>();
-		int methodStart = -1;
 		for (int i = 0; i < statements.size(); i++) {
 			String code = codes.get(i);
 			String[] w = code.split("\\s+");
@@ -112,12 +99,6 @@ final class ReleaseRules {
 
 			if (!modern) {
 				continue;
-			}
-			if (first.equals("METHOD")) {
-				methodStart = i;
-			} else if (first.equals("ENDMETHOD") && methodStart >= 0) {
-				preferInline(statements, codes, methodStart, i, lineStarts, out);
-				methodStart = -1;
 			}
 			if (code.contains("BOOLC(")) {
 				out.add(new Finding(line, "prefer_xsdbool", Severity.INFO,
@@ -165,58 +146,5 @@ final class ReleaseRules {
 			return "The host variable escape @";
 		}
 		return null;
-	}
-
-	/** Whether the whole right-hand side is one call or constructor with a fixed type, e.g. {@code lo->get( )}. */
-	static boolean singleTypedCall(String rhs) {
-		String r = rhs.trim();
-		if (!TYPED_CALL.matcher(r).find()) {
-			return false;
-		}
-		// the parenthesis opened by the call must close at the very end: "a( ) + 1" is a calculation
-		int depth = 0;
-		for (int i = r.indexOf('('); i < r.length(); i++) {
-			char c = r.charAt(i);
-			if (c == '(') {
-				depth++;
-			} else if (c == ')' && --depth == 0) {
-				return r.substring(i + 1).isBlank();
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * A local {@code DATA x TYPE t} whose first use is an assignment {@code x = …} can be declared there inline
-	 * (Clean ABAP "prefer inline to up-front declarations"); only simple single declarations are reported.
-	 */
-	private static void preferInline(List<Statement> statements, List<String> codes, int start, int end,
-			int[] lineStarts, List<Finding> out) {
-		for (int j = start + 1; j < end; j++) {
-			Matcher d = SIMPLE_DATA.matcher(codes.get(j));
-			if (!d.matches()) {
-				continue;
-			}
-			String name = d.group(1);
-			if (SHAPED_TYPE.matcher(d.group(2).trim()).matches()) {
-				continue;
-			}
-			Pattern use = Pattern.compile("(?<![\\w<>/~-])" + Pattern.quote(name) + "(?![\\w>])");
-			for (int k = j + 1; k < end; k++) {
-				String code = codes.get(k);
-				if (!use.matcher(code).find()) {
-					continue;
-				}
-				Matcher assign = Pattern.compile("^" + Pattern.quote(name) + "\\s*=\\s*(.*)$").matcher(code);
-				if (assign.matches() && singleTypedCall(assign.group(1)) && !code.matches(".*\\b" + Pattern.quote(name)
-						+ "\\b.*\\b" + Pattern.quote(name) + "\\b.*")) {
-					out.add(new Finding(AbapLint.lineOf(lineStarts, statements.get(j).start()), "prefer_inline",
-							Severity.INFO, name.toLowerCase(Locale.ROOT) + " is first assigned in line "
-									+ AbapLint.lineOf(lineStarts, statements.get(k).start()) + "; declare it there with DATA( "
-									+ name.toLowerCase(Locale.ROOT) + " ) = …."));
-				}
-				break;
-			}
-		}
 	}
 }

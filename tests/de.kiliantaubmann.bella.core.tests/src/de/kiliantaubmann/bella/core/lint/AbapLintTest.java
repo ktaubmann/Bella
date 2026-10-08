@@ -296,11 +296,11 @@ class AbapLintTest {
 
 	@Test
 	void modernForms() {
-		assertEquals(List.of("prefer_inline"), rules("METHOD m.\n  DATA lv_n TYPE i.\n  lv_n = lines( lt ).\n"
-				+ "  out->write( lv_n ).\nENDMETHOD."));
-		// first used other than as an assignment target, or counting up: stays as it is
-		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_n TYPE i.\n  lv_n = lv_n + 1.\nENDMETHOD."));
-		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_n TYPE i.\n  out->write( lv_n ).\nENDMETHOD."));
+		// no inline declaration hints: DATA( ) takes the type of the right-hand side, which only a parser knows
+		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_matnr TYPE matnr.\n  lv_matnr = condense( lv_raw ).\n"
+				+ "  out->write( lv_matnr ).\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n  DATA lo_log TYPE REF TO zif_log.\n  lo_log = NEW zcl_file_log( ).\n"
+				+ "  lo_log->add( ).\nENDMETHOD."));
 		assertEquals(List.of("prefer_xsdbool"), rules("METHOD m.\n  out->write( boolc( a = b ) ).\nENDMETHOD."));
 		assertEquals(List.of("prefer_raise_exception_new"), rules("METHOD m.\n  RAISE EXCEPTION TYPE zcx_x.\nENDMETHOD."));
 		assertEquals(List.of("use_line_exists"), rules("METHOD m.\n  READ TABLE lt WITH KEY id = 1 TRANSPORTING NO FIELDS.\n"
@@ -327,22 +327,6 @@ class AbapLintTest {
 	}
 
 	@Test
-	void preferInlineOnlyWhereTheTypeStays() {
-		// a literal or a calculation would give the inline variable another type
-		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_text TYPE string.\n  lv_text = 'A'.\n"
-				+ "  out->write( lv_text ).\nENDMETHOD."));
-		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_n TYPE i.\n  lv_n = lines( lt ) + 1.\n"
-				+ "  out->write( lv_n ).\nENDMETHOD."));
-		// lengths and decimals come from the declaration only
-		assertEquals(List.of(), rules("METHOD m.\n  DATA lv_amount TYPE p LENGTH 15 DECIMALS 2.\n"
-				+ "  lv_amount = lo->total( ).\n  out->write( lv_amount ).\nENDMETHOD."));
-		assertEquals(List.of("prefer_inline"), rules("METHOD m.\n  DATA lo_log TYPE REF TO zcl_log.\n"
-				+ "  lo_log = NEW zcl_log( ).\n  lo_log->add( ).\nENDMETHOD."));
-		assertEquals(List.of("prefer_inline"), rules("METHOD m.\n  DATA lt_items TYPE ty_items.\n"
-				+ "  lt_items = zcl_repo=>get_items( iv_id ).\n  out->write( lt_items ).\nENDMETHOD."));
-	}
-
-	@Test
 	void onlyBasisReleasesCount() {
 		assertEquals(750, AbapLint.Target.of("7.50", false).release());
 		assertEquals(758, AbapLint.Target.of("758", false).release());
@@ -351,5 +335,10 @@ class AbapLintTest {
 		assertEquals(0, AbapLint.Target.of("2022", false).release());
 		assertEquals(0, AbapLint.Target.of("S/4HANA 2022", false).release());
 		assertEquals(0, AbapLint.Target.of("", false).release());
+		// a support package or the text adt_list_systems shows follows the release
+		assertEquals(740, AbapLint.Target.of("7.40 SP05", false).release());
+		assertEquals(750, AbapLint.Target.of("750 SP12", false).release());
+		assertEquals(758, AbapLint.Target.of("SAP_BASIS 758, on-premise", false).release());
+		assertEquals(0, AbapLint.Target.of("7500", false).release());
 	}
 }

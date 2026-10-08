@@ -147,8 +147,9 @@ public final class AdtClient {
 	private static String textSearchError(AdtResponse r) {
 		String msg = AdtErrors.message(r);
 		String body = r.body() == null ? "" : r.body();
+		// the message itself, not the whole body: a body may mention "020" anywhere, e.g. in a date
 		if (UNSUPPORTED_ID.matcher(body).find() && UNSUPPORTED_NO.matcher(body).find()
-				|| msg.toLowerCase(Locale.ROOT).contains("action is not supported")) {
+				|| msg.toLowerCase(Locale.ROOT).contains("not supported")) {
 			return "This SAP system does not support source code search (SADT_REST 020).";
 		}
 		return switch (r.status()) {
@@ -160,8 +161,8 @@ public final class AdtClient {
 	}
 
 	/** T100 key SADT_REST 020 in an ADT exception: the system has no text search. */
-	private static final Pattern UNSUPPORTED_ID = Pattern.compile("T100KEY-ID\"\\s*>\\s*SADT_REST\\s*<");
-	private static final Pattern UNSUPPORTED_NO = Pattern.compile("T100KEY-NO\"\\s*>\\s*0*20\\s*<");
+	private static final Pattern UNSUPPORTED_ID = Pattern.compile("T100KEY-ID\"[^>]*>\\s*SADT_REST\\s*<");
+	private static final Pattern UNSUPPORTED_NO = Pattern.compile("T100KEY-NO\"[^>]*>\\s*0*20\\s*<");
 	private static final Pattern START_LINE = Pattern.compile("#start=(\\d+)|\\bposition:(\\d+)");
 	private static final Pattern OBJECT_NAME = Pattern.compile("(?i)objectName:([^,#]+)");
 
