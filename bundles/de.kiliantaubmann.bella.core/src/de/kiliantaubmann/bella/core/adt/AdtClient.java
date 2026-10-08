@@ -111,6 +111,130 @@ public final class AdtClient {
 		return parseObjectReferences(r.body());
 	}
 
+	/** One object with lines that contain the searched text. */
+	public record SourceHit(String name, String type, String uri, List<SourceLine> lines) {
+	}
+
+	/** A matching line, counted from 1 (0 if ADT does not say). */
+	public record SourceLine(int line, String text) {
+	}
+
+	/**
+	 * Full-text search in ABAP sources (ADT's text search, SAP_BASIS 7.51 and later; the request follows ARC-1).
+	 *
+	 * @param type    object type filter, e.g. CLAS, or {@code null}
+	 * @param pkg     package filter, or {@code null}
+	 */
+	public List<SourceHit> searchSource(String text, String type, String pkg, int max, CancelToken cancel)
+			throws IOException {
+		StringBuilder path = new StringBuilder("/sap/bc/adt/repository/informationsystem/textsearch?searchString=")
+				.append(enc(text)).append("&searchFromIndex=1&searchToIndex=").append(max);
+		if (type != null && !type.isBlank()) {
+			String t = type.trim().toUpperCase(Locale.ROOT);
+			// the filter takes the short form; function modules are FUNC, not FUGR/FF
+			path.append("&objectType=").append(enc(t.equals("FUGR/FF") ? "FUNC" : t.replaceFirst("/.*", "")));
+		}
+		if (pkg != null && !pkg.isBlank()) {
+			path.append("&packageName=").append(enc(pkg.trim().toUpperCase(Locale.ROOT)));
+		}
+		AdtResponse r = exchange(transport, AdtRequest.get(path.toString(), "application/xml"), cancel);
+		if (!r.ok()) {
+			throw new AdtException(r.status(), textSearchError(r));
+		}
+		return parseSourceHits(r.body());
+	}
+
+	private static String textSearchError(AdtResponse r) {
+		String msg = AdtErrors.message(r);
+		String body = r.body() == null ? "" : r.body();
+		if (body.contains("SADT_REST") && body.contains("020") || msg.toLowerCase(Locale.ROOT).contains("not supported")) {
+			return "This SAP system does not support source code search (SADT_REST 020).";
+		}
+		return switch (r.status()) {
+		case 401, 403 -> "No authorization for source code search (authorization object S_ADT_RES): " + msg;
+		case 404 -> "This SAP system has no source code search (ADT text search is missing).";
+		case 501 -> "Source code search needs SAP_BASIS 7.51 or later.";
+		default -> "Source code search failed: " + msg;
+		};
+	}
+
+	private static final Pattern START_LINE = Pattern.compile("#start=(\\d+)|\\bposition:(\\d+)");
+	private static final Pattern OBJECT_NAME = Pattern.compile("(?i)objectName:([^,#]+)");
+
+	static List<SourceHit> parseSourceHits(String xml) throws IOException {
+		List<SourceHit> out = new ArrayList<>();
+		Document d = AdtXml.parse(xml);
+		List<Element> objects = AdtXml.elements(d, "textSearchObject");
+		for (Element o : objects) {
+			List<SourceLine> lines = new ArrayList<>();
+			for (Element l : AdtXml.elements(o, "textLine")) {
+				String content = "";
+				for (Element c : AdtXml.elements(l, "content")) {
+					content = AdtXml.text(c);
+					break;
+				}
+				lines.add(new SourceLine(lineOfUri(AdtXml.attr(l, "uri")), snippet(content)));
+			}
+			// parent nodes only give the path to the hits
+			if (lines.isEmpty()) {
+				continue;
+			}
+			String uri = AdtXml.attr(o, "uri");
+			String name = objectNameOfUri(uri);
+			String type = "";
+			for (Element m : AdtXml.elements(o, "adtMainObject")) {
+				type = AdtXml.attr(m, "type");
+				name = name.isEmpty() ? AdtXml.attr(m, "name") : name;
+				break;
+			}
+			out.add(new SourceHit(name, type, uri, lines));
+		}
+		if (!objects.isEmpty()) {
+			return out;
+		}
+		// older releases answer with object references
+		for (Element r : AdtXml.elements(d, "objectReference")) {
+			List<SourceLine> lines = new ArrayList<>();
+			for (Element m : AdtXml.elements(r, "textSearchResult")) {
+				String line = AdtXml.attr(m, "line");
+				String snip = AdtXml.attr(m, "snippet");
+				lines.add(new SourceLine(line.matches("\\d+") ? Integer.parseInt(line) : 0,
+						snippet(snip.isEmpty() ? AdtXml.text(m) : snip)));
+			}
+			out.add(new SourceHit(AdtXml.attr(r, "name"), AdtXml.attr(r, "type"), AdtXml.attr(r, "uri"), lines));
+		}
+		return out;
+	}
+
+	private static String decode(String s) {
+		try {
+			return java.net.URLDecoder.decode(s.replace("+", "%2B"), StandardCharsets.UTF_8);
+		} catch (IllegalArgumentException e) {
+			return s;
+		}
+	}
+
+	private static int lineOfUri(String uri) {
+		Matcher m = START_LINE.matcher(decode(uri));
+		return m.find() ? Integer.parseInt(m.group(1) != null ? m.group(1) : m.group(2)) : 0;
+	}
+
+	/** The object name inside a proxy URI ({@code …?content=objectName:ZCL_X,…}). */
+	private static String objectNameOfUri(String uri) {
+		int i = uri.indexOf("content=");
+		if (i < 0) {
+			return "";
+		}
+		String content = decode(uri.substring(i + 8).replaceFirst("&.*", ""));
+		Matcher m = OBJECT_NAME.matcher(content);
+		String raw = m.find() ? m.group(1) : content.split("#")[0];
+		return raw.replaceFirst("=+.*$", "").trim();
+	}
+
+	private static String snippet(String raw) {
+		return raw.replaceAll("(?i)</?b>", "").replaceAll("\\s+", " ").trim();
+	}
+
 	/** Objects of a package (search by package name; nodestructure mixes up descriptions on real systems). */
 	public List<AdtObjectRef> packageContents(String packageName, int max, CancelToken cancel) throws IOException {
 		String path = "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=*&packageName="
