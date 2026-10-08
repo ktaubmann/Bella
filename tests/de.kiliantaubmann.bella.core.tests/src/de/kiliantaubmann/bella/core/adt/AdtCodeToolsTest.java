@@ -91,6 +91,8 @@ class AdtCodeToolsTest {
 				+ "DEVK900200  2026-06-24T10:00:00Z – 2026-06-25T10:00:00Z  DEV  (2 versions)\n"
 				+ "DEVK900100  2026-06-23T09:00:00Z  DEV  (1 version)\n"
 				+ "1 version without a transport request (e.g. the active or a local one).\n", r.content());
+		assertEquals(r.content(), call(p, "adt_transports",
+				"{\"action\":\"history\",\"name\":\"ZREP\",\"type\":\"PROG\",\"include\":\"  main \"}").content());
 		assertTrue(call(p, "adt_transports", "{\"action\":\"x\"}").isError());
 	}
 

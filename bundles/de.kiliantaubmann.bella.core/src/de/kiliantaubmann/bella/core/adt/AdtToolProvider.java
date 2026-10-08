@@ -1972,8 +1972,9 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtClient c = client(system(in));
 		AdtObjectRef ref = resolve(c, in, cancel);
 		String objectUri = AdtObjectRef.objectUri(ref.uri());
-		List<AdtRevisions.Revision> revisions = c.revisions(versionsUri(ref, objectUri, Json.str(in, "include")),
-				cancel);
+		String include = Json.str(in, "include");
+		include = include == null || include.isBlank() ? null : include.trim();
+		List<AdtRevisions.Revision> revisions = c.revisions(versionsUri(ref, objectUri, include), cancel);
 		if (revisions.isEmpty()) {
 			return ToolResult.ok(ref.name() + " has no version history (objects without source, or only local).");
 		}
@@ -2004,8 +2005,7 @@ public final class AdtToolProvider implements ToolProvider {
 					.append(" without a transport request (e.g. the active or a local one).\n");
 		}
 		if (ref.type().startsWith("CLAS")) {
-			String include = Json.str(in, "include");
-			sb.append("Only the ").append(include == null || include.isBlank() ? "main" : include.trim())
+			sb.append("Only the ").append(include == null ? "main" : include)
 					.append(" include; other includes (testclasses, implementations) have their own history.\n");
 		}
 		return ToolResult.ok(sb.toString());
