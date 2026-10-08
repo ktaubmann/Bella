@@ -1,8 +1,10 @@
 name: Test build
 
 # Every push to the branch "test" builds a signed update site and publishes it
-# as the pre-release "test", replacing the previous one:
-#   https://github.com/<owner>/<repo>/releases/download/test/bella-update-site-test.zip
+# as the pre-release "test-build", replacing the previous one:
+#   https://github.com/<owner>/<repo>/releases/download/test-build/bella-update-site-test.zip
+# The tag must not be called "test" like the branch: GitHub then leaves the
+# release an unpublished draft (shown as "untagged-…") without a download.
 # It is never marked as latest release and never reaches the update site on
 # GitHub Pages (pages.yml only takes regular releases).
 on:
@@ -34,7 +36,7 @@ jobs:
           BELLA_GPG_KEYNAME: ${{ vars.BELLA_GPG_KEYNAME }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.BELLA_GPG_PASSPHRASE }}
         run: releng/build-update-site.sh bella-update-site-test.zip
-      - name: Replace the pre-release "test"
+      - name: Replace the pre-release "test-build"
         env:
           GH_TOKEN: ${{ github.token }}
           KEYNAME: ${{ vars.BELLA_GPG_KEYNAME }}
@@ -52,7 +54,20 @@ jobs:
               echo "Signed with PGP. Key fingerprint: \`${KEYNAME}\`"
             fi
           } > notes.md
-          gh release delete test --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
-          gh release create test bella-update-site-test.zip --repo "$GITHUB_REPOSITORY" \
-            --prerelease --latest=false --target "$GITHUB_SHA" \
+          # earlier test builds used the tag "test", the branch's name; remove those releases and the tag
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.tag_name == "test" or .tag_name == "test-build") | .id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/test" 2>/dev/null || true
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/test-build" 2>/dev/null || true
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/test-build -f sha="$GITHUB_SHA" >/dev/null
+          gh release create test-build bella-update-site-test.zip --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --prerelease --latest=false \
             --title "Bella test build (${short})" --notes-file notes.md
+          # a release that stays a draft has no public download; fail instead of reporting success
+          if [ "$(gh release view test-build --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != "false" ]; then
+            echo "::error::The release test-build is still a draft"
+            exit 1
+          fi
+          echo "Download: https://github.com/$GITHUB_REPOSITORY/releases/download/test-build/bella-update-site-test.zip"
