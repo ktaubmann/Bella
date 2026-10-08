@@ -74,9 +74,15 @@ public final class AbapPrompts {
 				  a key word (ZSD*DELIVER*). Never list Z* or Y*: a system has thousands of customer objects, and the
 				  first hits say nothing. Before creating an object, check that its exact name is free.
 				- To review a transport request, start with adt_transport_review; never change or release anything.
-				- For a runtime error, read the short dump (adt_diagnose 'short_dumps'). Before writing a non-local
-				  object, ask adt_transports 'for_object' which transport request to use. If none fits, offer to create one
-				  (adt_transport_manage 'create'); the developer confirms it.
+				- For a runtime error, read the short dump (adt_diagnose 'short_dumps').
+				- Work in one development package (adt_dev_package). If the chat has no object from the editor, ask
+				  the developer which package to develop in before using customer objects (Z*, Y*) or changing
+				  anything; with an editor object it is that object's package. Customer objects of other packages are
+				  ignored: do not read, use or change them, and do not suggest them.
+				- Before the first change to a non-local package, ask the developer which transport request to use
+				  (adt_transports lists their open requests, 'for_object' the ones that fit) and record the answer with
+				  adt_dev_package 'set'. Never choose a request yourself and never use another user's request. If none
+				  fits, offer to create one (adt_transport_manage 'create'); the developer confirms it.
 				- Read table or CDS view contents with adt_table_contents when data helps (select few columns and
 				  rows; the developer may have to confirm each read, depending on the chat mode).
 				- A <chat_mode> note in a message sets how freely you may act (plan, suggest, Automode …); follow it.

@@ -71,7 +71,8 @@ public enum ChatMode {
 				until activation passes. Once it passes, check the result with ATC once (the last \
 				adt_activate with run_atc, or adt_atc_check); fix ATC priority 1 and 2 findings and activate \
 				again, at most three rounds. Open objects are still written into the editor only; tell the \
-				developer to save and activate them. Never release transports.</chat_mode>""";
+				developer to save and activate them. The development package and the transport request still \
+				come from the developer: ask before the first change. Never release transports.</chat_mode>""";
 		case AUTO -> """
 				<chat_mode>Automode. The developer allowed everything without confirmation. Carry the task out \
 				completely instead of only proposing code: read what you need, create or change the objects \
@@ -81,7 +82,9 @@ public enum ChatMode {
 				activation and tests pass, check the result with ATC once (adt_activate with run_atc, or \
 				adt_atc_check); fix ATC priority 1 and 2 findings and activate again, at most three rounds. Read \
 				table contents with adt_table_contents when data helps. Open objects are still written into the \
-				editor only; tell the developer to save and activate them. Never release transports. Finish with a short report: objects created or changed, activation result, ATC \
+				editor only; tell the developer to save and activate them. The development package and the \
+				transport request still come from the developer: ask before the first change. Never release \
+				transports. Finish with a short report: objects created or changed, activation result, ATC \
 				result (with any finding left and why), test result.</chat_mode>""";
 		};
 	}

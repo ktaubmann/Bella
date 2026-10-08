@@ -153,7 +153,8 @@ abstract class EditorHandler extends AbstractHandler {
 	}
 
 	/** Where to load SAP definitions from; captured on the UI thread, used in the job. */
-	record SapContext(AdtBackend adt, String destinationId, String objectName, String code, String instruction) {
+	record SapContext(AdtBackend adt, String destinationId, String objectName, String objectUri, String code,
+			String instruction) {
 
 		/** {@code null} when switched off, ADT is missing, or the editor holds no ADT object of a logged-on system. */
 		static SapContext of(IEditorPart part, String code, String instruction) {
@@ -170,8 +171,8 @@ abstract class EditorHandler extends AbstractHandler {
 			try {
 				boolean loggedOn = adt.systems().stream()
 						.anyMatch(s -> s.destinationId().equals(dest) && s.loggedOn());
-				return loggedOn ? new SapContext(adt, dest, obj.get().name(), code == null ? "" : code, instruction)
-						: null;
+				return loggedOn ? new SapContext(adt, dest, obj.get().name(), obj.get().uri(),
+						code == null ? "" : code, instruction) : null;
 			} catch (RuntimeException | LinkageError e) {
 				return null;
 			}
@@ -197,7 +198,11 @@ abstract class EditorHandler extends AbstractHandler {
 			}
 		}
 
-		/** Loads the definitions; {@code null} when that fails, the action then runs without them. */
+		/**
+		 * Loads the definitions; {@code null} when that fails, the action then
+		 * runs without them. Customer objects of other packages than the edited
+		 * object's are left out.
+		 */
 		AdtContext.Result load(CancelToken cancel) throws CancelToken.CancelledException {
 			try {
 				// the object being edited is in the editor already
@@ -206,9 +211,11 @@ abstract class EditorHandler extends AbstractHandler {
 				if (candidates.isEmpty()) {
 					return null;
 				}
-				return AdtContext.build(new AdtClient(adt.stateless(destinationId)), candidates,
-						AdtContext.Limits.DEFAULT, cancel);
-			} catch (RuntimeException | LinkageError e) {
+				AdtClient client = new AdtClient(adt.stateless(destinationId));
+				String pkg = client.packageOf(objectUri, cancel);
+				return AdtContext.build(client, candidates, AdtContext.Limits.DEFAULT,
+						AdtContext.inPackage(client, pkg.isEmpty() ? null : pkg, cancel), cancel);
+			} catch (java.io.IOException | RuntimeException | LinkageError e) {
 				BellaPlugin.log("Cannot load SAP definitions", e);
 				return null;
 			}

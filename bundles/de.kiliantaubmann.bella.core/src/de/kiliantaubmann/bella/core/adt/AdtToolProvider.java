@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,6 +48,8 @@ public final class AdtToolProvider implements ToolProvider {
 	private final Supplier<String> writePackages;
 	private final Function<String, String> atcVariants;
 	private final Supplier<NamingRules> naming;
+	/** Development package and transport request of the chat; {@code null} binds nothing. */
+	private final DevScope scope;
 	private final SourceCache cache = new SourceCache();
 	/** Inactive objects per destination, kept briefly so a turn with many reads asks once. */
 	private final Map<String, Inactive> inactive = new ConcurrentHashMap<>();
@@ -88,6 +91,17 @@ public final class AdtToolProvider implements ToolProvider {
 	 */
 	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages,
 			Function<String, String> atcVariants, Supplier<NamingRules> naming) {
+		this(backend, defaultDestination, writePackages, atcVariants, naming, null);
+	}
+
+	/**
+	 * @param scope the chat's development package and transport request:
+	 *              customer objects of other packages are ignored, writes need
+	 *              the package and the request the developer chose
+	 */
+	public AdtToolProvider(AdtBackend backend, Supplier<String> defaultDestination, Supplier<String> writePackages,
+			Function<String, String> atcVariants, Supplier<NamingRules> naming, DevScope scope) {
+		this.scope = scope;
 		this.backend = backend;
 		this.defaultDestination = defaultDestination;
 		this.writePackages = writePackages;
@@ -233,6 +247,20 @@ public final class AdtToolProvider implements ToolProvider {
 	@Override
 	public List<ToolSpec> listTools() {
 		List<ToolSpec> t = new ArrayList<>();
+		if (scope != null) {
+			t.add(ToolSpec.of("adt_dev_package",
+					"The development package of this chat and the transport request for its changes. Customer "
+							+ "objects (Z*, Y*) are used only from this package; objects of other packages are "
+							+ "ignored, and every write needs the package. 'get' (default) shows both. 'set' records "
+							+ "what the developer answered: 'package' (not when the chat works on an editor object, "
+							+ "whose package it is) and/or 'transport', one of the developer's own open requests. "
+							+ "Ask the developer first; never choose a package or request yourself.",
+					schema(new String[0], "action", "string", "get (default) or set.", "package", "string",
+							"set: the package the developer named.", "transport", "string",
+							"set: the transport request the developer named (a request, not a task).", "system",
+							"string", SYSTEM_DESC),
+					null, ToolSpec.Kind.READ));
+		}
 		t.add(ToolSpec.of("adt_list_systems",
 				"List the ABAP projects (SAP systems) in the workspace, whether they are logged on, and their release "
 						+ "(SAP_BASIS) or whether they are ABAP Cloud systems. Check it before writing code that depends on the release. "
@@ -562,6 +590,12 @@ public final class AdtToolProvider implements ToolProvider {
 
 	@Override
 	public Optional<String> refuse(String name, JsonObject in, CancelToken cancel) {
+		if (scope != null) {
+			Optional<String> outside = scopeRefusal(name, in, cancel);
+			if (outside.isPresent()) {
+				return outside;
+			}
+		}
 		List<String> patterns = packagePatterns(writePackages.get());
 		if (patterns.isEmpty() || !WRITES.contains(name)) {
 			return Optional.empty();
@@ -594,14 +628,9 @@ public final class AdtToolProvider implements ToolProvider {
 				objects.add(in);
 			}
 			for (JsonObject o : objects) {
-				AdtObjectRef ref = c.resolve(Json.str(o, "name").trim(), Json.str(o, "type"), cancel);
-				if (AdtClient.TEXT_POOL.equals(ref.type())) {
-					String[] owner = AdtClient.textPoolOwnerOfUri(ref.uri());
-					ref = new AdtObjectRef(AdtObjectRef.uriFor(owner[1], owner[0]), owner[1], owner[0], "", "");
-				}
-				String pkg = ref.packageName().isEmpty() ? c.packageOf(ref.uri(), cancel)
-						: ref.packageName().toUpperCase(Locale.ROOT);
-				Optional<String> refused = checkPackage(ref.name(), pkg, patterns);
+				String objectName = Json.str(o, "name").trim();
+				Optional<String> refused = checkPackage(objectName.toUpperCase(Locale.ROOT),
+						objectPackage(c, objectName, Json.str(o, "type"), cancel), patterns);
 				if (refused.isPresent()) {
 					return refused;
 				}
@@ -610,6 +639,16 @@ public final class AdtToolProvider implements ToolProvider {
 		} catch (IOException | RuntimeException e) {
 			return Optional.of("Could not check the package before writing: " + e.getMessage());
 		}
+	}
+
+	/** Package of an object (upper case, empty if unknown); a text pool counts as its program or class. */
+	private static String objectPackage(AdtClient c, String name, String type, CancelToken cancel) throws IOException {
+		AdtObjectRef ref = c.resolve(name, type, cancel);
+		if (AdtClient.TEXT_POOL.equals(ref.type())) {
+			String[] owner = AdtClient.textPoolOwnerOfUri(ref.uri());
+			ref = new AdtObjectRef(AdtObjectRef.uriFor(owner[1], owner[0]), owner[1], owner[0], "", "");
+		}
+		return ref.packageName().isEmpty() ? c.packageOf(ref.uri(), cancel) : ref.packageName().toUpperCase(Locale.ROOT);
 	}
 
 	/** Tools that change objects and are bound to the allowed packages. */
@@ -630,10 +669,278 @@ public final class AdtToolProvider implements ToolProvider {
 				+ "; Preferences → Bella → SAP-Tools & ARC-1). Do not retry; tell the developer.");
 	}
 
+	// ---- development package -----------------------------------------------------
+
+	/** Tools whose 'name' is a repository object they read. */
+	private static final List<String> READS_OBJECT = List.of("adt_read_source", "adt_context", "adt_syntax_check",
+			"adt_run_unit_tests", "adt_atc_check", "adt_quickfix", "adt_format", "adt_object_info", "adt_navigate",
+			"adt_text_elements", "adt_transports");
+
+	/** Writes that record their change in a transport request ('transport'). */
+	private static final List<String> TRANSPORTED = List.of("adt_write_source", "adt_create_object",
+			"adt_write_text_elements", "adt_write_metadata", "adt_edit_code", "adt_delete_object", "adt_rap");
+
+	private static final String ASK_PACKAGE = "Ask the developer which package to develop in and record the answer "
+			+ "with adt_dev_package 'set'; do not choose one yourself.";
+
+	/**
+	 * Keeps the call inside the development package: customer objects of other
+	 * packages are not read, writes need the package and, outside local
+	 * packages, the request the developer chose (filled in when missing).
+	 */
+	private Optional<String> scopeRefusal(String tool, JsonObject in, CancelToken cancel) {
+		if (tool.equals("adt_dev_package")) {
+			return Optional.empty();
+		}
+		boolean write = WRITES.contains(tool) && !tool.equals("adt_package_manage");
+		List<JsonObject> objects = scopedObjects(tool, in, write);
+		boolean transportGiven = Json.str(in, "transport") != null && !Json.str(in, "transport").isBlank();
+		if (!write && objects.isEmpty() && !transportGiven) {
+			return Optional.empty();
+		}
+		try {
+			AdtSystem s = system(in);
+			AdtClient c = client(s);
+			String dev = scopePackage(s, c, cancel);
+			if (write || !objects.isEmpty()) {
+				if (dev == null) {
+					List<String> names = objects.stream().map(o -> Json.str(o, "name").trim().toUpperCase(Locale.ROOT))
+							.toList();
+					return Optional.of((write ? "No development package is set, so Bella does not write. "
+							: String.join(", ", names) + (names.size() == 1 ? " is a customer object" : " are customer objects")
+									+ "; customer objects are used only from the development package, which is not set. ")
+							+ ASK_PACKAGE);
+				}
+				if (tool.equals("adt_create_object")) {
+					Optional<String> refused = createOutside(c, in, dev, cancel);
+					if (refused.isPresent()) {
+						return refused;
+					}
+				}
+				for (JsonObject o : objects) {
+					String name = Json.str(o, "name").trim().toUpperCase(Locale.ROOT);
+					if (name.equals(dev)) {
+						continue; // the package itself
+					}
+					String pkg;
+					try {
+						pkg = objectPackage(c, name, Json.str(o, "type"), cancel);
+					} catch (AdtException e) {
+						if (e.status() == 404 && !write) {
+							continue; // the tool says it does not exist
+						}
+						throw e;
+					}
+					if (!pkg.equals(dev)) {
+						return Optional.of(name + " belongs to package " + (pkg.isEmpty() ? "(unknown)" : pkg)
+								+ ", outside the development package " + dev + ". Bella "
+								+ (write ? "changes only objects of the development package"
+										: "ignores customer objects of other packages")
+								+ ": do not use it. Do not retry; if it is needed, tell the developer.");
+					}
+				}
+			}
+			return transportRefusal(tool, in, s, write ? dev : null);
+		} catch (IOException | RuntimeException e) {
+			return Optional.of("Could not check the development package: " + e.getMessage());
+		}
+	}
+
+	/** The objects whose package counts: for writes every object, for reads the customer objects. */
+	private static List<JsonObject> scopedObjects(String tool, JsonObject in, boolean write) {
+		List<JsonObject> out = new ArrayList<>();
+		if (tool.equals("adt_activate")) {
+			JsonArray arr = Json.arr(in, "objects");
+			if (arr != null) {
+				arr.forEach(e -> {
+					if (e.isJsonObject() && Json.str(e.getAsJsonObject(), "name") != null) {
+						out.add(e.getAsJsonObject());
+					}
+				});
+			}
+		} else if (tool.equals("adt_table_contents")) {
+			String table = Json.str(in, "table");
+			if (table != null && !table.isBlank()) {
+				JsonObject o = new JsonObject();
+				o.addProperty("name", table.trim());
+				out.add(o);
+			}
+		} else if (tool.equals("adt_transports")) {
+			String action = Json.str(in, "action");
+			boolean create = in.has("create") && in.get("create").isJsonPrimitive() && in.get("create").getAsBoolean();
+			if (action != null && List.of("history", "for_object").contains(action.trim().toLowerCase(Locale.ROOT))
+					&& !create && Json.str(in, "name") != null) {
+				out.add(in);
+			}
+		} else if ((write && !tool.equals("adt_create_object")) || READS_OBJECT.contains(tool)) {
+			String name = Json.str(in, "name");
+			if (name != null && !name.isBlank()) {
+				out.add(in);
+			}
+		}
+		return write ? out : out.stream().filter(o -> DevScope.customer(Json.str(o, "name"))).toList();
+	}
+
+	/** New objects go into the development package; it is filled in when the call names none. */
+	private static Optional<String> createOutside(AdtClient c, JsonObject in, String dev, CancelToken cancel)
+			throws IOException {
+		String group = Json.str(in, "group");
+		String target;
+		if (group != null && !group.isBlank()
+				&& List.of("FUNC", "INCL").contains(AdtDdic.normalizeType(Json.str(in, "type")))) {
+			target = c.packageOf(AdtDdic.groupUri(group), cancel);
+		} else {
+			String pkg = Json.str(in, "package");
+			if (pkg == null || pkg.isBlank()) {
+				in.addProperty("package", dev);
+				return Optional.empty();
+			}
+			target = pkg.trim().toUpperCase(Locale.ROOT);
+		}
+		return target.equals(dev) ? Optional.empty()
+				: Optional.of("Bella creates objects only in the development package " + dev + ", not in "
+						+ (target.isEmpty() ? "an unknown package" : target)
+						+ ". To develop in another package, the developer starts a new chat.");
+	}
+
+	/**
+	 * Only the request the developer chose: a different one is refused, a
+	 * missing one filled in; writes to a non-local package need it.
+	 *
+	 * @param writePackage package written to, {@code null} for other calls
+	 */
+	private Optional<String> transportRefusal(String tool, JsonObject in, AdtSystem s, String writePackage) {
+		String given = Json.str(in, "transport");
+		boolean hasGiven = given != null && !given.isBlank();
+		boolean needed = writePackage != null && TRANSPORTED.contains(tool) && !DevScope.local(writePackage);
+		if (!hasGiven && !needed) {
+			return Optional.empty();
+		}
+		String chosen = scope.transport(s.destinationId());
+		if (chosen == null) {
+			return Optional.of("The developer has not named a transport request yet. Ask them which of their own "
+					+ "open requests to use (adt_transports lists them) and record it with adt_dev_package 'set' "
+					+ "'transport'. Never pick a request yourself and never use another user's request.");
+		}
+		if (hasGiven && !given.trim().equalsIgnoreCase(chosen)) {
+			return Optional.of("The developer chose transport request " + chosen + "; use it, not "
+					+ given.trim().toUpperCase(Locale.ROOT) + ". Only the developer changes it.");
+		}
+		if (!hasGiven && TRANSPORTED.contains(tool)) {
+			in.addProperty("transport", chosen);
+		}
+		return Optional.empty();
+	}
+
+	/** The development package on this system (upper case), {@code null} if not known yet. */
+	private String scopePackage(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
+		AdtEditorObject editor = scope.editorObject();
+		if (editor != null && editor.destinationId().equals(s.destinationId())) {
+			String pkg = scope.editorPackage(editor);
+			if (pkg == null) {
+				pkg = c.packageOf(editor.uri(), cancel);
+				if (pkg.isEmpty()) {
+					return null;
+				}
+				scope.editorPackage(editor, pkg);
+			}
+			return pkg.toUpperCase(Locale.ROOT);
+		}
+		return scope.developerPackage(s.destinationId());
+	}
+
+	/** Objects may be used: SAP's always, customer objects only from the development package. */
+	private Predicate<AdtObjectRef> scopeFilter(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
+		return scope == null ? r -> true : AdtContext.inPackage(c, scopePackage(s, c, cancel), cancel);
+	}
+
+	private ToolResult devPackage(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		String action = Json.str(in, "action");
+		action = action == null || action.isBlank() ? "get" : action.trim().toLowerCase(Locale.ROOT);
+		AdtEditorObject editor = scope.editorObject();
+		boolean fromEditor = editor != null && editor.destinationId().equals(s.destinationId());
+		if (action.equals("set")) {
+			String pkg = Json.str(in, "package");
+			String tr = Json.str(in, "transport");
+			if ((pkg == null || pkg.isBlank()) && (tr == null || tr.isBlank())) {
+				return ToolResult.error("Give 'package' and/or 'transport', as the developer named them.");
+			}
+			if (pkg != null && !pkg.isBlank()) {
+				String wanted = pkg.trim().toUpperCase(Locale.ROOT);
+				if (fromEditor) {
+					String own = scopePackage(s, c, cancel);
+					if (!wanted.equals(own)) {
+						return ToolResult.error("The chat works on " + editor.name() + " from the editor, so the "
+								+ "development package is " + own + " and stays so. For another package the "
+								+ "developer starts a new chat without editor context.");
+					}
+				} else {
+					try {
+						c.packageOf(AdtManage.packageUri(wanted), cancel);
+					} catch (AdtException e) {
+						if (e.status() == 404) {
+							return ToolResult.error("Package " + wanted + " does not exist in " + s.label()
+									+ ". Ask the developer again.");
+						}
+						throw e;
+					}
+					scope.developerPackage(s.destinationId(), wanted);
+				}
+			}
+			if (tr != null && !tr.isBlank()) {
+				String dev = scopePackage(s, c, cancel);
+				if (dev == null) {
+					return ToolResult.error("Set the package first. " + ASK_PACKAGE);
+				}
+				if (DevScope.local(dev)) {
+					return ToolResult.error(dev + " is a local package; its objects need no transport request.");
+				}
+				String id = tr.trim().toUpperCase(Locale.ROOT);
+				Optional<AdtTransportRequest> request = c.transport(id, cancel);
+				if (request.isEmpty()) {
+					return ToolResult.error("There is no transport request " + id + " (a task does not count; give "
+							+ "its request). Ask the developer again.");
+				}
+				if (!request.get().owner().equalsIgnoreCase(s.user())) {
+					return ToolResult.error(id + " belongs to " + request.get().owner().toUpperCase(Locale.ROOT)
+							+ "; Bella only uses the developer's own requests. Ask the developer for one of theirs.");
+				}
+				if (request.get().released()) {
+					return ToolResult.error(id + " is released; ask the developer for an open request.");
+				}
+				scope.transport(s.destinationId(), id);
+			}
+		} else if (!action.equals("get")) {
+			return ToolResult.error("Unknown action " + action + "; use get or set.");
+		}
+		String dev = scopePackage(s, c, cancel);
+		StringBuilder sb = new StringBuilder();
+		if (dev == null) {
+			sb.append("No development package yet. ").append(ASK_PACKAGE);
+		} else {
+			sb.append("Development package ").append(dev)
+					.append(fromEditor ? " (of " + editor.name() + " in the editor)" : " (named by the developer)")
+					.append(". Customer objects of other packages are ignored.\n");
+			String tr = scope.transport(s.destinationId());
+			if (DevScope.local(dev)) {
+				sb.append("Local package: no transport request needed.");
+			} else if (tr == null) {
+				sb.append("No transport request yet: before the first change ask the developer which of their own "
+						+ "open requests to use, then set it here.");
+			} else {
+				sb.append("Transport request ").append(tr).append(", chosen by the developer; writes use it.");
+			}
+		}
+		return ToolResult.ok(sb.toString());
+	}
+
 	@Override
 	public ToolResult call(String name, JsonObject in, CancelToken cancel) {
 		try {
 			return switch (name) {
+			case "adt_dev_package" -> devPackage(in, cancel);
 			case "adt_list_systems" -> listSystems(cancel);
 			case "adt_search_objects" -> searchObjects(in, cancel);
 			case "adt_read_source" -> readSource(in, cancel);
@@ -742,11 +1049,13 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private ToolResult searchObjects(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
 		int max = Math.max(1, Math.min(200, Json.integer(in, "max_results", 50)));
 		String searchIn = Json.str(in, "search_in");
 		if (searchIn != null && searchIn.trim().equalsIgnoreCase("source")) {
-			return searchSource(c, in, max, cancel);
+			return searchSource(c, in, max, scope == null ? Optional.empty()
+					: Optional.ofNullable(scopePackage(sys, c, cancel)).or(() -> Optional.of("")), cancel);
 		}
 		if (searchIn != null && !searchIn.isBlank() && !searchIn.trim().equalsIgnoreCase("names")) {
 			return ToolResult.error("search_in is names or source.");
@@ -763,12 +1072,24 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		// one more than shown, to tell a complete list from a cut one
 		List<AdtObjectRef> refs = c.search(query, Json.str(in, "type"), pkg, max + 1, cancel);
-		if (refs.isEmpty()) {
-			return ToolResult.ok("No objects found.");
-		}
 		boolean cut = refs.size() > max;
 		if (cut) {
 			refs = refs.subList(0, max);
+		}
+		List<String> hidden = new ArrayList<>();
+		if (scope != null) {
+			String dev = scopePackage(sys, c, cancel);
+			// only the package the hit names: asking each hit's package would cost a request per hit
+			hidden = refs.stream().filter(r -> DevScope.customer(r.name()) && !r.name().equalsIgnoreCase(dev)
+					&& (dev == null || !r.packageName().equalsIgnoreCase(dev))).map(AdtObjectRef::name).toList();
+			List<String> h = hidden;
+			refs = refs.stream().filter(r -> !h.contains(r.name())).toList();
+		}
+		String hiddenNote = hidden.isEmpty() ? ""
+				: "Customer objects outside the development package, ignored (their names are taken): "
+						+ String.join(", ", hidden) + "\n";
+		if (refs.isEmpty()) {
+			return ToolResult.ok(hiddenNote + "No objects found" + (hidden.isEmpty() ? "." : " in the development package."));
 		}
 		StringBuilder sb = new StringBuilder();
 		if (cut) {
@@ -785,7 +1106,7 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			sb.append('\n');
 		}
-		return ToolResult.ok(sb.toString());
+		return ToolResult.ok(sb.append(hiddenNote).toString());
 	}
 
 	/**
@@ -799,22 +1120,41 @@ public final class AdtToolProvider implements ToolProvider {
 	/** Matching lines shown per object; the rest is only counted. */
 	static final int SOURCE_LINES_PER_OBJECT = 5;
 
-	private static ToolResult searchSource(AdtClient c, JsonObject in, int max, CancelToken cancel)
-			throws IOException {
+	/**
+	 * @param dev the development package when one binds the search ("" while
+	 *            unknown), empty without a scope; customer objects of other
+	 *            packages are left out
+	 */
+	private static ToolResult searchSource(AdtClient c, JsonObject in, int max, Optional<String> dev,
+			CancelToken cancel) throws IOException {
 		String text = Json.str(in, "query");
 		if (text == null || text.isBlank()) {
 			return ToolResult.error("Give the text to find in 'query'.");
 		}
+		String pkg = Json.str(in, "package");
+		pkg = pkg == null || pkg.isBlank() ? null : pkg.trim().toUpperCase(Locale.ROOT);
+		if (pkg == null && dev.isPresent() && !dev.get().isEmpty()) {
+			pkg = dev.get(); // hits carry no package, so customer code is searched in the development package only
+		}
 		List<AdtClient.SourceHit> hits;
 		try {
-			hits = c.searchSource(text, Json.str(in, "type"), Json.str(in, "package"), max, cancel);
+			hits = c.searchSource(text, Json.str(in, "type"), pkg, max, cancel);
 		} catch (AdtException e) {
 			return ToolResult.error(e.getMessage());
 		}
-		if (hits.isEmpty()) {
-			return ToolResult.ok("No source contains \"" + text + "\".");
+		String note = "";
+		if (dev.isPresent() && !dev.get().equals(pkg)) {
+			int all = hits.size();
+			hits = hits.stream().filter(h -> !DevScope.customer(h.name())).toList();
+			if (hits.size() < all) {
+				note = (all - hits.size()) + " customer objects outside the development package "
+						+ (dev.get().isEmpty() ? "(not set yet) " : dev.get() + " ") + "left out.\n";
+			}
 		}
-		StringBuilder sb = new StringBuilder();
+		if (hits.isEmpty()) {
+			return ToolResult.ok(note + "No source contains \"" + text + "\"" + (note.isEmpty() ? "." : " elsewhere."));
+		}
+		StringBuilder sb = new StringBuilder(note);
 		for (AdtClient.SourceHit h : hits) {
 			sb.append(h.name()).append(h.type().isEmpty() ? "" : " (" + h.type() + ")").append('\n');
 			h.lines().stream().limit(SOURCE_LINES_PER_OBJECT).forEach(l -> sb.append("  ")
@@ -886,7 +1226,8 @@ public final class AdtToolProvider implements ToolProvider {
 	static final int GREP_MAX_LINES = 200;
 
 	private ToolResult context(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
 		List<AbapReferences.Reference> candidates = new ArrayList<>();
 		String name = Json.str(in, "name");
 		// 'type' belongs to 'name'; without one it is the type of every entry in 'names'
@@ -917,7 +1258,7 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		AdtContext.Result r;
 		try {
-			r = AdtContext.build(c, candidates, AdtContext.Limits.DEFAULT, cancel);
+			r = AdtContext.build(c, candidates, AdtContext.Limits.DEFAULT, scopeFilter(sys, c, cancel), cancel);
 		} catch (CancelToken.CancelledException e) {
 			return ToolResult.error("Cancelled.");
 		}
@@ -929,8 +1270,13 @@ public final class AdtToolProvider implements ToolProvider {
 				return ToolResult.error("Could not read from the SAP system (this does not mean the objects are "
 						+ "missing): " + String.join("; ", r.failed()));
 			}
+			String ignored = r.ignored().isEmpty() ? "" : AdtContext.IGNORED + String.join(", ", r.ignored()) + "\n";
 			if (!r.notFound().isEmpty()) {
-				return ToolResult.ok("None of these objects exist in the system: " + String.join(", ", r.notFound()));
+				return ToolResult.ok(ignored + "None of these objects exist in the system: "
+						+ String.join(", ", r.notFound()));
+			}
+			if (!ignored.isEmpty() && r.skipped().isEmpty()) {
+				return ToolResult.ok(ignored);
 			}
 			return ToolResult.ok("Not loaded (limit reached, use adt_read_source): " + String.join(", ", r.skipped()));
 		}
@@ -2010,10 +2356,13 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.ok(sb.append("local, no transport request needed.").toString());
 		}
 		sb.append("changes are recorded in a transport request.\n");
+		String ask = scope == null ? ""
+				: "\nWhich request to use is the developer's decision: ask them, then record it with adt_dev_package "
+						+ "'set'. Never use another user's request.";
 		if (!t.lockedIn().isEmpty()) {
 			// SAP records further changes in that request; other open requests do not matter
 			return ToolResult.ok(sb.append("Already locked in request ").append(t.lockedIn())
-					.append("; changes go there, pass it as 'transport'.").toString());
+					.append("; changes go there, pass it as 'transport'.").append(ask).toString());
 		}
 		if (t.candidates().isEmpty()) {
 			sb.append("No open request of the developer fits; ask them for one or offer to create one with adt_transport_manage 'create' (Bella never releases requests).");
@@ -2021,7 +2370,7 @@ public final class AdtToolProvider implements ToolProvider {
 			sb.append("Open requests that fit:\n");
 			t.candidates().forEach(r -> sb.append("- ").append(r).append('\n'));
 		}
-		return ToolResult.ok(sb.toString());
+		return ToolResult.ok(sb.append(ask).toString());
 	}
 
 	private ToolResult transports(JsonObject in, CancelToken cancel) throws IOException {

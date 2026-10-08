@@ -425,6 +425,8 @@ public class ChatView extends ViewPart {
 		}
 		session = plugin.newConversation(this::confirmTool, new OpenEditorRouter(),
 				() -> turnOverride != null ? turnOverride : mode);
+		// a new conversation knows no package yet; the developer names it again
+		plugin.devScope().reset();
 		shownToolErrors = List.of();
 	}
 
@@ -501,6 +503,8 @@ public class ChatView extends ViewPart {
 			Optional<ITextEditor> editor = EditorBridge.textEditor(part);
 			if (editor.isPresent()) {
 				prompt = withEditorContext(text, EditorBridge.context(part, editor.get()));
+				// working on an editor object binds the chat to its package
+				EditorBridge.adtObject(part).ifPresent(BellaPlugin.getDefault().devScope()::editorObject);
 			}
 		}
 		ask(text.startsWith(REVISE_PLAN) ? text.substring(REVISE_PLAN.length()) : text, prompt, planning);

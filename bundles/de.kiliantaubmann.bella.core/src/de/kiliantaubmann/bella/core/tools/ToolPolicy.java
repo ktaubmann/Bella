@@ -80,6 +80,8 @@ public final class ToolPolicy {
 			new Rule("adt_package_manage:delete", Decision.ASK),
 			new Rule("adt_trace_control", Decision.ASK),
 			new Rule("adt_format_settings", Decision.ASK),
+			// the developer names package and transport request; the call shows what the model understood
+			new Rule("adt_dev_package:set", Decision.ASK),
 			// the same actions through ARC-1
 			new Rule("mcp_*SAPWrite:delete*", Decision.ASK),
 			new Rule("mcp_*SAPTransport:create", Decision.ASK),

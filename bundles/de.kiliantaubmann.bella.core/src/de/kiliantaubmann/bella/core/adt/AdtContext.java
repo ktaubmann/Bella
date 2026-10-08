@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
 
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.abap.AbapReferences.Hint;
@@ -47,9 +48,10 @@ public final class AdtContext {
 	 * @param skipped  candidates left out because a limit was reached
 	 * @param failed   candidates that could not be read, e.g. because the connection broke; as {@code NAME: error}
 	 * @param error    why loading stopped early (connection lost), otherwise {@code null}
+	 * @param ignored  customer objects of other packages, left out on purpose
 	 */
 	public record Result(String text, List<String> used, List<String> notFound, List<String> skipped,
-			List<String> failed, String error) {
+			List<String> failed, String error, List<String> ignored) {
 
 		public boolean isEmpty() {
 			return used.isEmpty();
@@ -83,9 +85,13 @@ public final class AdtContext {
 	private record Loaded(AdtObjectRef obj, String body, Exception failure) {
 	}
 
-	private static Loaded load(AdtClient client, Reference ref, CancelToken cancel) {
+	/** An object that is not allowed comes back without a body. */
+	private static Loaded load(AdtClient client, Reference ref, Predicate<AdtObjectRef> allowed, CancelToken cancel) {
 		try {
 			AdtObjectRef obj = find(client, ref, cancel);
+			if (obj != null && !allowed.test(obj)) {
+				return new Loaded(obj, null, null);
+			}
 			return obj == null ? new Loaded(null, null, null) : new Loaded(obj, content(client, obj, cancel), null);
 		} catch (IOException | RuntimeException e) {
 			return new Loaded(null, null, e);
@@ -94,6 +100,34 @@ public final class AdtContext {
 
 	public static Result build(AdtClient client, List<Reference> candidates, Limits limits, CancelToken cancel)
 			throws CancelledException {
+		return build(client, candidates, limits, r -> true, cancel);
+	}
+
+	/**
+	 * Customer objects (Z*, Y*) count only when they belong to {@code pkg};
+	 * SAP's objects always do. Without a package no customer object counts.
+	 * An object whose package cannot be read does not count either.
+	 */
+	public static Predicate<AdtObjectRef> inPackage(AdtClient client, String pkg, CancelToken cancel) {
+		return r -> {
+			if (!DevScope.customer(r.name()) || r.name().equalsIgnoreCase(pkg)) {
+				return true;
+			}
+			if (pkg == null) {
+				return false;
+			}
+			try {
+				String own = r.packageName().isEmpty() ? client.packageOf(r.uri(), cancel) : r.packageName();
+				return own.equalsIgnoreCase(pkg);
+			} catch (IOException | RuntimeException e) {
+				return false;
+			}
+		};
+	}
+
+	/** @param allowed objects that may be used; the others are listed as ignored */
+	public static Result build(AdtClient client, List<Reference> candidates, Limits limits,
+			Predicate<AdtObjectRef> allowed, CancelToken cancel) throws CancelledException {
 		long start = System.nanoTime();
 		long deadline = start + limits.timeoutMillis() * 1_000_000L;
 		StringBuilder text = new StringBuilder();
@@ -101,6 +135,7 @@ public final class AdtContext {
 		List<String> notFound = new ArrayList<>();
 		List<String> skipped = new ArrayList<>();
 		List<String> failed = new ArrayList<>();
+		List<String> ignored = new ArrayList<>();
 		String error = null;
 		ExecutorService pool = Executors.newFixedThreadPool(PARALLEL, r -> {
 			Thread t = new Thread(r, "bella-adt-context");
@@ -118,7 +153,7 @@ public final class AdtContext {
 						|| System.nanoTime() >= deadline;
 				while (!full && loads.size() < Math.min(candidates.size(), i + PARALLEL)) {
 					Reference next = candidates.get(loads.size());
-					loads.add(pool.submit(() -> load(client, next, cancel)));
+					loads.add(pool.submit(() -> load(client, next, allowed, cancel)));
 				}
 				if (full) {
 					if (error == null) {
@@ -154,6 +189,10 @@ public final class AdtContext {
 					}
 					continue;
 				}
+				if (l.obj() != null && l.body() == null) {
+					ignored.add(l.obj().name());
+					continue;
+				}
 				if (l.obj() == null) {
 					notFound.add(ref.type() == null ? ref.name() : ref.name() + " (" + ref.type() + ")");
 					continue;
@@ -179,13 +218,21 @@ public final class AdtContext {
 		if (!failed.isEmpty() && !used.isEmpty()) {
 			text.append("Could not read: ").append(String.join("; ", failed)).append('\n');
 		}
+		if (!ignored.isEmpty() && !used.isEmpty()) {
+			text.append(IGNORED).append(String.join(", ", ignored)).append('\n');
+		}
 		Log.info("adt", "context: " + candidates.size() + " candidates, used " + used + ", not found " + notFound
 				+ (skipped.isEmpty() ? "" : ", skipped " + skipped)
-				+ (failed.isEmpty() ? "" : ", failed " + failed.size()) + (error == null ? "" : ", stopped: " + error)
+				+ (failed.isEmpty() ? "" : ", failed " + failed.size())
+				+ (ignored.isEmpty() ? "" : ", ignored " + ignored) + (error == null ? "" : ", stopped: " + error)
 				+ ", " + text.length() + " chars (" + Log.millisSince(start) + " ms)");
 		return new Result(text.toString(), List.copyOf(used), List.copyOf(notFound), List.copyOf(skipped),
-				List.copyOf(failed), error);
+				List.copyOf(failed), error, List.copyOf(ignored));
 	}
+
+	/** Heads the list of customer objects outside the development package. */
+	public static final String IGNORED = "Ignored, customer objects outside the development package (do not use "
+			+ "them): ";
 
 	/**
 	 * Exact-name search; among several hits the object type the code position
