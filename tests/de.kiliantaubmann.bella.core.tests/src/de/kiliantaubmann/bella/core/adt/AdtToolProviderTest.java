@@ -141,6 +141,34 @@ class AdtToolProviderTest {
 		assertEquals("No referenced repository objects found.", nothing.content());
 	}
 
+	@Test
+	void contextTypeAppliesToNames() {
+		List<String> searches = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route(AdtContextTest.SEARCH, r -> {
+					searches.add(r.path());
+					// both share the name; a search without a type filter lists the data element first
+					return FakeAdt.ok(AdtContextTest.hits("/sap/bc/adt/ddic/dataelements/statv", "DTEL/DE", "STATV",
+							"Statistics Indicator for Pensions", "/sap/bc/adt/ddic/domains/statv", "DOMA/DD", "STATV",
+							"Document Status"));
+				})
+				.route("GET /sap/bc/adt/ddic/dataelements/statv", r -> FakeAdt.ok("<dtel description=\"Pensions\"/>"))
+				.route("GET /sap/bc/adt/ddic/domains/statv", r -> FakeAdt.ok("<doma description=\"Document Status\"/>"));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+
+		ToolResult domain = call(p, "adt_context", "{\"names\":[\"statv\"],\"type\":\"DOMA\"}");
+		assertFalse(domain.isError(), domain.content());
+		assertTrue(domain.content().startsWith("### STATV (DOMA/DD"), domain.content());
+		assertFalse(domain.content().contains("DTEL"), domain.content());
+		assertTrue(searches.get(0).contains("&objectType=DOMA"), searches.toString());
+
+		ToolResult any = call(p, "adt_context", "{\"names\":[\"statv\"]}");
+		assertTrue(any.content().startsWith("### STATV (DTEL/DE"), any.content());
+
+		ToolResult missing = call(p, "adt_context", "{\"names\":[\"statv\"],\"type\":\"TTYP\"}");
+		assertEquals("None of these objects exist in the system: STATV (TTYP)", missing.content());
+	}
+
 	private static final String CLASS_SRC = "CLASS zcl_a DEFINITION PUBLIC.\n  PUBLIC SECTION.\n    METHODS run.\nENDCLASS.\n"
 			+ "CLASS zcl_a IMPLEMENTATION.\n  METHOD run.\n    WRITE 'x'.\n  ENDMETHOD.\n  METHOD other.\n  ENDMETHOD.\nENDCLASS.\n";
 

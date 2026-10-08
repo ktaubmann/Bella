@@ -263,7 +263,10 @@ public final class AdtToolProvider implements ToolProvider {
 						"auto (default: newest saved version, with a note if it is not activated), active or inactive.")),
 				Capability.READ_SOURCE, ToolSpec.Kind.READ));
 		JsonObject contextSchema = schema(new String[0], "name", "string",
-				"Object whose used objects should be looked up, e.g. ZCL_SALES_ORDER.", "type", "string", TYPE_DESC,
+				"Object whose used objects should be looked up, e.g. ZCL_SALES_ORDER.", "type", "string",
+				"Type of 'name'. Without 'name' it applies to every entry of 'names', e.g. DOMA for the domains "
+						+ "instead of the data elements of the same name; look up names of other types in a second "
+						+ "call. " + TYPE_DESC,
 				"source", "string", "ABAP code whose used objects should be looked up (e.g. code you are about to change).",
 				"system", "string", SYSTEM_DESC);
 		JsonObject names = new JsonObject();
@@ -856,16 +859,18 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult context(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		List<AbapReferences.Reference> candidates = new ArrayList<>();
+		String name = Json.str(in, "name");
+		// 'type' belongs to 'name'; without one it is the type of every entry in 'names'
+		String namesType = name == null || name.isBlank() ? AdtClient.searchType(Json.str(in, "type")) : null;
 		JsonArray names = Json.arr(in, "names");
 		if (names != null) {
 			for (JsonElement e : names) {
 				if (e.isJsonPrimitive() && !e.getAsString().isBlank()) {
 					candidates.add(new AbapReferences.Reference(e.getAsString().trim().toUpperCase(Locale.ROOT),
-							AbapReferences.Hint.ANY));
+							AbapReferences.Hint.ANY, namesType));
 				}
 			}
 		}
-		String name = Json.str(in, "name");
 		String self = null;
 		if (name != null && !name.isBlank()) {
 			AdtObjectRef ref = resolve(c, in, cancel);

@@ -148,14 +148,14 @@ public final class AdtContext {
 				if (l.failure() != null) {
 					Log.info("adt", "context: " + ref.name() + " not readable: " + l.failure().getMessage());
 					if (l.failure() instanceof AdtException a && a.status() == 404) {
-						notFound.add(ref.name());
+						notFound.add(ref.type() == null ? ref.name() : ref.name() + " (" + ref.type() + ")");
 					} else {
 						failed.add(ref.name() + ": " + l.failure().getMessage());
 					}
 					continue;
 				}
 				if (l.obj() == null) {
-					notFound.add(ref.name());
+					notFound.add(ref.type() == null ? ref.name() : ref.name() + " (" + ref.type() + ")");
 					continue;
 				}
 				String block = block(l.obj(), l.body());
@@ -187,8 +187,20 @@ public final class AdtContext {
 				List.copyOf(failed), error);
 	}
 
-	/** Exact-name search; among several hits the object type the code position suggests wins. */
+	/**
+	 * Exact-name search; among several hits the object type the code position
+	 * suggests wins. A reference with a type takes only an object of that type.
+	 */
 	static AdtObjectRef find(AdtClient client, Reference ref, CancelToken cancel) throws IOException {
+		if (ref.type() != null) {
+			List<String> wanted = List.of(ref.type().toUpperCase(Locale.ROOT));
+			for (AdtObjectRef r : client.search(ref.name(), ref.type(), 20, cancel)) {
+				if (r.name().equalsIgnoreCase(ref.name()) && rank(r.type(), wanted) == 0) {
+					return r;
+				}
+			}
+			return null;
+		}
 		List<AdtObjectRef> exact = new ArrayList<>();
 		for (AdtObjectRef r : client.search(ref.name(), null, 20, cancel)) {
 			if (r.name().equalsIgnoreCase(ref.name()) && rank(r.type(), PREFERENCE.get(Hint.ANY)) < Integer.MAX_VALUE) {

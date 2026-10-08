@@ -23,8 +23,17 @@ public final class AbapReferences {
 		TABLE, CLASS, TYPE, FUNCTION, ANY
 	}
 
-	/** A referenced object name, upper-cased. */
-	public record Reference(String name, Hint hint) {
+	/**
+	 * A referenced object name, upper-cased.
+	 *
+	 * @param type ADT search type the object must have (e.g. {@code DOMA}),
+	 *             {@code null} to choose by {@code hint}
+	 */
+	public record Reference(String name, Hint hint, String type) {
+
+		public Reference(String name, Hint hint) {
+			this(name, hint, null);
+		}
 	}
 
 	private static final String NAME = "(/?[A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z0-9_]+)*)";
@@ -217,16 +226,14 @@ public final class AbapReferences {
 		return out.size() > MAX_INSTRUCTION_NAMES ? out.subList(0, MAX_INSTRUCTION_NAMES) : out;
 	}
 
-	/** Joins candidate lists, keeping the first hint of each name. */
+	/** Joins candidate lists, keeping the first reference (hint and type) of each name. */
 	public static List<Reference> merge(List<Reference> first, List<Reference> second) {
-		Map<String, Hint> found = new LinkedHashMap<>();
+		Map<String, Reference> found = new LinkedHashMap<>();
 		for (List<Reference> list : List.of(first, second)) {
 			for (Reference r : list) {
-				found.putIfAbsent(r.name(), r.hint());
+				found.putIfAbsent(r.name(), r);
 			}
 		}
-		List<Reference> out = new ArrayList<>();
-		found.forEach((n, h) -> out.add(new Reference(n, h)));
-		return out;
+		return new ArrayList<>(found.values());
 	}
 }
