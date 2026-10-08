@@ -47,6 +47,20 @@ class MaskerTest {
 	}
 
 	@Test
+	void cdsAnnotationsAreNoAddressesAndUrlsAreMasked() {
+		Masker m = objectsOnly();
+		String json = "\"source\":\"@AbapCatalog.viewEnhancementCategory: [#NONE]\\n@EndUserText.label: 'x'\\n"
+				+ "define view entity ZI_X as select from mara { key matnr, amount@Semantics.amount }\"";
+		String masked = m.mask(json);
+		assertTrue(masked.contains("\\n@EndUserText.label"), masked);
+		assertTrue(masked.contains("amount@Semantics.amount"), masked);
+		assertFalse(masked.contains("example.invalid"), masked);
+		assertEquals("GET /sap/bc/adt/textelements/programs/zsd_mask2/source/symbols",
+				m.mask("GET /sap/bc/adt/textelements/programs/zsd_outb_delivery_delete/source/symbols"));
+		assertTrue(m.mask("mail max.muster@firma.de").contains("maskmail"));
+	}
+
+	@Test
 	void standardObjectsAndWordsStay() {
 		Masker m = objectsOnly();
 		String text = "SELECT FROM mara, CL_ABAP_TYPEDESCR, YES or ZERO, Yoga and your zone.";

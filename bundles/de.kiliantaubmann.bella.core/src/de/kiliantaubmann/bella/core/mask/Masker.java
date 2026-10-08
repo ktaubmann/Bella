@@ -90,8 +90,17 @@ public final class Masker {
 	}
 
 	private static final String IDENT = "A-Za-z0-9_";
-	private static final Pattern CUSTOMER_OBJECT = Pattern.compile("(?<![" + IDENT + "/])[ZzYy][" + IDENT + "]{2,39}(?![" + IDENT + "])");
-	private static final Pattern MAIL = Pattern.compile("(?<![" + IDENT + ".+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?![" + IDENT + "])");
+	/** Roots of CDS annotations, which look like the domain of an address after a name ({@code x@Semantics.amount}). */
+	private static final String CDS_ANNOTATIONS = "(?:AbapCatalog|AccessControl|Aggregation|Analytics|AnalyticsDetails"
+			+ "|ClientHandling|Consumption|DataAging|DefaultAggregation|EndUserText|Environment|Hierarchy|Metadata"
+			+ "|ObjectModel|OData|Search|Semantics|UI|VDM)";
+	private static final Pattern CUSTOMER_OBJECT = Pattern.compile("(?<![" + IDENT + "])[ZzYy][" + IDENT + "]{2,39}(?![" + IDENT + "])");
+	/**
+	 * Not after a backslash: in JSON {@code \n@EndUserText.label} is a line
+	 * break before a CDS annotation, no address.
+	 */
+	private static final Pattern MAIL = Pattern.compile("(?<![" + IDENT + ".+\\\\-])[A-Za-z0-9._%+-]+@(?!" + CDS_ANNOTATIONS
+			+ "\\.)[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?![" + IDENT + "])");
 	private static final Pattern IBAN = Pattern.compile("(?<![" + IDENT + "])[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?(?![" + IDENT + "])");
 	/** Upper-case words starting with Z or Y that are no customer objects. */
 	private static final Set<String> NOT_OBJECTS = Set.of("YES", "YEAR", "YEARS", "YET", "YOU", "YOUR", "YOURS", "YTD",

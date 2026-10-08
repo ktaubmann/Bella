@@ -497,6 +497,47 @@ class AdtToolProviderTest {
 	}
 
 	@Test
+	void textsSapDoesNotKeepAreReported() {
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/selections",
+						r -> new AdtResponse(200, "text/plain", "P_TEST  =?...\r\n\r\nS_VBELN =?..."))
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/selections", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""));
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_write_text_elements",
+				"{\"name\":\"ZREP\",\"type\":\"PROG\",\"part\":\"selections\",\"texts\":\"S_VBELN=Delivery\\nP_TEST=Test\"}");
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("S_VBELN: wrote 'Delivery', reads '?...'"), r.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("/activation")), adt.log.toString());
+	}
+
+	@Test
+	void activationTakesTheInactiveTextPoolAlong() {
+		List<String> bodies = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/activation/inactiveobjects", r -> FakeAdt.ok(
+						"<ioc:inactiveObjects xmlns:ioc=\"http://www.sap.com/abapxml/inactiveCtsObjects\" "
+								+ "xmlns:adtcore=\"http://www.sap.com/adt/core\"><ioc:entry><ioc:object>"
+								+ "<ioc:ref adtcore:uri=\"/sap/bc/adt/textelements/programs/zrep\" adtcore:type=\"REPT\" "
+								+ "adtcore:name=\"ZREP\"/></ioc:object></ioc:entry></ioc:inactiveObjects>"))
+				.route("POST /sap/bc/adt/activation", r -> {
+					bodies.add(r.body());
+					return FakeAdt.ok("");
+				});
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_activate",
+				"{\"objects\":[{\"name\":\"ZREP\",\"type\":\"PROG\"}]}");
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Activated ZREP, text pool of ZREP"), r.content());
+		assertTrue(bodies.get(0).contains("adtcore:uri=\"/sap/bc/adt/textelements/programs/zrep\""), bodies.get(0));
+
+		ToolResult pool = call(new AdtToolProvider(adt, () -> "dev"), "adt_activate",
+				"{\"objects\":[{\"name\":\"ZREP\",\"type\":\"REPT\"}]}");
+		assertFalse(pool.isError(), pool.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("quickSearch")), adt.log.toString());
+	}
+
+	@Test
 	void columnsAreOnlyColumnNames() {
 		ToolResult r = new AdtToolProvider(twoSystems(), () -> "dev").call("adt_table_contents", Json.parseObject(
 				"{\"table\":\"t000\",\"columns\":\"mandt FROM usr02 UNION SELECT bname\"}"), CancelToken.NONE);
@@ -509,7 +550,9 @@ class AdtToolProviderTest {
 		List<AdtRequest> puts = new ArrayList<>();
 		FakeAdt adt = twoSystems()
 				.route("GET /sap/bc/adt/textelements/programs/zrep/source/selections",
-						r -> new AdtResponse(200, "text/plain", "S_VBELN=Delivery\n"))
+						r -> new AdtResponse(200, "text/plain", puts.isEmpty() ? "S_VBELN=Delivery\n"
+								: "P_TEST  =Test run (no deletion)\r\n\r\nS_VBELN =Delivery"))
+				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(""))
 				.route("GET /sap/bc/adt/textelements/programs/zrep/source/headings", r -> new AdtResponse(200, "text/plain", ""))
 				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
 						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR>DEVK900001</CORRNR><IS_LOCAL></IS_LOCAL></DATA>"))
@@ -532,17 +575,19 @@ class AdtToolProviderTest {
 		assertEquals(null, SchemaCheck.validate(write.inputSchema(), input));
 		ToolResult r = p.call("adt_write_text_elements", input, CancelToken.NONE);
 		assertFalse(r.isError(), r.content());
-		assertEquals("Saved the selections of ZREP in S4H_100 (transport DEVK900001). Text elements are active at once.",
+		assertEquals("Saved the selections of ZREP in S4H_100 (transport DEVK900001) and activated the text pool.",
 				r.content());
+		assertTrue(adt.log.contains("POST /sap/bc/adt/activation?method=activate&preauditRequested=true"),
+				adt.log.toString());
 		assertEquals(1, puts.size());
 		AdtRequest put = puts.get(0);
 		assertEquals("/sap/bc/adt/textelements/programs/zrep/source/selections?lockHandle=H&corrNr=DEVK900001",
 				put.path());
 		assertEquals("application/vnd.sap.adt.textelements.selections.v1", put.contentType());
 		assertEquals("application/vnd.sap.adt.textelements.selections.v1", put.headers().get("Accept"));
-		assertEquals("S_VBELN=Delivery\nP_TEST=Test run (no deletion)", put.body());
+		assertEquals("S_VBELN =Delivery\nP_TEST  =Test run (no deletion)", put.body());
 		assertEquals(0, adt.openSessions);
-		assertTrue(adt.log.get(adt.log.size() - 1).startsWith("S POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK"),
+		assertTrue(adt.log.contains("S POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK&lockHandle=H"),
 				adt.log.toString());
 
 		ToolResult badLine = call(p, "adt_write_text_elements",

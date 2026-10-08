@@ -1,6 +1,7 @@
 package de.kiliantaubmann.bella.core.adt;
 
 import java.io.IOException;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -275,6 +276,11 @@ public final class AdtClient {
 	 */
 	public AdtObjectRef resolve(String name, String type, CancelToken cancel) throws IOException {
 		type = searchType(type);
+		if (TEXT_POOL.equals(type)) {
+			// no repository search knows REPT; the pool sits on the textelements service of its owner
+			String[] owner = textPoolOwner(name);
+			return new AdtObjectRef(textElementsUri(owner[0], owner[1]), owner[1], TEXT_POOL, "", "");
+		}
 		String direct = AdtObjectRef.uriFor(name, type);
 		if (direct != null) {
 			return new AdtObjectRef(direct, name.toUpperCase(Locale.ROOT), type, "", "");
@@ -303,6 +309,7 @@ public final class AdtClient {
 		case "CLASS" -> "CLAS";
 		case "INTERFACE" -> "INTF";
 		case "PROGRAM", "REPORT" -> "PROG";
+		case "REPT", "TEXTPOOL", "TEXT_POOL", "TEXT_ELEMENTS", "TEXTELEMENTS" -> TEXT_POOL;
 		case "CDS" -> "DDLS";
 		default -> t;
 		};
@@ -759,6 +766,85 @@ public final class AdtClient {
 
 	// ---- text elements ---------------------------------------------------------
 
+	/** Type of a text pool in transports and the inactive-objects list. */
+	public static final String TEXT_POOL = "REPT";
+
+	/**
+	 * Type and name of the object a text pool belongs to: {@code ZCL_A====CP}
+	 * is the pool of class ZCL_A, {@code SAPLZFG} that of function group ZFG,
+	 * any other name a program's.
+	 */
+	static String[] textPoolOwner(String name) {
+		String n = name.trim().toUpperCase(Locale.ROOT);
+		if (n.contains("=")) {
+			return new String[] { "CLAS", n.substring(0, n.indexOf('=')) };
+		}
+		if (n.startsWith("SAPL") && n.length() > 4) {
+			return new String[] { "FUGR", n.substring(4) };
+		}
+		return new String[] { "PROG", n };
+	}
+
+	/** The owner of a text pool URI as {type, name}, e.g. {PROG, ZREP}; {@code null} for other URIs. */
+	static String[] textPoolOwnerOfUri(String uri) {
+		Matcher m = TEXT_POOL_URI.matcher(uri == null ? "" : uri);
+		if (!m.find()) {
+			return null;
+		}
+		String type = switch (m.group(1)) {
+		case "classes" -> "CLAS";
+		case "functiongroups" -> "FUGR";
+		default -> "PROG";
+		};
+		return new String[] { type, URLDecoder.decode(m.group(2), StandardCharsets.UTF_8)
+				.toUpperCase(Locale.ROOT) };
+	}
+
+	private static final Pattern TEXT_POOL_URI = Pattern.compile("/textelements/(programs|classes|functiongroups)/([^/?#]+)");
+
+	/**
+	 * The text pool of each object, for the pools with saved but not activated
+	 * texts in the developer's inactive-objects list. ADT keeps written texts
+	 * inactive until the pool is activated; activating the program alone
+	 * leaves them so.
+	 */
+	public List<AdtObjectRef> inactiveTextPools(List<AdtObjectRef> owners, CancelToken cancel) throws IOException {
+		AdtResponse r = exchange(transport, AdtRequest.get("/sap/bc/adt/activation/inactiveobjects",
+				"application/vnd.sap.adt.inactivectsobjects.v1+xml, application/xml;q=0.8"), cancel);
+		return r.ok() ? inactiveTextPools(r.body(), owners) : List.of();
+	}
+
+	static List<AdtObjectRef> inactiveTextPools(String xml, List<AdtObjectRef> owners) throws IOException {
+		List<AdtObjectRef> out = new ArrayList<>();
+		if (xml == null || xml.isBlank()) {
+			return out;
+		}
+		Document doc = AdtXml.parse(xml);
+		List<Element> refs = new ArrayList<>(AdtXml.elements(doc, "ref"));
+		refs.addAll(AdtXml.elements(doc, "objectReference"));
+		for (Element e : refs) {
+			String uri = AdtXml.attr(e, "uri");
+			String[] owner = textPoolOwnerOfUri(uri);
+			if (owner == null && AdtXml.attr(e, "type").toUpperCase(Locale.ROOT).startsWith(TEXT_POOL)) {
+				owner = textPoolOwner(AdtXml.attr(e, "name"));
+			}
+			if (owner == null) {
+				continue;
+			}
+			for (AdtObjectRef o : owners) {
+				String type = o.type() == null ? "" : o.type().toUpperCase(Locale.ROOT);
+				if (o.name().equalsIgnoreCase(owner[1]) && type.startsWith(owner[0])) {
+					AdtObjectRef pool = new AdtObjectRef(textElementsUri(owner[0], owner[1]), owner[1], TEXT_POOL, "",
+							"");
+					if (!out.contains(pool)) {
+						out.add(pool);
+					}
+				}
+			}
+		}
+		return out;
+	}
+
 	/** Parts of a text pool: text symbols, selection texts, list headings. */
 	public static final List<String> TEXT_PARTS = List.of("symbols", "selections", "headings");
 
@@ -798,8 +884,9 @@ public final class AdtClient {
 	}
 
 	/**
-	 * Replaces one part of a text pool. The texts are active right away; the
-	 * object itself needs no activation for them.
+	 * Replaces one part of a text pool, in the form SAP accepts
+	 * ({@link AdtTextPool#normalize}). SAP keeps the texts inactive until the
+	 * pool is activated.
 	 *
 	 * @return the transport request used, empty for local objects
 	 */
@@ -810,6 +897,7 @@ public final class AdtClient {
 			throw new AdtException(400, "Classes only have text symbols; selection texts and headings belong to programs.");
 		}
 		String uri = textElementsUri(type, name);
+		String body = AdtTextPool.normalize(part, texts);
 		return withLock(session, uri, transport, cancel, (handle, tr) -> {
 			StringBuilder path = new StringBuilder(uri).append("/source/").append(part).append("?lockHandle=")
 					.append(enc(handle));
@@ -818,7 +906,7 @@ public final class AdtClient {
 			}
 			// SAP wants the part's media type as Accept as well, else it answers 400
 			AdtResponse put = exchange(session,
-					AdtRequest.put(path.toString(), texts, mediaType).withHeader("Accept", mediaType), cancel);
+					AdtRequest.put(path.toString(), body, mediaType).withHeader("Accept", mediaType), cancel);
 			if (!put.ok()) {
 				throw new AdtException(put.status(), "Could not write the text elements: " + AdtErrors.message(put));
 			}

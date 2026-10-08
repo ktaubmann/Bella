@@ -528,11 +528,12 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "(FUGR). Use it for the selection texts of PARAMETERS and SELECT-OPTIONS and for the text symbols "
 						+ "behind TEXT-nnn, instead of setting texts in code. Read the part first with adt_text_elements "
 						+ "and keep the other entries. Saved directly in the SAP system (also when the object is open in "
-						+ "the editor) and active at once; no activation needed.",
+						+ "the editor) and activated right away. Symbols without a @MaxLength line get one with room "
+						+ "for translations.",
 				schema(new String[] { "name", "type", "part", "texts" }, objectProps("part", "string", TEXT_PART_DESC,
 						"texts", "string", "The complete new part, one entry per line. selections: S_VBELN=Delivery "
 								+ "(name of the parameter or select-option, text up to 30 characters). symbols: 001=Text, "
-								+ "optionally preceded by a line @MaxLength:40. headings: listHeader=Title, "
+								+ "optionally preceded by a line @MaxLength:40 (else Bella adds one). headings: listHeader=Title, "
 								+ "columnHeader_1=Column titles.",
 						"transport", "string", "Transport request, required for non-local objects unless already assigned.")),
 				null, ToolSpec.Kind.WRITE));
@@ -589,6 +590,10 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			for (JsonObject o : objects) {
 				AdtObjectRef ref = c.resolve(Json.str(o, "name").trim(), Json.str(o, "type"), cancel);
+				if (AdtClient.TEXT_POOL.equals(ref.type())) {
+					String[] owner = AdtClient.textPoolOwnerOfUri(ref.uri());
+					ref = new AdtObjectRef(AdtObjectRef.uriFor(owner[1], owner[0]), owner[1], owner[0], "", "");
+				}
 				String pkg = ref.packageName().isEmpty() ? c.packageOf(ref.uri(), cancel)
 						: ref.packageName().toUpperCase(Locale.ROOT);
 				Optional<String> refused = checkPackage(ref.name(), pkg, patterns);
@@ -1826,7 +1831,7 @@ public final class AdtToolProvider implements ToolProvider {
 		return ToolResult.ok(texts.isBlank() ? "No " + part + " maintained for " + ref.name() + "." : texts);
 	}
 
-	private static final Pattern SELECTION_TEXT = Pattern.compile("[A-Za-z0-9_]{1,8}=.*");
+	private static final Pattern SELECTION_TEXT = Pattern.compile("[A-Za-z0-9_]{1,8}\\s*=.*");
 
 	private ToolResult writeTextElements(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem s = system(in);
@@ -1846,12 +1851,36 @@ public final class AdtToolProvider implements ToolProvider {
 				}
 			}
 		}
+		String tr;
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-			String tr = AdtClient.writeTextElements(session, ref.type(), ref.name(), part, texts,
-					Json.str(in, "transport"), cancel);
-			return ToolResult.ok("Saved the " + part + " of " + ref.name() + " in " + s.label()
-					+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Text elements are active at once.");
+			tr = AdtClient.writeTextElements(session, ref.type(), ref.name(), part, texts, Json.str(in, "transport"),
+					cancel);
 		}
+		String saved = "Saved the " + part + " of " + ref.name() + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")");
+		// SAP answers 200 also when it stored the texts differently, so compare what it reads back
+		List<String> lost = AdtTextPool.differences(texts, c.textElements(ref.type(), ref.name(), part, cancel));
+		if (!lost.isEmpty()) {
+			return ToolResult.error(saved + ", but SAP did not keep the texts as written:\n- "
+					+ String.join("\n- ", lost) + "\nRead the part with adt_text_elements and write it again in the "
+					+ "format it shows; if that does not help, ask the developer to maintain the texts in SE38.");
+		}
+		String poolUri = AdtClient.textElementsUri(ref.type(), ref.name());
+		AdtObjectRef pool = new AdtObjectRef(poolUri, ref.name(), AdtClient.TEXT_POOL, "", "");
+		List<AdtClient.Message> msgs;
+		try {
+			msgs = c.activate(List.of(pool), cancel);
+		} catch (IOException e) {
+			return ToolResult.ok(saved + ". The texts are still inactive: activating the text pool failed ("
+					+ e.getMessage() + "); activate " + ref.name() + " with adt_activate, it takes the pool along.");
+		} finally {
+			inactive.remove(s.destinationId());
+		}
+		if (msgs.stream().anyMatch(m -> m.severity().equals("Error"))) {
+			return ToolResult.ok(saved + ". The texts are still inactive; activating the text pool reported:\n"
+					+ format(msgs));
+		}
+		return ToolResult.ok(saved + " and activated the text pool.");
 	}
 
 	private static String textPart(JsonObject in) {
@@ -2329,6 +2358,16 @@ public final class AdtToolProvider implements ToolProvider {
 		if (refs.isEmpty()) {
 			return ToolResult.error("No objects given.");
 		}
+		try {
+			// written texts stay inactive until their pool is activated, which activating the program does not do
+			for (AdtObjectRef pool : c.inactiveTextPools(refs, cancel)) {
+				if (refs.stream().noneMatch(r -> r.uri().equalsIgnoreCase(pool.uri()))) {
+					refs.add(pool);
+				}
+			}
+		} catch (IOException e) {
+			Log.warn("adt", "inactive text pools not read: " + e.getMessage());
+		}
 		List<AdtClient.Message> msgs;
 		try {
 			msgs = c.activate(refs, cancel);
@@ -2337,7 +2376,8 @@ public final class AdtToolProvider implements ToolProvider {
 			inactive.remove(s.destinationId());
 		}
 		boolean errors = msgs.stream().anyMatch(m -> m.severity().equals("Error"));
-		String names = String.join(", ", refs.stream().map(AdtObjectRef::name).toList());
+		String names = String.join(", ", refs.stream()
+				.map(r -> AdtClient.TEXT_POOL.equals(r.type()) ? "text pool of " + r.name() : r.name()).toList());
 		if (errors) {
 			return ToolResult.error("Activation failed for " + names + ":\n" + format(msgs));
 		}

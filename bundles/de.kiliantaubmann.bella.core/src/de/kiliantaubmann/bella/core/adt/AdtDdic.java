@@ -132,7 +132,7 @@ final class AdtDdic {
 		String uri = objectUri(t, n, group);
 		String collection = uri.substring(0, uri.lastIndexOf('/'));
 		String head = " adtcore:description=\"" + x(description) + "\" adtcore:name=\"" + x(n) + "\"";
-		String master = " adtcore:masterLanguage=\"" + lang + "\" adtcore:masterSystem=\"H00\"" + responsible(responsible);
+		String master = " adtcore:masterLanguage=\"" + lang + "\"" + responsible(responsible);
 		String pkgRef = "\n  <adtcore:packageRef adtcore:name=\"" + x(p) + "\"/>";
 		String ns = " xmlns:adtcore=\"http://www.sap.com/adt/core\"";
 		String body;
@@ -413,7 +413,7 @@ final class AdtDdic {
 				f.getOrDefault("dataType", "").isEmpty() ? "domain" : "predefinedAbapType");
 		return "<blue:wbobj xmlns:blue=\"http://www.sap.com/wbobj/dictionary/dtel\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
 				+ " adtcore:description=\"" + x(description) + "\" adtcore:name=\"" + x(name)
-				+ "\" adtcore:type=\"DTEL/DE\" adtcore:masterLanguage=\"" + language + "\" adtcore:masterSystem=\"H00\""
+				+ "\" adtcore:type=\"DTEL/DE\" adtcore:masterLanguage=\"" + language + "\""
 				+ responsible(responsible) + ">\n  <adtcore:packageRef adtcore:name=\"" + x(pkg) + "\"/>"
 				+ "\n  <dtel:dataElement xmlns:dtel=\"http://www.sap.com/adt/dictionary/dataelements\">"
 				+ "\n    <dtel:typeKind>" + x(typeKind) + "</dtel:typeKind>"
@@ -522,7 +522,7 @@ final class AdtDdic {
 		}
 		return "<doma:domain xmlns:doma=\"http://www.sap.com/dictionary/domain\" xmlns:adtcore=\"http://www.sap.com/adt/core\""
 				+ " adtcore:description=\"" + x(description) + "\" adtcore:name=\"" + x(name)
-				+ "\" adtcore:type=\"DOMA/DD\" adtcore:masterLanguage=\"" + language + "\" adtcore:masterSystem=\"H00\""
+				+ "\" adtcore:type=\"DOMA/DD\" adtcore:masterLanguage=\"" + language + "\""
 				+ responsible(responsible) + ">\n  <adtcore:packageRef adtcore:name=\"" + x(pkg) + "\"/>"
 				+ "\n  <doma:content>\n    <doma:typeInformation>"
 				+ "\n      <doma:datatype>" + x(d.dataType()) + "</doma:datatype>"

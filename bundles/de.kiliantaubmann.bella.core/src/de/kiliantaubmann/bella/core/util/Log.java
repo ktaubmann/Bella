@@ -97,8 +97,9 @@ public final class Log {
 	}
 
 	private static final List<Pattern> SECRETS = List.of(
-			// Authorization headers and similar JSON or header fields
-			Pattern.compile("(?i)(\"?(?<![A-Za-z0-9_])(?:authorization|x-api-key|api[-_]?key|apikey|access[-_]?token|token|password|passwd|secret)\"?\\s*[:=]\\s*\"?)([^\"\\s,}&]+(?: [^\"\\s,}&]+)?)"),
+			// Authorization headers and similar JSON or header fields; not ABAP components (me->authorization,
+			// ls_x-password), a markdown heading (**Authorization:**) or the code after an escaped line break
+			Pattern.compile("(?i)(\"?(?<![A-Za-z0-9_>-])(?:authorization|x-api-key|api[-_]?key|apikey|access[-_]?token|token|password|passwd|secret)\"?\\s*[:=]\\s*\"?)((?:(?:bearer|basic|token) )?[^\"\\s,}&\\\\*][^\"\\s,}&\\\\]*)"),
 			Pattern.compile("(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+"),
 			Pattern.compile("()(?<![A-Za-z0-9])sk-ant-[A-Za-z0-9_-]+"),
 			Pattern.compile("()(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}"),
