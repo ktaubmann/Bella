@@ -22,6 +22,8 @@ import de.kiliantaubmann.bella.core.adt.AdtContext;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
 import de.kiliantaubmann.bella.core.adt.AdtObjectRef;
 import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
+import de.kiliantaubmann.bella.core.adt.AdtTextSymbols;
+import de.kiliantaubmann.bella.core.adt.AdtTransport;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.llm.ChatRequest;
@@ -64,7 +66,9 @@ abstract class EditorHandler extends AbstractHandler {
 	 * of the answer into the editor (after the diff preview). Before the
 	 * request, the definitions of the SAP objects that {@code contextCode} and
 	 * the instruction mention are loaded through ADT and added to the prompt;
-	 * the generated code goes through Bella's style check.
+	 * the generated code goes through Bella's style check. Text symbols the
+	 * code names as {@code 'Text'(001)} and the text pool lacks are added to
+	 * it once the developer applies the code.
 	 *
 	 * @param contextCode code whose referenced objects matter, may be empty
 	 * @param instruction the developer's instruction, may be {@code null}
@@ -75,7 +79,8 @@ abstract class EditorHandler extends AbstractHandler {
 		SapContext sap = SapContext.of(part, contextCode, instruction);
 		String objectName = EditorBridge.objectName(part);
 		Log.info("editor", target + " on " + objectName + ", SAP definitions "
-				+ (sap == null ? "off (no ADT object, not logged on or switched off)" : "on"));
+				+ (sap == null ? "off (no ADT object or not logged on)"
+						: sap.definitions() ? "on" : "off (switched off)"));
 		if (instruction != null && !instruction.isBlank()) {
 			Log.debug("editor", () -> "instruction: " + instruction);
 		}
@@ -106,7 +111,11 @@ abstract class EditorHandler extends AbstractHandler {
 					Prompt p = prompt;
 					List<String> used = List.of();
 					String definitionsError = null;
-					if (sap != null) {
+					String pool = sap == null ? null : sap.textSymbols(cancel);
+					if (pool != null) {
+						p = AbapPrompts.withTextSymbols(p, sap.objectName(), pool);
+					}
+					if (sap != null && sap.definitions()) {
 						monitor.subTask(Messages.get("generate.loadingDefinitions"));
 						AdtContext.Result defs = sap.load(cancel);
 						if (defs != null && !defs.isEmpty()) {
@@ -133,11 +142,17 @@ abstract class EditorHandler extends AbstractHandler {
 						return Status.OK_STATUS;
 					}
 					List<AbapLint.Finding> findings = AbapLint.check(code, naming,
-							sap == null ? AbapLint.Target.UNKNOWN : sap.lintTarget(cancel));
+							sap == null || !sap.definitions() ? AbapLint.Target.UNKNOWN : sap.lintTarget(cancel));
 					Log.info("editor", "proposal for " + objectName + ": " + code.length() + " chars, "
 							+ findings.size() + " style findings, definitions " + used);
-					String notes = CodeActions.previewNotes(used, definitionsError, findings);
-					Display.getDefault().asyncExec(() -> CodeActions.apply(part, editor, target, code, notes, anchor));
+					AdtTextSymbols.Plan symbols = pool == null ? null : AdtTextSymbols.plan(code, pool);
+					String notes = CodeActions.previewNotes(used, definitionsError, findings) + symbolNotes(symbols);
+					Display.getDefault().asyncExec(() -> {
+						if (CodeActions.apply(part, editor, target, code, notes, anchor) && symbols != null
+								&& !symbols.missing().isEmpty()) {
+							sap.addTextSymbols(part, symbols.missing());
+						}
+					});
 				} catch (CancelToken.CancelledException e) {
 					return Status.CANCEL_STATUS;
 				} catch (Exception e) {
@@ -153,15 +168,36 @@ abstract class EditorHandler extends AbstractHandler {
 		job.schedule();
 	}
 
-	/** Where to load SAP definitions from; captured on the UI thread, used in the job. */
-	record SapContext(AdtBackend adt, String destinationId, String objectName, String objectUri, String code,
-			String instruction) {
+	/** Text for the diff preview: which text symbols are added to the pool, and which differ from it. */
+	static String symbolNotes(AdtTextSymbols.Plan symbols) {
+		if (symbols == null || symbols.isEmpty()) {
+			return "";
+		}
+		StringBuilder sb = new StringBuilder();
+		if (!symbols.missing().isEmpty()) {
+			sb.append(Messages.get("diff.textSymbols.add")).append('\n');
+			symbols.missing().forEach((id, text) -> sb.append("  ").append(id).append(" = ").append(text).append('\n'));
+		}
+		if (!symbols.differing().isEmpty()) {
+			sb.append(Messages.get("diff.textSymbols.differ")).append('\n');
+			symbols.differing().forEach((id, text) -> sb.append("  ").append(id).append(" = ").append(text).append('\n'));
+		}
+		return sb.toString();
+	}
 
-		/** {@code null} when switched off, ADT is missing, or the editor holds no ADT object of a logged-on system. */
+	/**
+	 * The editor's ADT object; captured on the UI thread, used in the job.
+	 *
+	 * @param definitions whether to load SAP definitions (preference)
+	 */
+	record SapContext(AdtBackend adt, String destinationId, String objectName, String objectUri, String objectType,
+			String code, String instruction, boolean definitions) {
+
+		/** {@code null} when ADT is missing or the editor holds no ADT object of a logged-on system. */
 		static SapContext of(IEditorPart part, String code, String instruction) {
 			BellaPlugin plugin = BellaPlugin.getDefault();
 			AdtBackend adt = plugin.adt();
-			if (adt == null || !plugin.prefs().getBoolean(Prefs.EDITOR_SAP_CONTEXT)) {
+			if (adt == null) {
 				return null;
 			}
 			Optional<AdtEditorObject> obj = EditorBridge.adtObject(part);
@@ -172,8 +208,9 @@ abstract class EditorHandler extends AbstractHandler {
 			try {
 				boolean loggedOn = adt.systems().stream()
 						.anyMatch(s -> s.destinationId().equals(dest) && s.loggedOn());
-				return loggedOn ? new SapContext(adt, dest, obj.get().name(), obj.get().uri(),
-						code == null ? "" : code, instruction) : null;
+				return loggedOn ? new SapContext(adt, dest, obj.get().name(), obj.get().uri(), obj.get().type(),
+						code == null ? "" : code, instruction, plugin.prefs().getBoolean(Prefs.EDITOR_SAP_CONTEXT))
+						: null;
 			} catch (RuntimeException | LinkageError e) {
 				return null;
 			}
@@ -197,6 +234,49 @@ abstract class EditorHandler extends AbstractHandler {
 			} catch (RuntimeException | LinkageError e) {
 				return AbapLint.Target.UNKNOWN;
 			}
+		}
+
+		private AdtEditorObject object() {
+			return new AdtEditorObject(destinationId, objectUri, objectName, objectType);
+		}
+
+		/**
+		 * The text symbols of the object's own text pool; {@code null} when it
+		 * has none of its own or reading it fails, text symbols are then left
+		 * alone.
+		 */
+		String textSymbols(CancelToken cancel) {
+			if (!AdtTextSymbols.hasOwnPool(object())) {
+				return null;
+			}
+			try {
+				return AdtTextSymbols.read(new AdtClient(adt.stateless(destinationId)), object(), cancel);
+			} catch (java.io.IOException | RuntimeException | LinkageError e) {
+				Log.info("editor", "Cannot read the text symbols of " + objectName + ": " + e.getMessage());
+				return null;
+			}
+		}
+
+		/** Adds text symbols to the pool in the background; a failure is shown to the developer. */
+		void addTextSymbols(IEditorPart part, java.util.Map<String, String> missing) {
+			Job job = new Job(Messages.get("textSymbols.jobName")) {
+				@Override
+				protected org.eclipse.core.runtime.IStatus run(IProgressMonitor monitor) {
+					try (AdtTransport.Session session = adt.stateful(destinationId)) {
+						String tr = AdtTextSymbols.add(session, new AdtClient(adt.stateless(destinationId)), object(),
+								missing, CancelToken.NONE);
+						Log.info("editor", "text symbols " + missing.keySet() + " added to " + objectName
+								+ (tr.isEmpty() ? "" : " (transport " + tr + ")"));
+					} catch (java.io.IOException | RuntimeException | LinkageError e) {
+						Log.warn("editor", "text symbols " + missing.keySet() + " of " + objectName + " not added: " + e);
+						StringBuilder texts = new StringBuilder();
+						missing.forEach((id, text) -> texts.append('\n').append(id).append(" = ").append(text));
+						error(part, Messages.fmt("textSymbols.failed", objectName, e.getMessage(), texts.toString()));
+					}
+					return Status.OK_STATUS;
+				}
+			};
+			job.schedule();
 		}
 
 		/**

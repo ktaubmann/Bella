@@ -114,7 +114,7 @@ MESSAGES = {
  "prefs.uiLanguage": "UI の言語：", "prefs.answerLanguage": "回答の言語：",
  "prefs.commentLanguage": "ABAP コメントの言語：", "prefs.editor": "エディター",
  "prefs.diffPreview": "エディターに書き込む前に差分プレビューを表示",
- "prefs.sapContext": "コード生成時に SAP 定義（テーブル、クラス、汎用モジュール）を読み込む", "generate.loadingDefinitions": "SAP 定義を読み込んでいます…", "diff.definitions": "使用した SAP 定義: {0}", "diff.definitions.failed": "SAP 定義を読み込めませんでした: {0}", "diff.lint": "提案コードのスタイルチェック（{0} 件）:", "diff.lint.more": "… ほか {0} 件",
+ "prefs.sapContext": "コード生成時に SAP 定義（テーブル、クラス、汎用モジュール）を読み込む", "generate.loadingDefinitions": "SAP 定義を読み込んでいます…", "diff.definitions": "使用した SAP 定義: {0}", "diff.definitions.failed": "SAP 定義を読み込めませんでした: {0}", "diff.lint": "提案コードのスタイルチェック（{0} 件）:", "diff.lint.more": "… ほか {0} 件", "diff.textSymbols.add": "適用時にテキストプールへ追加して有効化するテキストシンボル:", "diff.textSymbols.differ": "別のテキストで既に存在するテキストシンボル（実行時はプールのテキストが表示されます）:", "textSymbols.jobName": "Bella がテキストシンボルを保存しています", "textSymbols.failed": "{0} のテキストシンボルを保存できませんでした: {1}\n{0} のテキストエレメントで保守してください:{2}",
  "log.description": "ログファイルはエラーの原因を調べるのに役立ちます。既定ではオフです。", "log.group": "ログファイル", "log.enabled": "トラブルシューティング用のログファイルを書き込む", "log.detail": "詳細を含める（プロンプト、回答、ソースコード、ツールの結果）", "log.detail.hint": "標準: Bella の動作（リクエスト、ツールと SAP の呼び出し、CLI プロセス）をステータス、所要時間、エラーとともに記録します。詳細を含めると、ソースコードとモデルの回答もファイルに含まれます。", "log.file": "ファイル:", "log.open": "ログを開く", "log.folder": "フォルダーを開く", "log.clear": "クリア", "log.privacy": "API キー、トークン、パスワードはすべてのエントリから削除されます。ファイルを不具合報告に添付してください。", "log.empty": "まだログがありません。ログをオンにして、うまくいかなかった操作を繰り返してください。", "log.cleared": "ログをクリアしました。", "chat.openLog": "ログを開く",
  "prefs.autoCompletion": "入力中に補完を自動で提案", "prefs.autoCompletionDelay": "遅延（ミリ秒）：",
  "mcp.dialog.shell": "MCP サーバー", "mcp.dialog.title": "MCP サーバー",
