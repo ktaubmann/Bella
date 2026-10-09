@@ -561,8 +561,9 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "(FUGR). Use it for the text symbols behind TEXT-nnn and for the selection texts of PARAMETERS "
 						+ "and SELECT-OPTIONS, instead of literals or %_..._%_APP_% in code. Selection texts stick only "
 						+ "for fields of the active program, so activate the program first. Read the part first with "
-						+ "adt_text_elements and keep the other entries. Saved directly in the SAP system (also when "
-						+ "the object is open in the editor) and activated right away. Symbols without a @MaxLength "
+						+ "adt_text_elements and keep the other entries. Saved directly in the SAP system and activated "
+						+ "right away; when the object is open in the editor with unsaved changes, the developer "
+						+ "saves first. Symbols without a @MaxLength "
 						+ "line get one with room for translations.",
 				schema(new String[] { "name", "type", "part", "texts" }, objectProps("part", "string", TEXT_PART_DESC,
 						"texts", "string", "The complete new part, one entry per line. symbols: 001=Text, optionally "

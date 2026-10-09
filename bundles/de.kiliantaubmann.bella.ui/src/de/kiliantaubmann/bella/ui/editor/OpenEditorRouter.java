@@ -29,6 +29,7 @@ import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
 import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
+import de.kiliantaubmann.bella.core.tools.ToolRegistry;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.tools.WriteGuard;
@@ -50,6 +51,16 @@ public final class OpenEditorRouter implements WriteGuard {
 		if (!activated.isEmpty()) {
 			AtomicReference<Optional<ToolResult>> result = new AtomicReference<>(Optional.empty());
 			Display.getDefault().syncExec(() -> result.set(unsavedBeforeActivation(activated)));
+			return result.get();
+		}
+		if (ToolRegistry.ADT_PROVIDER_ID.equals(tool.providerId())
+				&& "adt_write_text_elements".equals(tool.remoteName())) {
+			Optional<ObjectTarget> target = ObjectTarget.fromToolInput(input);
+			if (target.isEmpty()) {
+				return Optional.empty();
+			}
+			AtomicReference<Optional<ToolResult>> result = new AtomicReference<>(Optional.empty());
+			Display.getDefault().syncExec(() -> result.set(unsavedBeforeTextElements(target.get())));
 			return result.get();
 		}
 		if ("adt_edit_code".equals(tool.name())) {
@@ -196,6 +207,21 @@ public final class OpenEditorRouter implements WriteGuard {
 		return Optional.of(ToolResult.error(String.join(", ", unsaved) + " is open in the developer's editor with "
 				+ "unsaved changes; activating now would activate (and test) the last saved version. Not activated. "
 				+ "Ask the developer to save (Ctrl+S) and activate (Ctrl+F3) in the editor."));
+	}
+
+	/**
+	 * The text pool counts as part of the program: written while its editor
+	 * holds unsaved changes, ADT reports a version conflict on the next save.
+	 * So the write waits until the developer saved.
+	 */
+	private static Optional<ToolResult> unsavedBeforeTextElements(ObjectTarget target) {
+		IEditorPart part = findOpenEditor(target);
+		if (part == null || !part.isDirty()) {
+			return Optional.empty();
+		}
+		return Optional.of(ToolResult.error(target.name() + " is open in the developer's editor with unsaved "
+				+ "changes; writing its text elements now would make ADT report a version conflict when the developer "
+				+ "saves. Not written. Ask the developer to save (Ctrl+S), then write the text elements again."));
 	}
 
 	/**

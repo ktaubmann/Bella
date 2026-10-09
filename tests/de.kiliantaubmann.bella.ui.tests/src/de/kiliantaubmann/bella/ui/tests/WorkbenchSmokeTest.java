@@ -55,6 +55,7 @@ import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ChatMode;
+import de.kiliantaubmann.bella.core.tools.ToolRegistry;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.Log;
@@ -391,6 +392,28 @@ class WorkbenchSmokeTest {
 			prefs.setToDefault(Prefs.LOG_ENABLED);
 			plugin.clearLog();
 		}
+	}
+
+	@Test
+	void textElementsWaitUntilTheEditorIsSaved() throws Exception {
+		BellaPlugin.getDefault().prefs().setValue(Prefs.DIFF_PREVIEW, false);
+		IEditorPart part = openDemoEditor();
+		ToolSpec texts = ToolSpec.of("adt_write_text_elements", "", new JsonObject(), null, ToolSpec.Kind.WRITE)
+				.withProvider(ToolRegistry.ADT_PROVIDER_ID, "adt_write_text_elements");
+		JsonObject input = new JsonObject();
+		input.addProperty("name", "ZCL_DEMO");
+		input.addProperty("part", "symbols");
+		input.addProperty("texts", "001=Text");
+		assertTrue(new OpenEditorRouter().intercept(texts, input).isEmpty(), "a saved editor does not stop the write");
+		ITextEditor editor = EditorBridge.textEditor(part).orElseThrow();
+		IDocument doc = EditorBridge.document(editor);
+		doc.replace(0, 0, " ");
+		pump();
+		assertTrue(editor.isDirty());
+		ToolResult r = new OpenEditorRouter().intercept(texts, input).orElseThrow();
+		assertTrue(r.isError() && r.content().contains("save (Ctrl+S)"), r.content());
+		editor.doRevertToSaved();
+		pump();
 	}
 
 	@Test
