@@ -68,7 +68,7 @@ abstract class EditorHandler extends AbstractHandler {
 	 * the instruction mention are loaded through ADT and added to the prompt;
 	 * the generated code goes through Bella's style check. Text symbols the
 	 * code names as {@code 'Text'(001)} and the text pool lacks are added to
-	 * it once the developer applies the code.
+	 * it once the developer applies and saves the code.
 	 *
 	 * @param contextCode code whose referenced objects matter, may be empty
 	 * @param instruction the developer's instruction, may be {@code null}
@@ -257,8 +257,31 @@ abstract class EditorHandler extends AbstractHandler {
 			}
 		}
 
-		/** Adds text symbols to the pool in the background; a failure is shown to the developer. */
+		/**
+		 * Adds text symbols to the pool once the developer saved the editor.
+		 * Written while the editor holds unsaved changes, the pool counts as a
+		 * change of the program in the backend, and ADT then reports a version
+		 * conflict on the save. UI thread.
+		 */
 		void addTextSymbols(IEditorPart part, java.util.Map<String, String> missing) {
+			if (!part.isDirty()) {
+				writeTextSymbols(part, missing);
+				return;
+			}
+			Log.info("editor", "text symbols " + missing.keySet() + " of " + objectName + " wait for the save");
+			part.addPropertyListener(new org.eclipse.ui.IPropertyListener() {
+				@Override
+				public void propertyChanged(Object source, int property) {
+					if (property == IEditorPart.PROP_DIRTY && !part.isDirty()) {
+						part.removePropertyListener(this);
+						writeTextSymbols(part, missing);
+					}
+				}
+			});
+		}
+
+		/** Adds text symbols to the pool in the background; a failure is shown to the developer. */
+		private void writeTextSymbols(IEditorPart part, java.util.Map<String, String> missing) {
 			Job job = new Job(Messages.get("textSymbols.jobName")) {
 				@Override
 				protected org.eclipse.core.runtime.IStatus run(IProgressMonitor monitor) {

@@ -527,7 +527,7 @@ public final class AbapPrompts {
 	/**
 	 * Adds the text symbols the object has already, so that the model reuses
 	 * them and gives new texts free ids; Bella adds the new ones to the text
-	 * pool when the developer applies the code.
+	 * pool when the developer saves the code.
 	 */
 	public static Prompt withTextSymbols(Prompt prompt, String objectName, String symbols) {
 		List<String> lines = symbols == null ? List.of()
@@ -538,7 +538,7 @@ public final class AbapPrompts {
 		String user = prompt.user() + """
 
 				Text symbols of %s: %s
-				A text you write as 'Text'(nnn) with a new id is added to the text pool when the developer applies \
+				A text you write as 'Text'(nnn) with a new id is added to the text pool when the developer saves \
 				the code; use an id that is not taken, and the existing text for an id that is.
 				""".formatted(objectName, existing);
 		return new Prompt(prompt.system(), user);
