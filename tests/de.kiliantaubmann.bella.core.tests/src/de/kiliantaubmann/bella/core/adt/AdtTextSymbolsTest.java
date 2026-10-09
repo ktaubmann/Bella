@@ -79,7 +79,7 @@ class AdtTextSymbolsTest {
 		}
 		assertEquals("DEVK900001", tr);
 		// 001 exists already and stays as it is
-		assertEquals(List.of("@MaxLength:14\n001=Kept\n@MaxLength:26\n002=No entries found"), puts);
+		assertEquals(List.of("@MaxLength:14\n001=Kept\n\n@MaxLength:26\n002=No entries found\n"), puts);
 		assertTrue(adt.log.stream().anyMatch(l -> l.startsWith("POST /sap/bc/adt/activation")), adt.log.toString());
 	}
 
