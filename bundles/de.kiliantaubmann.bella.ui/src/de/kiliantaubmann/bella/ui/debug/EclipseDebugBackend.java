@@ -18,6 +18,7 @@ import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.IDebugEventSetListener;
 import org.eclipse.debug.core.model.IBreakpoint;
+import org.eclipse.debug.core.model.IDebugElement;
 import org.eclipse.debug.core.model.IDebugTarget;
 import org.eclipse.debug.core.model.ILineBreakpoint;
 import org.eclipse.debug.core.model.IStackFrame;
@@ -80,6 +81,19 @@ public final class EclipseDebugBackend implements DebugBackend {
 		DebugSnapshot.Problem problem = DebugExceptions.detect(variables, List.of(thread.getName(), frame.getName()))
 				.orElse(null);
 		return new DebugSnapshot(frame.getName(), "", frame.getLineNumber(), stack, variables, problem);
+	}
+
+	/**
+	 * Whether the stop may be at an exception, from the labels and the names
+	 * and types of the frame's variables only: no values, no children, so a
+	 * breakpoint stop costs no extra round trips to the SAP system.
+	 */
+	static boolean mayBeException(IStackFrame frame) throws DebugException {
+		List<Variable> shallow = new ArrayList<>();
+		for (IVariable v : frame.getVariables()) {
+			shallow.add(Variable.of(v.getName(), Loader.safe(v::getReferenceTypeName), ""));
+		}
+		return DebugExceptions.detect(shallow, List.of(frame.getThread().getName(), frame.getName())).isPresent();
 	}
 
 	@Override
@@ -178,7 +192,7 @@ public final class EclipseDebugBackend implements DebugBackend {
 		}
 		IResource resource = Adapters.adapt(part.getEditorInput(), IResource.class);
 		try {
-			if (hasBreakpoint(resource, line) == on) {
+			if (hasBreakpoint(resource, object, line) == on) {
 				return null;
 			}
 			IDocument doc = EditorBridge.document(editor.get());
@@ -190,8 +204,9 @@ public final class EclipseDebugBackend implements DebugBackend {
 			editor.get().selectAndReveal(doc.getLineOffset(line - 1), 0);
 			IHandlerService handlers = part.getSite().getService(IHandlerService.class);
 			handlers.executeCommand(TOGGLE_BREAKPOINT, null);
-			boolean done = resource != null ? hasBreakpoint(resource, line) == on
-					: lineBreakpointCount() == before + (on ? 1 : -1);
+			// the marker may sit on another resource than the editor input; the count tells as well
+			boolean done = hasBreakpoint(resource, object, line) == on
+					|| lineBreakpointCount() == before + (on ? 1 : -1);
 			return done ? null
 					: "Eclipse did not " + (on ? "set" : "remove") + " the breakpoint at line " + line + " of " + object
 							+ " (it may not be an executable statement). Choose another line.";
@@ -203,15 +218,24 @@ public final class EclipseDebugBackend implements DebugBackend {
 		}
 	}
 
-	private static boolean hasBreakpoint(IResource resource, int line) throws Exception {
-		if (resource == null) {
-			return false;
-		}
-		for (IBreakpoint bp : DebugPlugin.getDefault().getBreakpointManager().getBreakpoints()) {
-			if (bp instanceof ILineBreakpoint lb && bp.getMarker() != null
-					&& resource.equals(bp.getMarker().getResource()) && lb.getLineNumber() == line) {
-				return true;
+	/** A line breakpoint at this line on the editor's resource or labelled with the object's name; UI thread. */
+	private static boolean hasBreakpoint(IResource resource, String object, int line) throws Exception {
+		IDebugModelPresentation labels = DebugUITools.newDebugModelPresentation();
+		try {
+			for (IBreakpoint bp : DebugPlugin.getDefault().getBreakpointManager().getBreakpoints()) {
+				if (!(bp instanceof ILineBreakpoint lb) || lb.getLineNumber() != line || isJava(bp)) {
+					continue;
+				}
+				if (resource != null && bp.getMarker() != null && resource.equals(bp.getMarker().getResource())) {
+					return true;
+				}
+				String label = labels.getText(bp);
+				if (label != null && label.toUpperCase(Locale.ROOT).contains(object.toUpperCase(Locale.ROOT))) {
+					return true;
+				}
 			}
+		} finally {
+			labels.dispose();
 		}
 		return false;
 	}
@@ -237,7 +261,8 @@ public final class EclipseDebugBackend implements DebugBackend {
 		CountDownLatch stopped = new CountDownLatch(1);
 		IDebugEventSetListener listener = events -> {
 			for (DebugEvent e : events) {
-				boolean ours = e.getSource() == thread || e.getSource() == target;
+				// the program may stop in another thread of the same session, e.g. an update task
+				boolean ours = e.getSource() instanceof IDebugElement d && d.getDebugTarget() == target;
 				if (ours && (e.getKind() == DebugEvent.SUSPEND || e.getKind() == DebugEvent.TERMINATE)) {
 					stopped.countDown();
 				}
@@ -405,11 +430,11 @@ public final class EclipseDebugBackend implements DebugBackend {
 					&& safe(value::getValueString).isBlank();
 		}
 
-		private interface DebugSupplier {
+		interface DebugSupplier {
 			String get() throws DebugException;
 		}
 
-		private static String safe(DebugSupplier s) {
+		static String safe(DebugSupplier s) {
 			try {
 				String r = s.get();
 				return r == null ? "" : r;

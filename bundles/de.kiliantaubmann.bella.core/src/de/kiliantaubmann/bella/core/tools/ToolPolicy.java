@@ -272,6 +272,10 @@ public final class ToolPolicy {
 
 	/** What the model is told when {@link #decide} refused a call. */
 	public String refusal(ToolSpec tool) {
+		if (tool.name().equals("debug_step") && (blockedByPlan(tool) || editorOnly(tool))) {
+			return "Refused in this chat mode: stepping or resuming runs the program, which may change data. Do not "
+					+ "retry; tell the developer to step in the debugger or to switch the chat mode.";
+		}
 		if (blockedByPlan(tool)) {
 			return "Refused in plan mode: Bella does not change anything in this mode. Do not retry; describe the change in "
 					+ "your plan instead.";

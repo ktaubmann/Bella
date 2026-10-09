@@ -3,7 +3,8 @@ package de.kiliantaubmann.bella.ui.debug;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Set;
-import java.util.WeakHashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
@@ -37,7 +38,19 @@ public final class DebugExceptionWatcher implements IDebugEventSetListener {
 	/** How long the notification stays. */
 	private static final long SHOW_MILLIS = 15_000;
 
-	private final Set<String> offered = Collections.newSetFromMap(new WeakHashMap<>());
+	/** Most offers remembered. */
+	private static final int REMEMBERED = 200;
+
+	/** Exceptions already offered; jobs of several threads add to it. */
+	private final Set<String> offered = Collections.synchronizedSet(Collections.newSetFromMap(
+			new LinkedHashMap<String, Boolean>() {
+				private static final long serialVersionUID = 1L;
+
+				@Override
+				protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+					return size() > REMEMBERED;
+				}
+			}));
 
 	public static void install() {
 		DebugPlugin.getDefault().addDebugEventListener(new DebugExceptionWatcher());
@@ -63,7 +76,8 @@ public final class DebugExceptionWatcher implements IDebugEventSetListener {
 	private void check(IThread thread) {
 		Job job = Job.create("Bella", monitor -> {
 			try {
-				if (!thread.isSuspended() || !thread.hasStackFrames()) {
+				if (!thread.isSuspended() || !thread.hasStackFrames()
+						|| !EclipseDebugBackend.mayBeException(thread.getTopStackFrame())) {
 					return Status.OK_STATUS;
 				}
 				DebugSnapshot s = EclipseDebugBackend.snapshot(thread.getTopStackFrame());

@@ -70,7 +70,8 @@ public final class DebugToolProvider implements ToolProvider {
 								"name", "string", "Program, class, function group or include, e.g. ZCL_ORDER.",
 								"type", "string", "Object type: PROG, CLAS, FUGR, INCL. Omit if unknown.",
 								"line", "integer", "Line (from 1) of the main source or include."),
-						null, ToolSpec.Kind.WRITE),
+						// changes Eclipse only, not the SAP system: also offered in the suggest and plan modes
+						null, ToolSpec.Kind.READ),
 				ToolSpec.of("debug_step",
 						"Go on in the stopped debug session: into (step into), over (step over), return (to the "
 								+ "caller) or resume (run to the next breakpoint). Returns the new state. Only when the "

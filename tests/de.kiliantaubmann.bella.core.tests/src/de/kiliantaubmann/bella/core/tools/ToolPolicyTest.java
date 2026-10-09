@@ -40,15 +40,20 @@ class ToolPolicyTest {
 		ToolSpec context = ToolSpec.of("debug_context", "", new JsonObject(), Capability.DEBUG_STATE,
 				ToolSpec.Kind.READ);
 		ToolSpec step = tool("debug_step", ToolSpec.Kind.WRITE);
-		ToolSpec breakpoint = tool("debug_breakpoint", ToolSpec.Kind.WRITE);
+		// a breakpoint changes Eclipse, not the SAP system
+		ToolSpec breakpoint = tool("debug_breakpoint", ToolSpec.Kind.READ);
 		// variable values go to the model provider
 		assertEquals(Decision.CONFIRM, p.decide(context, new JsonObject()));
 		assertEquals(Decision.AUTO, p.withMode(ChatMode.READ_DATA).decide(context, new JsonObject()));
 		assertEquals(Decision.CONFIRM, p.decide(breakpoint, new JsonObject()));
 		// resuming may commit: asks also in Automode
 		assertEquals(Decision.CONFIRM, p.withMode(ChatMode.AUTO).decide(step, new JsonObject()));
-		assertEquals(Decision.DENY, p.withMode(ChatMode.PLAN).decide(breakpoint, new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.withMode(ChatMode.PLAN).decide(breakpoint, new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.withMode(ChatMode.ACTIVATE).decide(breakpoint, new JsonObject()));
+		assertFalse(p.withMode(ChatMode.SUGGEST).editorOnly(breakpoint));
 		assertEquals(Decision.CONFIRM, p.withMode(ChatMode.PLAN).decide(context, new JsonObject()));
+		assertEquals(Decision.DENY, p.withMode(ChatMode.PLAN).decide(step, new JsonObject()));
+		assertTrue(p.withMode(ChatMode.SUGGEST).refusal(step).contains("stepping or resuming runs the program"));
 	}
 
 	@Test
