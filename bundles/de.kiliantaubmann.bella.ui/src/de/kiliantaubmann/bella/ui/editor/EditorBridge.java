@@ -116,7 +116,12 @@ public final class EditorBridge {
 		if (o.isPresent()) {
 			return o.get().name();
 		}
-		String title = part.getTitle() == null ? "" : part.getTitle().trim();
+		return titleName(part.getTitle());
+	}
+
+	/** Object name from an editor title, which ADT shows as {@code [SID] NAME}. */
+	public static String titleName(String editorTitle) {
+		String title = editorTitle == null ? "" : editorTitle.trim();
 		if (title.startsWith("[") && title.indexOf(']') > 0) {
 			title = title.substring(title.indexOf(']') + 1).trim();
 		}

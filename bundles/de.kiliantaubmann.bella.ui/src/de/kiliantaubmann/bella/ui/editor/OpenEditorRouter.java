@@ -11,6 +11,7 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.texteditor.ITextEditor;
@@ -22,6 +23,7 @@ import de.kiliantaubmann.bella.core.abap.AbapSlices;
 import de.kiliantaubmann.bella.core.abap.ClassSurgery;
 import de.kiliantaubmann.bella.core.abap.CodeEdits;
 import de.kiliantaubmann.bella.core.abap.ObjectTarget;
+import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtClient;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
 import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
@@ -31,6 +33,7 @@ import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.tools.WriteGuard;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Log;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
 
@@ -195,24 +198,53 @@ public final class OpenEditorRouter implements WriteGuard {
 				+ "Ask the developer to save (Ctrl+S) and activate (Ctrl+F3) in the editor."));
 	}
 
-	/** An open editor showing the target object, searching all windows and pages. */
+	/**
+	 * An open editor showing the target object, searching all windows and
+	 * pages. After a restart Eclipse restores an editor tab only when it is
+	 * shown; such a tab counts as well and is restored when it matches.
+	 */
 	public static IEditorPart findOpenEditor(ObjectTarget target) {
+		List<String> seen = new ArrayList<>();
 		for (IWorkbenchWindow window : PlatformUI.getWorkbench().getWorkbenchWindows()) {
 			for (IWorkbenchPage page : window.getPages()) {
 				for (IEditorReference ref : page.getEditorReferences()) {
 					IEditorPart part = ref.getEditor(false);
-					if (part == null) {
-						continue;
-					}
-					Optional<AdtEditorObject> adt = EditorBridge.adtObject(part);
-					boolean matches = adt.isPresent() ? target.matches(adt.get().name(), adt.get().type())
-							: target.matches(EditorBridge.objectName(part), null);
-					if (matches) {
-						return part;
+					if (part != null) {
+						Optional<AdtEditorObject> adt = EditorBridge.adtObject(part);
+						boolean matches = adt.isPresent() ? target.matches(adt.get().name(), adt.get().type())
+								: target.matches(EditorBridge.objectName(part), null);
+						if (matches) {
+							return part;
+						}
+						seen.add(EditorBridge.objectName(part));
+					} else if (matchesUnrestored(ref, target)) {
+						IEditorPart restored = ref.getEditor(true);
+						if (restored != null) {
+							return restored;
+						}
+					} else {
+						seen.add(ref.getTitle() + " (not restored)");
 					}
 				}
 			}
 		}
+		Log.debug("router", () -> "no open editor for " + target.name() + "; open: " + seen);
 		return null;
+	}
+
+	/** Whether a tab Eclipse has not restored yet shows the target: by its ADT input, else by its title. */
+	private static boolean matchesUnrestored(IEditorReference ref, ObjectTarget target) {
+		try {
+			AdtBackend adt = BellaPlugin.getDefault().adt();
+			if (adt != null) {
+				Optional<AdtEditorObject> o = adt.editorObject(ref.getEditorInput());
+				if (o.isPresent()) {
+					return target.matches(o.get().name(), o.get().type());
+				}
+			}
+		} catch (PartInitException | RuntimeException | LinkageError e) {
+			// fall back to the title
+		}
+		return target.matches(EditorBridge.titleName(ref.getTitle()), null);
 	}
 }
