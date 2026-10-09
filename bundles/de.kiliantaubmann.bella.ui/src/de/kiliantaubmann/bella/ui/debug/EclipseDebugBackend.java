@@ -35,12 +35,18 @@ import org.eclipse.ui.handlers.IHandlerService;
 import org.eclipse.ui.texteditor.ITextEditor;
 
 import de.kiliantaubmann.bella.core.abap.ObjectTarget;
+import de.kiliantaubmann.bella.core.adt.AdtBackend;
+import de.kiliantaubmann.bella.core.adt.AdtClient;
+import de.kiliantaubmann.bella.core.adt.AdtObjectRef;
+import de.kiliantaubmann.bella.core.adt.AdtSystem;
 import de.kiliantaubmann.bella.core.debug.DebugBackend;
 import de.kiliantaubmann.bella.core.debug.DebugExceptions;
 import de.kiliantaubmann.bella.core.debug.DebugSnapshot;
 import de.kiliantaubmann.bella.core.debug.DebugSnapshot.Frame;
 import de.kiliantaubmann.bella.core.debug.DebugSnapshot.Variable;
+import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Log;
+import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.editor.OpenEditorRouter;
 
@@ -173,18 +179,66 @@ public final class EclipseDebugBackend implements DebugBackend {
 	}
 
 	@Override
-	public void setBreakpoint(String object, String type, int line, boolean on) {
+	public void setBreakpoint(String object, String type, int line, boolean on) throws Exception {
+		ObjectTarget target = new ObjectTarget(object, type.isEmpty() ? null : type);
+		if (ui(() -> OpenEditorRouter.findOpenEditor(target)) == null) {
+			// the developer asked for the breakpoint; open the object as they would before setting it
+			open(target);
+		}
 		String problem = ui(() -> toggleInEditor(object, type, line, on));
 		if (problem != null) {
 			throw new IllegalStateException(problem);
 		}
 	}
 
+	/** How long ADT may take to show an object it was asked to open. */
+	private static final Duration OPEN_TIMEOUT = Duration.ofSeconds(10);
+
+	/**
+	 * Opens the object in an ADT editor of the active editor's system (else
+	 * the first one logged on) and waits until the editor is there.
+	 */
+	private static void open(ObjectTarget target) throws Exception {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		AdtBackend adt = plugin == null ? null : plugin.adt();
+		if (adt == null) {
+			throw new IllegalStateException(notOpen(target.name()));
+		}
+		List<AdtSystem> systems = adt.systems().stream().filter(AdtSystem::loggedOn).toList();
+		String active = plugin.activeDestination();
+		AdtSystem system = systems.stream().filter(s -> s.destinationId().equals(active)).findFirst()
+				.orElse(systems.isEmpty() ? null : systems.get(0));
+		if (system == null) {
+			throw new IllegalStateException(notOpen(target.name()) + " (no ABAP project is logged on)");
+		}
+		AdtObjectRef ref = new AdtClient(adt.stateless(system.destinationId())).resolve(target.name(), target.type(),
+				CancelToken.NONE);
+		String uri = AdtObjectRef.objectUri(ref.uri());
+		Log.info("debug", "opening " + target.name() + " (" + uri + ") in " + system.label() + " for a breakpoint");
+		if (!ui(() -> adt.openInEditor(system.destinationId(), uri))) {
+			throw new IllegalStateException(notOpen(target.name()) + " Bella could not open it in "
+					+ system.label() + " either.");
+		}
+		long end = System.nanoTime() + OPEN_TIMEOUT.toNanos();
+		while (System.nanoTime() < end) {
+			if (ui(() -> OpenEditorRouter.findOpenEditor(target)) != null) {
+				return;
+			}
+			Thread.sleep(200);
+		}
+		throw new IllegalStateException("Bella asked ADT to open " + target.name() + ", but no editor showed it within "
+				+ OPEN_TIMEOUT.toSeconds() + " seconds. Set the breakpoint again once it is open.");
+	}
+
+	private static String notOpen(String object) {
+		return object + " is not open in an editor. Ask the developer to open it; then set the breakpoint again.";
+	}
+
 	/** @return {@code null} when done, else what went wrong */
 	private static String toggleInEditor(String object, String type, int line, boolean on) {
 		IEditorPart part = OpenEditorRouter.findOpenEditor(new ObjectTarget(object, type.isEmpty() ? null : type));
 		if (part == null) {
-			return object + " is not open in an editor. Ask the developer to open it; then set the breakpoint again.";
+			return notOpen(object);
 		}
 		Optional<ITextEditor> editor = EditorBridge.textEditor(part);
 		if (editor.isEmpty()) {

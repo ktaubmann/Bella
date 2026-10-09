@@ -33,11 +33,12 @@ public interface DebugBackend {
 	List<Breakpoint> breakpoints() throws Exception;
 
 	/**
-	 * Sets or removes a line breakpoint, as the developer would in the editor.
+	 * Sets or removes a line breakpoint, as the developer would in the editor;
+	 * an object that is not open is opened in an editor first.
 	 *
 	 * @param type object type (PROG, CLAS, FUGR …), may be empty
-	 * @throws IllegalStateException with a message for the model when it cannot be done (e.g. the object is
-	 *                               not open in an editor)
+	 * @throws IllegalStateException with a message for the model when it cannot be done (e.g. the object
+	 *                               cannot be opened)
 	 */
 	void setBreakpoint(String object, String type, int line, boolean on) throws Exception;
 

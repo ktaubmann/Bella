@@ -513,6 +513,11 @@ public class BellaPlugin extends AbstractUIPlugin {
 		return devScope;
 	}
 
+	/** Destination of the ABAP object in the active editor; {@code null} before one was active. */
+	public String activeDestination() {
+		return activeDestination;
+	}
+
 	/** Destination of the ABAP object in the active editor; default system for tools. */
 	public void setActiveDestination(String destinationId) {
 		this.activeDestination = destinationId;

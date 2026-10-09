@@ -64,8 +64,9 @@ public final class DebugToolProvider implements ToolProvider {
 								"Path of one variable as in the Variables view, parts separated by /."),
 						Capability.DEBUG_STATE, ToolSpec.Kind.READ),
 				ToolSpec.of("debug_breakpoint",
-						"Set or remove a line breakpoint in Eclipse, as the developer would in the editor. Suggest "
-								+ "breakpoints with the reason first and set them when the developer agrees.",
+						"Set or remove a line breakpoint in Eclipse, as the developer would in the editor; an object "
+								+ "that is not open is opened in an editor first. Suggest breakpoints with the reason "
+								+ "first and set them when the developer agrees.",
 						schema(new String[] { "action", "name", "line" }, "action", "string", "set or remove.",
 								"name", "string", "Program, class, function group or include, e.g. ZCL_ORDER.",
 								"type", "string", "Object type: PROG, CLAS, FUGR, INCL. Omit if unknown.",

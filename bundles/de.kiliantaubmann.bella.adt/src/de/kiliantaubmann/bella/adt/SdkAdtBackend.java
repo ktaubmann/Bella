@@ -11,6 +11,8 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.Adapters;
+import org.eclipse.core.runtime.Platform;
+import org.osgi.framework.Bundle;
 
 import com.sap.adt.destinations.logon.AdtLogonServiceFactory;
 import com.sap.adt.tools.core.project.IAbapProject;
@@ -99,6 +101,81 @@ public final class SdkAdtBackend implements AdtBackend {
 			Reflect.once("object reference " + ref.getClass().getName() + " without URI or name");
 		}
 		return Optional.ofNullable(obj);
+	}
+
+	/**
+	 * Opens the object with ADT's navigation service, as public ADT-based
+	 * plug-ins do; read reflectively because it lives in ADT's UI bundle.
+	 */
+	@Override
+	public boolean openInEditor(String destinationId, String objectUri) {
+		IProject project = project(destinationId);
+		if (project == null) {
+			return false;
+		}
+		Object service = navigationService();
+		if (service == null) {
+			return false;
+		}
+		IAbapProject abap = project.getAdapter(IAbapProject.class);
+		for (Method m : service.getClass().getMethods()) {
+			Class<?>[] p = m.getParameterTypes();
+			try {
+				if (m.getName().equals("navigate") && p.length == 3 && p[0].isAssignableFrom(IProject.class)
+						&& p[1] == String.class && p[2] == boolean.class) {
+					// the service class itself may be internal
+					m.setAccessible(true);
+					m.invoke(service, project, objectUri, Boolean.TRUE);
+					return true;
+				}
+			} catch (ReflectiveOperationException | RuntimeException e) {
+				Log.warn("adt", "opening " + objectUri + " failed: " + e);
+				return false;
+			}
+		}
+		for (Method m : service.getClass().getMethods()) {
+			Class<?>[] p = m.getParameterTypes();
+			try {
+				if (m.getName().equals("navigateWithExternalLink") && p.length == 2 && p[0] == String.class
+						&& p[1].isAssignableFrom(IProject.class)) {
+					m.setAccessible(true);
+					m.invoke(service, "adt://" + abap.getSystemId() + objectUri, project);
+					return true;
+				}
+			} catch (ReflectiveOperationException | RuntimeException e) {
+				Log.warn("adt", "opening " + objectUri + " failed: " + e);
+				return false;
+			}
+		}
+		Reflect.once("no navigate method on " + service.getClass().getName());
+		return false;
+	}
+
+	private static IProject project(String destinationId) {
+		for (IProject project : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
+			IAbapProject abap = project.isOpen() ? project.getAdapter(IAbapProject.class) : null;
+			if (abap != null && abap.getDestinationId().equals(destinationId)) {
+				return project;
+			}
+		}
+		return null;
+	}
+
+	private static Object navigationService() {
+		String factory = "com.sap.adt.tools.core.ui.navigation.AdtNavigationServiceFactory";
+		for (String bundleName : new String[] { "com.sap.adt.tools.core.ui", "com.sap.adt.tools.core" }) {
+			Bundle bundle = Platform.getBundle(bundleName);
+			if (bundle == null) {
+				continue;
+			}
+			try {
+				return bundle.loadClass(factory).getMethod("createNavigationService").invoke(null);
+			} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+				// try the next bundle
+			}
+		}
+		Reflect.once(factory + " not available");
+		return null;
 	}
 
 	/** ADT exposes the repository object of an editor as an IAdtObjectReference adapter. */
