@@ -469,14 +469,31 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "'id' one error in detail), 'traces' (ABAP profiler traces; with 'id' and 'part' hitlist, "
 						+ "statements or db_accesses one analysis), 'trace_requests' (armed traces), 'sql_trace_state' "
 						+ "(ST05), 'sql_trace_directory', 'authorization_trace' (STUSERTRACE; 'user', 'auth_object', "
-						+ "'only_failures'), 'atc_variants' ('filter').",
+						+ "'only_failures'), 'atc_variants' ('filter'), 'odata_request' (GET of an OData service to test "
+						+ "it: 'url' host-relative, e.g. /sap/opu/odata/sap/<SRV>/$metadata or <EntitySet>?$top=5&$format=json, "
+						+ "encode blanks as %20; returns status, answer and the sap-statistics timing split with a verdict "
+						+ "where the time goes).",
 				schema(new String[] { "action" }, "action", "string", "One of the actions above.", "id", "string",
 						"Entry id from a list.", "part", "string", "traces: hitlist (default), statements or db_accesses.",
 						"user", "string", "User filter.", "auth_object", "string", "authorization_trace: object, e.g. S_TCODE.",
 						"only_failures", "boolean", "authorization_trace: only failed checks.", "filter", "string",
-						"atc_variants: name pattern, e.g. Z*.", "max_results", "integer", "Default 50.", "system", "string",
+						"atc_variants: name pattern, e.g. Z*.", "max_results", "integer", "Default 50.", "url", "string",
+						"odata_request: host-relative OData path with query.", "headers", "object",
+						"odata_request: extra request headers, e.g. {\"Accept\": \"application/xml\"}.", "system", "string",
 						SYSTEM_DESC),
 				null, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_http_send",
+				"Send a changing HTTP request (POST, PUT, PATCH, DELETE) to a service of the SAP system to test it, e.g. "
+						+ "create an OData entity or call a REST handler; Bella always asks first. Runs with the "
+						+ "developer's ADT logon in one session and fetches the CSRF token itself. 'url' is host-relative "
+						+ "(/sap/opu/odata/…, /sap/bc/rest/…, own ICF nodes; not /sap/bc/adt). Only when the developer "
+						+ "asks for it; read with adt_diagnose 'odata_request'.",
+				schema(new String[] { "method", "url" }, "method", "string", "POST, PUT, PATCH or DELETE.", "url",
+						"string", "Host-relative path with query; encode blanks as %20.", "headers", "object",
+						"Extra request headers, e.g. {\"If-Match\": \"*\"}; not Authorization, Cookie or x-csrf-token.",
+						"body", "string", "Request body.", "content_type", "string",
+						"Content type of the body; default application/json.", "system", "string", SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
 		t.add(ToolSpec.of("adt_trace_control",
 				"Start or stop traces; Bella always asks first. 'trace_start' arms an ABAP profiler trace for the next "
 						+ "execution ('process_type' http, dialog, batch, rfc or any; 'object_type' url, transaction, "
@@ -991,6 +1008,7 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_edit_code" -> editCode(in, cancel);
 			case "adt_delete_object" -> deleteObject(in, cancel);
 			case "adt_diagnose" -> diagnose(in, cancel);
+			case "adt_http_send" -> httpSend(in, cancel);
 			case "adt_trace_control" -> traceControl(in, cancel);
 			case "adt_transport_manage" -> transportManage(in, cancel);
 			case "adt_package_manage" -> packageManage(in, cancel);
@@ -1885,9 +1903,25 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			return ToolResult.ok(sb.toString());
 		}
+		case "odata_request" -> {
+			return ToolResult.ok(AdtHttp.odataRequest(c, Json.str(in, "url"), AdtHttp.headers(in), cancel));
+		}
 		default -> {
 			return ToolResult.error("Unknown action; see the tool description.");
 		}
+		}
+	}
+
+	private ToolResult httpSend(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		String method = Json.str(in, "method");
+		String url = Json.str(in, "url");
+		Map<String, String> headers = AdtHttp.headers(in);
+		// checked before a session is opened
+		AdtHttp.checkUrl(url, false);
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			return ToolResult.ok(AdtHttp.send(session, method, url, headers, Json.str(in, "body"),
+					Json.str(in, "content_type"), cancel));
 		}
 	}
 
