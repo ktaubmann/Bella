@@ -79,6 +79,7 @@ public final class ToolPolicy {
 			new Rule("adt_git_write", Decision.ASK),
 			new Rule("adt_package_manage:delete", Decision.ASK),
 			new Rule("adt_trace_control", Decision.ASK),
+			new Rule("adt_http_send", Decision.ASK),
 			new Rule("adt_format_settings", Decision.ASK),
 			// the developer names package and transport request; the call shows what the model understood
 			new Rule("adt_dev_package:set", Decision.ASK),
@@ -106,6 +107,8 @@ public final class ToolPolicy {
 			// variable values leave the system for the model provider, as table contents do
 			new Rule("debug_context", Decision.CONFIRM),
 			new Rule("debug_breakpoint", Decision.CONFIRM),
+			// the answer of a service is business data too
+			new Rule("adt_diagnose:odata_request", Decision.CONFIRM),
 			new Rule("mcp_*SAPQuery", Decision.CONFIRM),
 			new Rule("adt_*", Decision.AUTO),
 			new Rule("mcp_*SAPRead", Decision.AUTO),

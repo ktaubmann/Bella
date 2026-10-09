@@ -81,6 +81,13 @@ class ToolPolicyTest {
 				Json.parseObject("{\"action\":\"authorization_trace\"}")));
 		assertEquals(Decision.AUTO, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
 				Json.parseObject("{\"action\":\"short_dumps\"}")));
+		// the answer of a service is business data too
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"odata_request\"}")));
+		assertEquals(Decision.CONFIRM, p.withMode(ChatMode.PLAN).decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"odata_request\"}")));
+		assertEquals(Decision.AUTO, p.withMode(ChatMode.AUTO).decide(tool("adt_diagnose", ToolSpec.Kind.READ),
+				Json.parseObject("{\"action\":\"odata_request\"}")));
 	}
 
 	@Test
@@ -148,7 +155,8 @@ class ToolPolicyTest {
 			ToolPolicy p = ToolPolicy.defaults().withMode(mode);
 			Decision expected = mode == ChatMode.PLAN ? Decision.DENY : Decision.CONFIRM;
 			assertEquals(expected, p.decide(tool("adt_delete_object", ToolSpec.Kind.WRITE), new JsonObject()), mode.name());
-			for (String ask : List.of("adt_format_settings", "adt_transport_manage", "adt_git_write", "adt_trace_control")) {
+			for (String ask : List.of("adt_format_settings", "adt_transport_manage", "adt_git_write", "adt_trace_control",
+					"adt_http_send")) {
 				assertEquals(expected, p.decide(tool(ask, ToolSpec.Kind.WRITE), new JsonObject()), mode + " " + ask);
 			}
 		}

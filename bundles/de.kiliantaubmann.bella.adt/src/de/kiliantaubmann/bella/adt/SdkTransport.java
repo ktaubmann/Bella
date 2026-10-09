@@ -7,6 +7,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -159,10 +160,9 @@ final class SdkTransport implements AdtTransport.Session {
 			case "GET" -> resource.get(monitor, headers, IResponse.class);
 			case "POST" -> invoke(resource, "post", monitor, headers, body);
 			case "PUT" -> invoke(resource, "put", monitor, headers, body);
-			case "DELETE" -> {
-				resource.delete(monitor);
-				yield null;
-			}
+			case "PATCH" -> patch(resource, monitor, headers, body);
+			// Bella's own ADT deletes send no headers and keep the plain call
+			case "DELETE" -> request.headers().isEmpty() ? delete(resource, monitor) : delete(resource, monitor, headers);
 			default -> throw new IOException("Unsupported method " + request.method());
 			};
 			return toResponse(response, 200);
@@ -203,6 +203,52 @@ final class SdkTransport implements AdtTransport.Session {
 		}
 	}
 
+	/**
+	 * PATCH where the ADT release offers it; otherwise a POST that SAP Gateway
+	 * and ICF handlers read as PATCH ({@code X-HTTP-Method}).
+	 */
+	private static IResponse patch(IRestResource resource, IProgressMonitor monitor, IHeaders headers,
+			IMessageBody body) throws IOException {
+		if (Reflection.bestMatch(IRestResource.class, "patch", monitor, headers, IResponse.class, body).isPresent()) {
+			return invoke(resource, "patch", monitor, headers, body);
+		}
+		headers.addField(HeadersFactory.newField("X-HTTP-Method", "PATCH"));
+		return invoke(resource, "post", monitor, headers, body);
+	}
+
+	/**
+	 * DELETE with headers and the answer where the ADT release offers such an
+	 * overload; the plain {@code delete(monitor)} drops both.
+	 */
+	private static IResponse delete(IRestResource resource, IProgressMonitor monitor, IHeaders headers)
+			throws IOException {
+		Optional<Reflection.Call> call = Reflection.bestMatch(IRestResource.class, "delete", monitor, headers,
+				IResponse.class);
+		if (call.isEmpty() || call.get().method().getParameterCount() <= 1) {
+			return delete(resource, monitor);
+		}
+		try {
+			Object r = call.get().invoke(resource);
+			return r instanceof IResponse response ? response : null;
+		} catch (InvocationTargetException e) {
+			if (e.getCause() instanceof ResourceException re) {
+				throw re;
+			}
+			throw new IOException(String.valueOf(e.getCause()), e.getCause());
+		} catch (ReflectiveOperationException | IllegalArgumentException e) {
+			throw new IOException(e);
+		}
+	}
+
+	private static IResponse delete(IRestResource resource, IProgressMonitor monitor) {
+		resource.delete(monitor);
+		return null;
+	}
+
+	/** Response headers Bella reads; cookies are never passed on. */
+	private static final String[] HEADERS = { "ETag", "x-csrf-token", "Location", "Content-Type", "sap-message",
+			"sap-statistics", "sap-perf-fesrec", "DataServiceVersion", "OData-Version", "OData-EntityId" };
+
 	private static AdtResponse toResponse(IResponse response, int fallbackStatus) throws IOException {
 		if (response == null) {
 			return new AdtResponse(fallbackStatus == 500 ? 500 : 204, "", "");
@@ -215,11 +261,28 @@ final class SdkTransport implements AdtTransport.Session {
 		if (body != null) {
 			contentType = String.valueOf(SdkAdtBackend.Reflect.call(body, "getContentType"));
 			try (InputStream in = body.getContent()) {
-				text = in == null ? "" : new String(in.readAllBytes(), StandardCharsets.UTF_8);
+				byte[] bytes = in == null ? new byte[0] : in.readAllBytes();
+				text = textual(contentType) ? new String(bytes, StandardCharsets.UTF_8)
+						: "[" + bytes.length + " bytes " + contentType + "]";
 			}
 		}
-		String etag = header(response, "ETag");
-		return new AdtResponse(code, contentType, text, etag == null ? Map.of() : Map.of("etag", etag));
+		Map<String, String> headers = new LinkedHashMap<>();
+		for (String name : HEADERS) {
+			String v = header(response, name);
+			if (v != null) {
+				headers.put(name, v);
+			}
+		}
+		return new AdtResponse(code, contentType, text, headers);
+	}
+
+	/** Whether a body of this type is text; images, PDFs and archives would be garbled as UTF-8. */
+	static boolean textual(String contentType) {
+		String t = contentType == null ? "" : contentType.toLowerCase(java.util.Locale.ROOT).trim();
+		return !(t.startsWith("image/") || t.startsWith("audio/") || t.startsWith("video/")
+				|| t.startsWith("application/pdf") || t.startsWith("application/zip")
+				|| t.startsWith("application/octet-stream") || t.startsWith("application/vnd.openxmlformats"))
+				|| t.contains("svg");
 	}
 
 	/**
