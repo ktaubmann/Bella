@@ -27,6 +27,7 @@ import de.kiliantaubmann.bella.core.adt.AdtBackend;
 import de.kiliantaubmann.bella.core.adt.AdtClient;
 import de.kiliantaubmann.bella.core.adt.AdtEditorObject;
 import de.kiliantaubmann.bella.core.adt.AdtSystemInfo;
+import de.kiliantaubmann.bella.core.adt.AdtTextSymbols;
 import de.kiliantaubmann.bella.core.conventions.NamingRules;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -210,18 +211,51 @@ public final class OpenEditorRouter implements WriteGuard {
 	}
 
 	/**
-	 * The text pool counts as part of the program: written while its editor
-	 * holds unsaved changes, ADT reports a version conflict on the next save.
-	 * So the write waits until the developer saved.
+	 * The text pool counts as part of its program, class or function group:
+	 * written while one of their editors holds unsaved changes, ADT reports a
+	 * version conflict on the next save. So the write waits until the
+	 * developer saved. A function group's pool belongs to all its function
+	 * modules and includes.
 	 */
 	private static Optional<ToolResult> unsavedBeforeTextElements(ObjectTarget target) {
-		IEditorPart part = findOpenEditor(target);
-		if (part == null || !part.isDirty()) {
+		List<String> unsaved = new ArrayList<>();
+		for (IEditorPart part : openEditors()) {
+			if (!part.isDirty()) {
+				continue;
+			}
+			Optional<AdtEditorObject> adt = EditorBridge.adtObject(part);
+			Optional<AdtTextSymbols.Pool> pool = adt.flatMap(AdtTextSymbols::poolOf);
+			boolean same = pool.isPresent()
+					? pool.get().name().equalsIgnoreCase(target.name())
+							&& (target.type() == null || pool.get().type().equalsIgnoreCase(target.type()))
+					: target.matches(EditorBridge.objectName(part), adt.map(AdtEditorObject::type).orElse(null));
+			if (same) {
+				unsaved.add(EditorBridge.objectName(part));
+			}
+		}
+		if (unsaved.isEmpty()) {
 			return Optional.empty();
 		}
-		return Optional.of(ToolResult.error(target.name() + " is open in the developer's editor with unsaved "
-				+ "changes; writing its text elements now would make ADT report a version conflict when the developer "
-				+ "saves. Not written. Ask the developer to save (Ctrl+S), then write the text elements again."));
+		return Optional.of(ToolResult.error(String.join(", ", unsaved) + " (text pool of " + target.name()
+				+ ") is open in the developer's editor with unsaved changes; writing the text elements now would make "
+				+ "ADT report a version conflict when the developer saves. Not written. Ask the developer to save "
+				+ "(Ctrl+S), then write the text elements again."));
+	}
+
+	/** The editors Eclipse has restored, in all windows and pages; UI thread. */
+	private static List<IEditorPart> openEditors() {
+		List<IEditorPart> out = new ArrayList<>();
+		for (IWorkbenchWindow window : PlatformUI.getWorkbench().getWorkbenchWindows()) {
+			for (IWorkbenchPage page : window.getPages()) {
+				for (IEditorReference ref : page.getEditorReferences()) {
+					IEditorPart part = ref.getEditor(false);
+					if (part != null) {
+						out.add(part);
+					}
+				}
+			}
+		}
+		return out;
 	}
 
 	/**

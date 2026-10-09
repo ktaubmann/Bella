@@ -236,23 +236,25 @@ abstract class EditorHandler extends AbstractHandler {
 			}
 		}
 
-		private AdtEditorObject object() {
-			return new AdtEditorObject(destinationId, objectUri, objectName, objectType);
+		/** The text pool the edited object uses; empty when it has none Bella can tell. */
+		private Optional<AdtTextSymbols.Pool> pool() {
+			return AdtTextSymbols.poolOf(new AdtEditorObject(destinationId, objectUri, objectName, objectType));
 		}
 
 		/**
-		 * The text symbols of the object's own text pool; {@code null} when it
-		 * has none of its own or reading it fails, text symbols are then left
-		 * alone.
+		 * The text symbols of the pool the object uses; {@code null} when it
+		 * has none Bella can tell or reading it fails, text symbols are then
+		 * left alone.
 		 */
 		String textSymbols(CancelToken cancel) {
-			if (!AdtTextSymbols.hasOwnPool(object())) {
+			Optional<AdtTextSymbols.Pool> pool = pool();
+			if (pool.isEmpty()) {
 				return null;
 			}
 			try {
-				return AdtTextSymbols.read(new AdtClient(adt.stateless(destinationId)), object(), cancel);
+				return AdtTextSymbols.read(new AdtClient(adt.stateless(destinationId)), pool.get(), cancel);
 			} catch (java.io.IOException | RuntimeException | LinkageError e) {
-				Log.info("editor", "Cannot read the text symbols of " + objectName + ": " + e.getMessage());
+				Log.info("editor", "Cannot read the text symbols of " + pool.get().name() + ": " + e.getMessage());
 				return null;
 			}
 		}
@@ -286,8 +288,8 @@ abstract class EditorHandler extends AbstractHandler {
 				@Override
 				protected org.eclipse.core.runtime.IStatus run(IProgressMonitor monitor) {
 					try (AdtTransport.Session session = adt.stateful(destinationId)) {
-						String tr = AdtTextSymbols.add(session, new AdtClient(adt.stateless(destinationId)), object(),
-								missing, CancelToken.NONE);
+						String tr = AdtTextSymbols.add(session, new AdtClient(adt.stateless(destinationId)),
+								pool().orElseThrow(), missing, CancelToken.NONE);
 						Log.info("editor", "text symbols " + missing.keySet() + " added to " + objectName
 								+ (tr.isEmpty() ? "" : " (transport " + tr + ")"));
 					} catch (java.io.IOException | RuntimeException | LinkageError e) {

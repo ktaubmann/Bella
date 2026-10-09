@@ -1,11 +1,16 @@
 package de.kiliantaubmann.bella.core.adt;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import de.kiliantaubmann.bella.core.util.CancelToken;
 
@@ -33,13 +38,33 @@ public final class AdtTextSymbols {
 	}
 
 	/**
-	 * Whether an editor object has a text pool of its own: programs and
-	 * classes. Includes and function modules use the pool of their main
-	 * program or function group.
+	 * The owner of a text pool: a program (PROG), class (CLAS) or function
+	 * group (FUGR).
 	 */
-	public static boolean hasOwnPool(AdtEditorObject object) {
+	public record Pool(String type, String name) {
+	}
+
+	private static final Pattern FUNCTION_GROUP = Pattern.compile("/functions/groups/([^/?#]+)");
+
+	/**
+	 * The text pool an editor object uses: its own for programs and classes,
+	 * the group's for function modules and the includes of a function group.
+	 * Empty for other includes, whose main program the editor does not tell.
+	 */
+	public static Optional<Pool> poolOf(AdtEditorObject object) {
+		Matcher group = FUNCTION_GROUP.matcher(object.uri() == null ? "" : object.uri());
+		if (group.find()) {
+			return Optional.of(new Pool("FUGR",
+					URLDecoder.decode(group.group(1), StandardCharsets.UTF_8).toUpperCase(Locale.ROOT)));
+		}
 		String type = object.type() == null ? "" : object.type().toUpperCase(Locale.ROOT);
-		return type.startsWith("PROG/P") || type.startsWith("CLAS");
+		if (type.startsWith("PROG/P")) {
+			return Optional.of(new Pool("PROG", object.name()));
+		}
+		if (type.startsWith("CLAS")) {
+			return Optional.of(new Pool("CLAS", object.name()));
+		}
+		return Optional.empty();
 	}
 
 	/**
@@ -140,9 +165,9 @@ public final class AdtTextSymbols {
 		return sb.toString();
 	}
 
-	/** The {@code symbols} part of the object's pool; empty if it has none. */
-	public static String read(AdtClient client, AdtEditorObject object, CancelToken cancel) throws IOException {
-		return client.textElements(object.type(), object.name(), "symbols", cancel);
+	/** The {@code symbols} part of the pool; empty if it has none. */
+	public static String read(AdtClient client, Pool pool, CancelToken cancel) throws IOException {
+		return client.textElements(pool.type(), pool.name(), "symbols", cancel);
 	}
 
 	/**
@@ -152,9 +177,9 @@ public final class AdtTextSymbols {
 	 * @return the transport request used, empty for local objects
 	 * @throws AdtException when SAP does not keep the texts as written
 	 */
-	public static String add(AdtTransport.Session session, AdtClient client, AdtEditorObject object,
-			Map<String, String> added, CancelToken cancel) throws IOException {
-		String pool = read(client, object, cancel);
+	public static String add(AdtTransport.Session session, AdtClient client, Pool owner, Map<String, String> added,
+			CancelToken cancel) throws IOException {
+		String pool = read(client, owner, cancel);
 		Map<String, String> existing = AdtTextPool.entries(pool);
 		Map<String, String> toAdd = new LinkedHashMap<>(added);
 		toAdd.keySet().removeAll(existing.keySet());
@@ -162,13 +187,13 @@ public final class AdtTextSymbols {
 			return "";
 		}
 		String texts = withAdded(pool, toAdd);
-		String tr = AdtClient.writeTextElements(session, object.type(), object.name(), "symbols", texts, null, cancel);
-		List<String> lost = AdtTextPool.differences(texts, read(client, object, cancel));
+		String tr = AdtClient.writeTextElements(session, owner.type(), owner.name(), "symbols", texts, null, cancel);
+		List<String> lost = AdtTextPool.differences(texts, read(client, owner, cancel));
 		if (!lost.isEmpty()) {
 			throw new AdtException(500, "SAP did not keep the text symbols as written: " + String.join("; ", lost));
 		}
-		AdtObjectRef poolRef = new AdtObjectRef(AdtClient.textElementsUri(object.type(), object.name()),
-				object.name(), AdtClient.TEXT_POOL, "", "");
+		AdtObjectRef poolRef = new AdtObjectRef(AdtClient.textElementsUri(owner.type(), owner.name()), owner.name(),
+				AdtClient.TEXT_POOL, "", "");
 		List<String> errors = new ArrayList<>();
 		for (AdtClient.Message m : client.activate(List.of(poolRef), cancel)) {
 			if (m.severity().equals("Error")) {

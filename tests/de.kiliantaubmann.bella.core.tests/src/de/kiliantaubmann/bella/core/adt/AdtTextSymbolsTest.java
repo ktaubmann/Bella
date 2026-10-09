@@ -1,13 +1,13 @@
 package de.kiliantaubmann.bella.core.adt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +17,7 @@ class AdtTextSymbolsTest {
 
 	private static final AdtEditorObject PROGRAM = new AdtEditorObject("dev", "/sap/bc/adt/programs/programs/zrep",
 			"ZREP", "PROG/P");
+	private static final AdtTextSymbols.Pool POOL = new AdtTextSymbols.Pool("PROG", "ZREP");
 
 	@Test
 	void symbolsAreFoundOutsideComments() {
@@ -48,11 +49,19 @@ class AdtTextSymbolsTest {
 	}
 
 	@Test
-	void ownPoolOnlyForProgramsAndClasses() {
-		assertTrue(AdtTextSymbols.hasOwnPool(PROGRAM));
-		assertTrue(AdtTextSymbols.hasOwnPool(new AdtEditorObject("dev", "u", "ZCL_A", "CLAS/OC")));
-		assertFalse(AdtTextSymbols.hasOwnPool(new AdtEditorObject("dev", "u", "ZREP_TOP", "PROG/I")));
-		assertFalse(AdtTextSymbols.hasOwnPool(new AdtEditorObject("dev", "u", "Z_FM", "FUGR/FF")));
+	void poolOfProgramsClassesAndFunctionGroups() {
+		assertEquals(Optional.of(new AdtTextSymbols.Pool("PROG", "ZREP")), AdtTextSymbols.poolOf(PROGRAM));
+		assertEquals(Optional.of(new AdtTextSymbols.Pool("CLAS", "ZCL_A")), AdtTextSymbols.poolOf(
+				new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_a", "ZCL_A", "CLAS/OC")));
+		assertEquals(Optional.empty(), AdtTextSymbols.poolOf(
+				new AdtEditorObject("dev", "/sap/bc/adt/programs/includes/zrep_top", "ZREP_TOP", "PROG/I")));
+		// function modules and the includes of a group use the group's pool
+		assertEquals(Optional.of(new AdtTextSymbols.Pool("FUGR", "/ABC/ORDERS")), AdtTextSymbols.poolOf(
+				new AdtEditorObject("dev", "/sap/bc/adt/functions/groups/%2fabc%2forders/fmodules/%2fabc%2fread",
+						"/ABC/READ", "FUGR/FF")));
+		assertEquals(Optional.of(new AdtTextSymbols.Pool("FUGR", "ZORDERS")), AdtTextSymbols.poolOf(
+				new AdtEditorObject("dev", "/sap/bc/adt/functions/groups/zorders/includes/lzorderstop",
+						"LZORDERSTOP", "FUGR/I")));
 	}
 
 	@Test
@@ -74,7 +83,7 @@ class AdtTextSymbolsTest {
 		AdtClient client = new AdtClient(adt.stateless("dev"));
 		String tr;
 		try (AdtTransport.Session session = adt.stateful("dev")) {
-			tr = AdtTextSymbols.add(session, client, PROGRAM, Map.of("001", "Other", "002", "No entries found"),
+			tr = AdtTextSymbols.add(session, client, POOL, Map.of("001", "Other", "002", "No entries found"),
 					CancelToken.NONE);
 		}
 		assertEquals("DEVK900001", tr);
@@ -95,7 +104,7 @@ class AdtTextSymbolsTest {
 		AdtClient client = new AdtClient(adt.stateless("dev"));
 		AdtException e = assertThrows(AdtException.class, () -> {
 			try (AdtTransport.Session session = adt.stateful("dev")) {
-				AdtTextSymbols.add(session, client, PROGRAM, Map.of("001", "New"), CancelToken.NONE);
+				AdtTextSymbols.add(session, client, POOL, Map.of("001", "New"), CancelToken.NONE);
 			}
 		});
 		assertTrue(e.getMessage().contains("001: wrote 'New', reads nothing"), e.getMessage());
