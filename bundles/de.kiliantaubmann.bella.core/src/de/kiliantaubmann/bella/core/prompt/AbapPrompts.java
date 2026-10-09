@@ -100,6 +100,9 @@ public final class AbapPrompts {
 				  (adt_object_info 'api_state'); use the successor of a deprecated API.
 				- For a RAP behavior pool, add the missing handler methods with adt_rap 'generate_handlers'; for
 				  performance or authorization problems use adt_diagnose (traces, SQL trace, authorization trace).
+				- To test an OData service, read its $metadata first, then query with $top using adt_diagnose
+				  'odata_request'; a slow call shows where the time goes. Send changing requests (adt_http_send) only
+				  when the developer asks for it.
 
 				Rules for changing code:
 				- If the object is open in the developer's editor, a write goes into the editor buffer only. It is not
