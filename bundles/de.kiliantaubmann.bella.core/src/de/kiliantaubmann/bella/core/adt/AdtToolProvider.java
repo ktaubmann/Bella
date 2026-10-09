@@ -1916,11 +1916,10 @@ public final class AdtToolProvider implements ToolProvider {
 
 	private ToolResult httpSend(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem s = system(in);
-		String method = Json.str(in, "method");
-		String url = Json.str(in, "url");
-		Map<String, String> headers = AdtHttp.headers(in);
 		// checked before a session is opened
-		AdtHttp.checkUrl(url, false);
+		String method = AdtHttp.checkMethod(Json.str(in, "method"));
+		String url = AdtHttp.checkUrl(Json.str(in, "url"), false);
+		Map<String, String> headers = AdtHttp.headers(in);
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
 			return ToolResult.ok(AdtHttp.send(session, method, url, headers, Json.str(in, "body"),
 					Json.str(in, "content_type"), cancel));

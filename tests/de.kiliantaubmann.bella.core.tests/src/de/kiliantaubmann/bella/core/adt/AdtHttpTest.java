@@ -40,12 +40,21 @@ class AdtHttpTest {
 				"/sap/opu/odata/x#frag", "/sap/opu/odata/x\ny", "/sap/opu/odata/x?a=1&sap-password=secret")) {
 			assertThrows(IllegalArgumentException.class, () -> AdtHttp.checkUrl(bad, false), bad);
 		}
+		// logon parameters also when their names are encoded
+		for (String logon : List.of("/sap/bc/rest/x?%73ap-user=OTHER", "/sap/bc/rest/x?a=1&SAP%2DPASSWORD=y",
+				"/sap/bc/rest/x?sap-alias=Z", "/sap/bc/rest/x?a=%zz&sap-user=1")) {
+			assertThrows(IllegalArgumentException.class, () -> AdtHttp.checkUrl(logon, false), logon);
+		}
+		// OData keys keep working
+		assertEquals("/sap/opu/odata/sap/ZSRV/Items('4%2F2')", AdtHttp.checkUrl("/sap/opu/odata/sap/ZSRV/Items('4%2F2')",
+				true));
 		// odata_request reads OData only
 		assertThrows(IllegalArgumentException.class, () -> AdtHttp.checkUrl("/sap/bc/rest/zorders", true));
 		assertThrows(IllegalArgumentException.class, () -> AdtHttp.checkUrl("/sap/opu/odatax/y", true));
 		// ADT and gCTS have their own tools, also when spelled differently
 		for (String adt : List.of("/sap/bc/adt/oo/classes/zcl_x", "/SAP/BC/ADT", "/sap//bc/adt/x", "/sap/bc/%61dt/x",
-				"/sap/bc/cts_abapvcs/repository")) {
+				"/sap/bc/cts_abapvcs/repository", "/sap(bD1kZQ==)/bc/adt/oo/classes/zcl_x", "/sap/bc/adt;x=1/discovery",
+				"/sap/bc(x)/adt", "/sap/bc/%28x%29adt/y")) {
 			assertThrows(IllegalArgumentException.class, () -> AdtHttp.checkUrl(adt, false), adt);
 		}
 	}
@@ -125,7 +134,7 @@ class AdtHttpTest {
 	@Test
 	void sendFetchesTheCsrfTokenInTheSameSession() {
 		List<AdtRequest> sent = new ArrayList<>();
-		FakeAdt adt = adt().route("GET /sap/opu/odata/sap/ZSRV/Items", r -> {
+		FakeAdt adt = adt().route("GET /sap/opu/odata/sap/ZSRV/", r -> {
 			sent.add(r);
 			return new AdtResponse(200, "application/json", "{}", Map.of("x-csrf-token", "T0K3N"));
 		}).route("POST /sap/opu/odata/sap/ZSRV/Items", r -> {
@@ -137,7 +146,8 @@ class AdtHttpTest {
 		ToolResult r = call(p, "adt_http_send", "{\"method\":\"post\",\"url\":\"/sap/opu/odata/sap/ZSRV/Items?sap-client=100\","
 				+ "\"body\":\"{\\\"Name\\\":\\\"A\\\"}\"}");
 		assertFalse(r.isError(), r.content());
-		assertEquals(List.of("S GET /sap/opu/odata/sap/ZSRV/Items", "S POST /sap/opu/odata/sap/ZSRV/Items?sap-client=100"),
+		// the token comes from the service root, not from a read of the whole entity set
+		assertEquals(List.of("S GET /sap/opu/odata/sap/ZSRV/", "S POST /sap/opu/odata/sap/ZSRV/Items?sap-client=100"),
 				adt.log);
 		assertEquals("Fetch", sent.get(0).headers().get("x-csrf-token"));
 		assertEquals("T0K3N", sent.get(1).headers().get("x-csrf-token"));
@@ -172,7 +182,59 @@ class AdtHttpTest {
 			ToolResult r = call(p, "adt_http_send", json);
 			assertTrue(r.isError(), json);
 		}
-		assertTrue(adt.log.stream().noneMatch(l -> l.contains(" POST ")), adt.log.toString());
+		assertTrue(adt.log.isEmpty(), adt.log.toString());
 		assertEquals(0, adt.openSessions);
+	}
+
+	@Test
+	void tokenComesFromTheServiceRoot() {
+		assertEquals("/sap/opu/odata/sap/ZSRV/", AdtHttp.tokenPath("/sap/opu/odata/sap/ZSRV/Orders?$top=1"));
+		assertEquals("/sap/opu/odata/sap/ZSRV/", AdtHttp.tokenPath("/sap/opu/odata/sap/ZSRV"));
+		assertEquals("/sap/opu/odata4/sap/zui/srvd_a2x/sap/z/0001/",
+				AdtHttp.tokenPath("/sap/opu/odata4/sap/zui/srvd_a2x/sap/z/0001/Items(1)"));
+		assertEquals("/sap/bc/rest/zorders/1", AdtHttp.tokenPath("/sap/bc/rest/zorders/1?x=1"));
+	}
+
+	@Test
+	void contentTypeHeaderIsTheBodyType() {
+		List<AdtRequest> sent = new ArrayList<>();
+		FakeAdt adt = adt().route("GET /sap/bc/rest/z", r -> new AdtResponse(200, "", "", Map.of("x-csrf-token", "T")))
+				.route("PUT /sap/bc/rest/z", r -> {
+					sent.add(r);
+					return new AdtResponse(204, "", "");
+				});
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_http_send", "{\"method\":\"PUT\","
+				+ "\"url\":\"/sap/bc/rest/z\",\"headers\":{\"content-type\":\"application/xml\"},\"body\":\"<a/>\"}");
+		assertFalse(r.isError(), r.content());
+		assertEquals("application/xml", sent.get(0).contentType());
+		assertTrue(sent.get(0).headers().keySet().stream().noneMatch(k -> k.equalsIgnoreCase("content-type")),
+				sent.get(0).headers().toString());
+	}
+
+	@Test
+	void refusedTokenIsRetriedWithTheSessionsOwn() {
+		List<AdtRequest> posts = new ArrayList<>();
+		FakeAdt adt = adt().route("GET /sap/bc/rest/z", r -> new AdtResponse(200, "", "", Map.of("x-csrf-token", "T")))
+				.route("POST /sap/bc/rest/z", r -> {
+					posts.add(r);
+					return r.headers().containsKey("x-csrf-token")
+							? new AdtResponse(403, "text/plain", "CSRF token validation failed",
+									Map.of("x-csrf-token", "Required"))
+							: new AdtResponse(201, "", "");
+				});
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_http_send",
+				"{\"method\":\"POST\",\"url\":\"/sap/bc/rest/z\",\"body\":\"{}\"}");
+		assertFalse(r.isError(), r.content());
+		assertEquals(2, posts.size());
+		assertTrue(r.content().contains("HTTP 201"), r.content());
+		assertTrue(r.content().contains("session's own token"), r.content());
+	}
+
+	@Test
+	void scriptsAndStylesLeaveHtmlAnswers() {
+		String out = AdtHttp.describe(new AdtResponse(500, "text/html",
+				"<html><SCRIPT type=\"x\">var a = 1;</SCRIPT ><Style>p{}</style><p>Gateway error</p></html>"));
+		assertTrue(out.contains("Gateway error"), out);
+		assertFalse(out.contains("var a") || out.contains("p{}"), out);
 	}
 }

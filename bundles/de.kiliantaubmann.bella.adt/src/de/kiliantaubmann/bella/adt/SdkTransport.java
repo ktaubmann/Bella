@@ -160,7 +160,7 @@ final class SdkTransport implements AdtTransport.Session {
 			case "GET" -> resource.get(monitor, headers, IResponse.class);
 			case "POST" -> invoke(resource, "post", monitor, headers, body);
 			case "PUT" -> invoke(resource, "put", monitor, headers, body);
-			case "PATCH" -> patch(resource, monitor, headers, body);
+			case "PATCH" -> patch(resource, uri.getPath(), monitor, headers, body);
 			// Bella's own ADT deletes send no headers and keep the plain call
 			case "DELETE" -> request.headers().isEmpty() ? delete(resource, monitor) : delete(resource, monitor, headers);
 			default -> throw new IOException("Unsupported method " + request.method());
@@ -204,13 +204,21 @@ final class SdkTransport implements AdtTransport.Session {
 	}
 
 	/**
-	 * PATCH where the ADT release offers it; otherwise a POST that SAP Gateway
-	 * and ICF handlers read as PATCH ({@code X-HTTP-Method}).
+	 * PATCH where the ADT release offers it. Otherwise, for SAP Gateway
+	 * (OData) only, a POST with {@code X-HTTP-Method: PATCH}, which Gateway
+	 * reads as PATCH; other handlers may ignore the header and would run a
+	 * POST, so they are refused.
 	 */
-	private static IResponse patch(IRestResource resource, IProgressMonitor monitor, IHeaders headers,
+	private static IResponse patch(IRestResource resource, String path, IProgressMonitor monitor, IHeaders headers,
 			IMessageBody body) throws IOException {
 		if (Reflection.bestMatch(IRestResource.class, "patch", monitor, headers, IResponse.class, body).isPresent()) {
 			return invoke(resource, "patch", monitor, headers, body);
+		}
+		String p = path == null ? "" : path.toLowerCase(java.util.Locale.ROOT);
+		if (!p.startsWith("/sap/opu/odata/") && !p.startsWith("/sap/opu/odata4/")) {
+			throw new IOException("This ADT version cannot send PATCH, and " + path + " is no SAP Gateway (OData) "
+					+ "service that would read a POST with X-HTTP-Method: PATCH as one. Nothing was sent; use PUT "
+					+ "if the service accepts it.");
 		}
 		headers.addField(HeadersFactory.newField("X-HTTP-Method", "PATCH"));
 		return invoke(resource, "post", monitor, headers, body);
@@ -218,14 +226,16 @@ final class SdkTransport implements AdtTransport.Session {
 
 	/**
 	 * DELETE with headers and the answer where the ADT release offers such an
-	 * overload; the plain {@code delete(monitor)} drops both.
+	 * overload. The plain {@code delete(monitor)} would drop the headers
+	 * (If-Match, the CSRF token), so without the overload nothing is sent.
 	 */
 	private static IResponse delete(IRestResource resource, IProgressMonitor monitor, IHeaders headers)
 			throws IOException {
 		Optional<Reflection.Call> call = Reflection.bestMatch(IRestResource.class, "delete", monitor, headers,
 				IResponse.class);
 		if (call.isEmpty() || call.get().method().getParameterCount() <= 1) {
-			return delete(resource, monitor);
+			throw new IOException("This ADT version cannot send a DELETE with headers (available: "
+					+ Reflection.signatures(IRestResource.class, "delete") + "). Nothing was sent.");
 		}
 		try {
 			Object r = call.get().invoke(resource);

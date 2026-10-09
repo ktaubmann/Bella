@@ -3,6 +3,8 @@ package de.kiliantaubmann.bella.core.adt;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -34,8 +36,13 @@ final class AdtHttp {
 	private static final List<String> BLOCKED_PREFIXES = List.of("/sap/bc/adt", "/sap/bc/cts_abapvcs");
 	private static final Pattern DOT_SEGMENT = Pattern.compile("(?:^|/)(?:\\.|%2e){1,2}(?:/|$)",
 			Pattern.CASE_INSENSITIVE);
-	private static final Pattern LOGON_PARAM = Pattern.compile("(?:^|[?&])sap-(?:user|password|alias)=",
-			Pattern.CASE_INSENSITIVE);
+	/** Query parameters that would log on as another user. */
+	private static final Set<String> LOGON_PARAMS = Set.of("sap-user", "sap-password", "sap-alias");
+	/**
+	 * What ICF strips from a path segment before it routes: URL mangling such
+	 * as {@code /sap(bD1kZQ==)/} and matrix parameters such as {@code ;x=1}.
+	 */
+	private static final Pattern SEGMENT_DECORATION = Pattern.compile("\\([^/]*\\)|;[^/]*");
 	private static final int MAX_URL = 4096;
 
 	private AdtHttp() {
@@ -70,7 +77,7 @@ final class AdtHttp {
 			if (!"bella.invalid".equals(parsed.getHost()) || parsed.getPath() == null) {
 				throw new IllegalArgumentException(allowed);
 			}
-			path = parsed.getPath().replaceAll("/{2,}", "/").toLowerCase(Locale.ROOT);
+			path = routedPath(parsed.getPath());
 		} catch (URISyntaxException e) {
 			throw new IllegalArgumentException(allowed + " Encode special characters such as blanks (%20).");
 		}
@@ -86,11 +93,44 @@ final class AdtHttp {
 						+ ") are not allowed here; use Bella's ADT tools for them.");
 			}
 		}
-		if (LOGON_PARAM.matcher(u).find()) {
+		if (hasLogonParam(u)) {
 			throw new IllegalArgumentException("Logon parameters (sap-user, sap-password, sap-alias) are not allowed; "
 					+ "the request uses the developer's ADT logon.");
 		}
 		return u;
+	}
+
+	/**
+	 * The path as ICF routes it, lower case: without URL mangling, matrix
+	 * parameters and repeated slashes. OData keys such as
+	 * {@code Orders('1')} lose their parentheses as well, which does not
+	 * matter for the prefix checks.
+	 */
+	static String routedPath(String decodedPath) {
+		return SEGMENT_DECORATION.matcher(decodedPath).replaceAll("").replaceAll("/{2,}", "/")
+				.toLowerCase(Locale.ROOT);
+	}
+
+	/** Whether a query parameter name, decoded as ICF decodes it, is a logon parameter. */
+	static boolean hasLogonParam(String url) {
+		String[] parts = url.split("\\?", 2);
+		if (parts.length < 2) {
+			return false;
+		}
+		for (String pair : parts[1].split("[&;]")) {
+			String name = pair.split("=", 2)[0];
+			String decoded;
+			try {
+				decoded = URLDecoder.decode(name, StandardCharsets.UTF_8);
+			} catch (IllegalArgumentException e) {
+				// a broken escape: refuse rather than guess what ICF makes of it
+				return true;
+			}
+			if (LOGON_PARAMS.contains(decoded.trim().toLowerCase(Locale.ROOT))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	static boolean isOData(String path) {
@@ -186,16 +226,21 @@ final class AdtHttp {
 		return "Auth-bound: ICF or DCL authorization checks dominate.";
 	}
 
-	/** GET of an OData path with {@code sap-statistics}: status, timing, verdict and the answer. */
-	static String odataRequest(AdtClient c, String url, Map<String, String> headers, CancelToken cancel)
-			throws IOException {
-		String withStat = withStatistics(checkUrl(url, true));
-		Map<String, String> h = new LinkedHashMap<>();
-		h.put("Accept", "application/json");
+	/** The defaults, overridden by the given headers whatever their case. */
+	static Map<String, String> withDefaults(Map<String, String> defaults, Map<String, String> headers) {
+		Map<String, String> h = new LinkedHashMap<>(defaults);
 		headers.forEach((k, v) -> {
 			h.keySet().removeIf(k::equalsIgnoreCase);
 			h.put(k, v);
 		});
+		return h;
+	}
+
+	/** GET of an OData path with {@code sap-statistics}: status, timing, verdict and the answer. */
+	static String odataRequest(AdtClient c, String url, Map<String, String> headers, CancelToken cancel)
+			throws IOException {
+		String withStat = withStatistics(checkUrl(url, true));
+		Map<String, String> h = withDefaults(Map.of("Accept", "application/json"), headers);
 		long start = System.nanoTime();
 		AdtResponse r = c.exchange(new AdtRequest("GET", withStat, h, null, null), cancel);
 		long wall = (System.nanoTime() - start) / 1_000_000;
@@ -222,54 +267,103 @@ final class AdtHttp {
 
 	// ---- send (write) ----------------------------------------------------------------
 
-	/**
-	 * Sends a changing request in one ABAP session: first a GET with
-	 * {@code x-csrf-token: Fetch}, then the request with the token.
-	 */
-	static String send(AdtTransport.Session session, String method, String url, Map<String, String> headers,
-			String body, String contentType, CancelToken cancel) throws IOException {
+	/** The method in upper case if it is one adt_http_send may use; else an {@link IllegalArgumentException}. */
+	static String checkMethod(String method) {
 		String m = method == null ? "" : method.trim().toUpperCase(Locale.ROOT);
 		if (!SEND_METHODS.contains(m)) {
 			throw new IllegalArgumentException("'method' is one of " + String.join(", ", SEND_METHODS)
 					+ "; read with adt_diagnose 'odata_request'.");
 		}
-		String u = checkUrl(url, false);
-		Map<String, String> fetch = new LinkedHashMap<>();
-		fetch.put("x-csrf-token", "Fetch");
-		fetch.put("Accept", "*/*");
+		return m;
+	}
+
+	/**
+	 * Where to fetch the CSRF token: the service root for OData (its service
+	 * document is small and runs no application logic), else the path itself.
+	 * A GET on an entity set would read the whole set, a GET on a function
+	 * import would run it.
+	 */
+	static String tokenPath(String url) {
+		String raw = url.split("\\?", 2)[0];
+		String[] seg = raw.split("/");
+		// "", "sap", "opu", "odata", namespace, service[, …]
+		String lower = raw.toLowerCase(Locale.ROOT);
+		int keep = lower.startsWith("/sap/opu/odata4/") ? 10 // …/odata4/<ns>/<group>/srvd_a2x/<ns>/<srv>/<version>
+				: lower.startsWith("/sap/opu/odata/") ? 6 : 0;
+		if (keep == 0 || seg.length < keep) {
+			return raw;
+		}
+		return String.join("/", java.util.Arrays.copyOf(seg, keep)) + "/";
+	}
+
+	/**
+	 * Sends a changing request in one ABAP session: first a GET with
+	 * {@code x-csrf-token: Fetch} on the service root, then the request with
+	 * the token. Method and url must be checked ({@link #checkMethod},
+	 * {@link #checkUrl}).
+	 */
+	static String send(AdtTransport.Session session, String method, String url, Map<String, String> headers,
+			String body, String contentType, CancelToken cancel) throws IOException {
+		String m = checkMethod(method);
+		String u = url.trim();
+		String tokenPath = tokenPath(u);
 		AdtResponse tokenResponse = AdtClient.exchange(session,
-				new AdtRequest("GET", u.split("\\?", 2)[0], fetch, null, null), cancel);
+				new AdtRequest("GET", tokenPath, Map.of("x-csrf-token", "Fetch", "Accept", "*/*"), null, null), cancel);
 		String token = tokenResponse.header("x-csrf-token");
 		if (token != null && (token.isBlank() || token.equalsIgnoreCase("Required"))) {
 			token = null;
 		}
-		Map<String, String> h = new LinkedHashMap<>();
-		h.put("Accept", "application/json");
-		headers.forEach((k, v) -> {
-			h.keySet().removeIf(k::equalsIgnoreCase);
-			h.put(k, v);
-		});
-		if (token != null) {
-			h.put("x-csrf-token", token);
+		Map<String, String> h = withDefaults(Map.of("Accept", "application/json"), headers);
+		// a Content-Type header is the body's type; sent once, as the body's
+		String type = contentType == null || contentType.isBlank() ? null : contentType.trim();
+		for (String k : List.copyOf(h.keySet())) {
+			if (k.equalsIgnoreCase("Content-Type")) {
+				String given = h.remove(k);
+				if (type == null) {
+					type = given;
+				}
+			}
 		}
-		String type = contentType == null || contentType.isBlank()
-				? body == null || body.isBlank() ? null : "application/json"
-				: contentType.trim();
+		if (type == null && body != null && !body.isBlank()) {
+			type = "application/json";
+		}
+		String payload = body == null || body.isEmpty() ? null : body;
 		long start = System.nanoTime();
-		AdtResponse r = AdtClient.exchange(session, new AdtRequest(m, u, h, body == null || body.isEmpty() ? null : body,
-				type), cancel);
+		AdtResponse r = AdtClient.exchange(session, new AdtRequest(m, u, withToken(h, token), payload, type), cancel);
+		boolean retried = false;
+		if (token != null && csrfRefused(r)) {
+			// the ADT layer may manage the session's token itself; then Bella's second one breaks it
+			r = AdtClient.exchange(session, new AdtRequest(m, u, h, payload, type), cancel);
+			retried = true;
+		}
 		long ms = (System.nanoTime() - start) / 1_000_000;
 		StringBuilder sb = new StringBuilder(m).append(' ').append(u).append("\nHTTP ").append(r.status()).append(", ")
 				.append(ms).append(" ms\n");
 		if (token == null) {
-			sb.append("No CSRF token came back from GET ").append(u.split("\\?", 2)[0])
-					.append(" (HTTP ").append(tokenResponse.status()).append("); the request was sent without one.\n");
+			sb.append("No CSRF token came back from GET ").append(tokenPath).append(" (HTTP ")
+					.append(tokenResponse.status()).append("); the request was sent without one.\n");
 		}
-		if (r.status() == 403 && "required".equalsIgnoreCase(String.valueOf(r.header("x-csrf-token")))) {
-			sb.append("SAP refused the CSRF token. The service may need it from its own root URL, or does not accept "
-					+ "the ADT session.\n");
+		if (retried && !csrfRefused(r)) {
+			sb.append("SAP refused Bella's CSRF token; the request went through with the session's own token.\n");
+		}
+		if (csrfRefused(r)) {
+			sb.append("SAP refused the CSRF token (fetched from ").append(tokenPath)
+					.append("). The service may not accept the ADT session; nothing was changed.\n");
 		}
 		return sb.append(describe(r)).toString();
+	}
+
+	private static Map<String, String> withToken(Map<String, String> headers, String token) {
+		if (token == null) {
+			return headers;
+		}
+		Map<String, String> h = new LinkedHashMap<>(headers);
+		h.put("x-csrf-token", token);
+		return h;
+	}
+
+	private static boolean csrfRefused(AdtResponse r) {
+		return r.status() == 403 && "required".equalsIgnoreCase(String.valueOf(r.header("x-csrf-token")));
 	}
 
 	// ---- output ----------------------------------------------------------------------
@@ -292,7 +386,7 @@ final class AdtHttp {
 		if (type.contains("json") || body.stripLeading().startsWith("{") || body.stripLeading().startsWith("[")) {
 			sb.append(AdtDiagnostics.json(body));
 		} else if (type.contains("html")) {
-			sb.append(AdtDiagnostics.cut(body.replaceAll("(?s)<(script|style).*?</\\1>", "").replaceAll("<[^>]+>", " ")
+			sb.append(AdtDiagnostics.cut(body.replaceAll("(?is)<(script|style)\\b.*?</\\1\\s*>", "").replaceAll("<[^>]+>", " ")
 					.replaceAll("&nbsp;", " ").replaceAll("[ \\t]+", " ").replaceAll("\\s*\\n\\s*", "\n").trim()));
 		} else {
 			sb.append(AdtDiagnostics.cut(body));
