@@ -72,14 +72,15 @@ public final class CodeActions {
 	/**
 	 * @param anchor where the action started; {@code null} for the current
 	 *               cursor and selection (chat buttons)
+	 * @return whether the code went into the editor
 	 */
-	public static void apply(IEditorPart part, ITextEditor editor, Target target, String code, String notes,
+	public static boolean apply(IEditorPart part, ITextEditor editor, Target target, String code, String notes,
 			Anchor anchor) {
 		Shell shell = part.getSite().getShell();
 		IDocument doc = EditorBridge.document(editor);
 		ITextSelection current = EditorBridge.selection(editor);
 		if (doc == null || current == null) {
-			return;
+			return false;
 		}
 		String before = doc.get();
 		int selOffset = current.getOffset();
@@ -88,7 +89,7 @@ public final class CodeActions {
 			Optional<int[]> range = anchorRange(before, anchor, target);
 			if (range.isEmpty()) {
 				MessageDialog.openInformation(shell, Messages.get("app.name"), Messages.get("editor.changed"));
-				return;
+				return false;
 			}
 			selOffset = range.get()[0];
 			selLength = range.get()[1];
@@ -107,7 +108,7 @@ public final class CodeActions {
 		case SELECTION -> {
 			if (selLength == 0) {
 				MessageDialog.openInformation(shell, Messages.get("app.name"), Messages.get("editor.noSelection"));
-				return;
+				return false;
 			}
 			offset = selOffset;
 			length = selLength;
@@ -123,7 +124,7 @@ public final class CodeActions {
 			Optional<AbapStructureScanner.Block> routine = AbapStructureScanner.routineAt(before, selOffset);
 			if (routine.isEmpty()) {
 				MessageDialog.openInformation(shell, Messages.get("app.name"), Messages.get("editor.noMethod"));
-				return;
+				return false;
 			}
 			AbapEdit.Replacement r = AbapEdit.replaceBody(before, routine.get(), stripFrame(code));
 			offset = r.offset();
@@ -140,13 +141,15 @@ public final class CodeActions {
 		String after = before.substring(0, offset) + text + before.substring(offset + length);
 		if (!DiffPreview.confirm(shell, Messages.fmt("diff.titleObject", EditorBridge.objectName(part)), before, after,
 				notes)) {
-			return;
+			return false;
 		}
 		try {
 			EditorBridge.replace(editor, offset, length, text);
+			return true;
 		} catch (Exception e) {
 			BellaPlugin.log("Cannot write into editor", e);
 			MessageDialog.openError(shell, Messages.get("app.name"), e.getMessage());
+			return false;
 		}
 	}
 

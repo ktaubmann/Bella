@@ -1,6 +1,7 @@
 package de.kiliantaubmann.bella.core.prompt;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -520,6 +521,26 @@ public final class AbapPrompts {
 
 				Follow the reply format given above.
 				""".formatted(definitions.strip());
+		return new Prompt(prompt.system(), user);
+	}
+
+	/**
+	 * Adds the text symbols the object has already, so that the model reuses
+	 * them and gives new texts free ids; Bella adds the new ones to the text
+	 * pool when the developer applies the code.
+	 */
+	public static Prompt withTextSymbols(Prompt prompt, String objectName, String symbols) {
+		List<String> lines = symbols == null ? List.of()
+				: symbols.replace("\r\n", "\n").lines().map(String::strip)
+						.filter(l -> !l.isEmpty() && !l.toLowerCase(Locale.ROOT).startsWith("@maxlength"))
+						.toList();
+		String existing = lines.isEmpty() ? "none" : "\n" + String.join("\n", lines);
+		String user = prompt.user() + """
+
+				Text symbols of %s: %s
+				A text you write as 'Text'(nnn) with a new id is added to the text pool when the developer applies \
+				the code; use an id that is not taken, and the existing text for an id that is.
+				""".formatted(objectName, existing);
 		return new Prompt(prompt.system(), user);
 	}
 
