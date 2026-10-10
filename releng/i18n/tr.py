@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "Paket",
  "chat.scope.column.description": "Açıklama",
  "chat.newTip": "Baştan başlar: model konuşmayı unutur, paket ve transport talebi sıfırlanır",
+ "chat.scope.requestsFailed": "talepler okunamadı",
+ "chat.scope.requestsFailedTip": "Açık talepleriniz okunamadı: {0}",
 }

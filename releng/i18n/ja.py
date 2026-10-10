@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "パッケージ",
  "chat.scope.column.description": "説明",
  "chat.newTip": "最初からやり直します: モデルは会話を忘れ、パッケージと移送依頼はリセットされます",
+ "chat.scope.requestsFailed": "依頼を読み込めません",
+ "chat.scope.requestsFailedTip": "未リリースの依頼を読み込めませんでした: {0}",
 }

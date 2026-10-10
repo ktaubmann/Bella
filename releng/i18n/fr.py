@@ -225,4 +225,6 @@ MESSAGES = {
  "chat.scope.column.name": "Paquet",
  "chat.scope.column.description": "Description",
  "chat.newTip": "Recommence : le modèle oublie la conversation, le paquet et l’ordre de transport sont réinitialisés",
+ "chat.scope.requestsFailed": "ordres illisibles",
+ "chat.scope.requestsFailedTip": "Vos ordres ouverts n’ont pas pu être lus : {0}",
 }

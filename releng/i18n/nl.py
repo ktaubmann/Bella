@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "Pakket",
  "chat.scope.column.description": "Beschrijving",
  "chat.newTip": "Begint opnieuw: het model vergeet het gesprek, pakket en transportopdracht worden gewist",
+ "chat.scope.requestsFailed": "opdrachten niet leesbaar",
+ "chat.scope.requestsFailedTip": "Je open opdrachten konden niet worden gelezen: {0}",
 }

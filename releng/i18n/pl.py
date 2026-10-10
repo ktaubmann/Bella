@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "Pakiet",
  "chat.scope.column.description": "Opis",
  "chat.newTip": "Zaczyna od nowa: model zapomina rozmowę, pakiet i zlecenie transportowe są resetowane",
+ "chat.scope.requestsFailed": "nie można odczytać zleceń",
+ "chat.scope.requestsFailedTip": "Nie udało się odczytać Twoich otwartych zleceń: {0}",
 }

@@ -128,6 +128,18 @@ public class ChatView extends ViewPart {
 	};
 	/** Packages kept in the drop-down. */
 	static final int PACKAGE_HISTORY = 10;
+	/** The developer's open requests, read again after this time or for another system. */
+	static final long REQUESTS_TTL_MILLIS = 60_000;
+	/** A choice from a drop-down waits this long, so arrow keys or the mouse wheel do not set every entry. */
+	static final int CHOICE_DELAY_MILLIS = 700;
+	/** Open requests last read, for the system in {@link #requestsSystem}; job thread. */
+	private volatile List<AdtTransportRequest> cachedRequests = List.of();
+	private volatile String requestsSystem;
+	private volatile long requestsAt;
+	/** The drop-down choice waiting for {@link #CHOICE_DELAY_MILLIS}, {@code null} if none. */
+	private Runnable pendingChoice;
+	/** Counts the chats of this view; a turn of an earlier chat must not leave its package in the new one. */
+	private int chatGeneration;
 
 	/** The chat view if it is open, without opening it. UI thread. */
 	public static Optional<ChatView> find() {
@@ -468,6 +480,7 @@ public class ChatView extends ViewPart {
 	}
 
 	private void newChat() {
+		chatGeneration++;
 		cancel();
 		setPlanning(false);
 		newSession();
@@ -503,6 +516,7 @@ public class ChatView extends ViewPart {
 	@Override
 	public void setFocus() {
 		input.setFocus();
+		refreshScope(); // e.g. logged on to the system in the meantime
 	}
 
 	private void js(String script) {
@@ -532,9 +546,12 @@ public class ChatView extends ViewPart {
 		packageChoice = new Combo(scopeBar, SWT.DROP_DOWN);
 		packageChoice.setToolTipText(Messages.get("chat.scope.packageTip"));
 		GridDataFactory.fillDefaults().grab(true, false).hint(140, SWT.DEFAULT).applyTo(packageChoice);
-		// Enter in the field or a package from the list
-		packageChoice.addListener(SWT.DefaultSelection, e -> choosePackage(packageChoice.getText()));
-		packageChoice.addListener(SWT.Selection, e -> choosePackage(packageChoice.getText()));
+		// Enter in the field at once, a package from the list once the developer stopped scrolling through it
+		packageChoice.addListener(SWT.DefaultSelection, e -> {
+			cancelPendingChoice();
+			choosePackage(packageChoice.getText());
+		});
+		packageChoice.addListener(SWT.Selection, e -> chooseLater(() -> choosePackage(packageChoice.getText())));
 		packageSearch = new Button(scopeBar, SWT.PUSH);
 		packageSearch.setText("…");
 		packageSearch.setToolTipText(Messages.get("chat.scope.searchTip"));
@@ -544,19 +561,13 @@ public class ChatView extends ViewPart {
 		transportChoice = new Combo(scopeBar, SWT.READ_ONLY | SWT.DROP_DOWN);
 		transportChoice.setToolTipText(Messages.get("chat.scope.transportTip"));
 		GridDataFactory.fillDefaults().grab(true, false).hint(160, SWT.DEFAULT).applyTo(transportChoice);
-		transportChoice.addListener(SWT.Selection, e -> {
-			int i = transportChoice.getSelectionIndex();
-			if (i >= 0 && i < transportIds.size() && !transportIds.get(i).isEmpty()
-					&& (shownScope == null || !transportIds.get(i).equals(shownScope.transport()))) {
-				choose(null, transportIds.get(i));
-			}
-		});
+		transportChoice.addListener(SWT.Selection, e -> chooseLater(this::chooseTransport));
 		scopeJob = Job.create(Messages.get("chat.scope.jobName"), monitor -> {
 			readScope();
 			return Status.OK_STATUS;
 		});
 		scopeJob.setSystem(true);
-		showScope(null, List.of(), null);
+		showScope(null, List.of(), null, null);
 	}
 
 	/** Job thread: package, request and, for a transported package, the developer's open requests. */
@@ -565,33 +576,70 @@ public class ChatView extends ViewPart {
 		AdtToolProvider.Scope scope = null;
 		List<AdtTransportRequest> requests = List.of();
 		String problem = null;
+		String requestsProblem = null;
 		if (tools.isEmpty()) {
 			problem = Messages.get("chat.scope.noAdt");
 		} else {
 			try {
 				scope = tools.get().scope(CancelToken.NONE);
-				if (scope.pkg() != null && !scope.local()) {
-					requests = tools.get().openTransports(CancelToken.NONE);
-				}
 			} catch (IOException | RuntimeException e) {
-				problem = e.getMessage() == null ? e.toString() : e.getMessage();
+				problem = message(e);
+			}
+			if (scope != null && scope.pkg() != null && !scope.local()) {
+				try {
+					requests = openRequests(tools.get(), scope.system());
+				} catch (IOException | RuntimeException e) {
+					requestsProblem = message(e);
+				}
 			}
 		}
 		AdtToolProvider.Scope s = scope;
 		List<AdtTransportRequest> r = requests;
 		String p = problem;
-		Display.getDefault().asyncExec(() -> showScope(s, r, p));
+		String rp = requestsProblem;
+		Display.getDefault().asyncExec(() -> showScope(s, r, p, rp));
 	}
 
-	/** UI thread. {@code scope} is {@code null} when it cannot be read; {@code problem} says why. */
-	private void showScope(AdtToolProvider.Scope scope, List<AdtTransportRequest> requests, String problem) {
+	/** The developer's open requests on {@code system}, read again only after a while; job thread. */
+	private List<AdtTransportRequest> openRequests(AdtToolProvider tools, String system) throws IOException {
+		if (!system.equals(requestsSystem) || System.currentTimeMillis() - requestsAt > REQUESTS_TTL_MILLIS) {
+			cachedRequests = tools.openTransports(CancelToken.NONE);
+			requestsSystem = system;
+			requestsAt = System.currentTimeMillis();
+		}
+		return cachedRequests;
+	}
+
+	private static String message(Exception e) {
+		return e.getMessage() == null ? e.toString() : e.getMessage();
+	}
+
+	/** Reads package and request again, e.g. after the developer logged on. UI thread. */
+	public void refreshScope() {
+		Job j = scopeJob;
+		if (j != null) {
+			j.schedule();
+		}
+	}
+
+	/**
+	 * UI thread. {@code scope} is {@code null} when it cannot be read;
+	 * {@code problem} says why, {@code requestsProblem} why the open requests
+	 * could not be read.
+	 */
+	private void showScope(AdtToolProvider.Scope scope, List<AdtTransportRequest> requests, String problem,
+			String requestsProblem) {
 		if (scopeBar == null || scopeBar.isDisposed()) {
 			return;
 		}
+		String before = shownScope == null || shownScope.pkg() == null ? "" : shownScope.pkg();
 		shownScope = scope;
 		String pkg = scope == null || scope.pkg() == null ? "" : scope.pkg();
+		String typed = packageChoice.getText().trim();
 		packageChoice.setItems(packageHistory().toArray(String[]::new));
-		packageChoice.setText(pkg);
+		// a name the developer is still typing stays; a refresh (e.g. on activating the view) must not wipe it
+		boolean editing = packageChoice.isFocusControl() && !typed.isEmpty() && !typed.equalsIgnoreCase(before);
+		packageChoice.setText(editing ? typed : pkg);
 		packageChoice.setToolTipText(scope == null ? problem
 				: scope.editorObject() != null ? Messages.fmt("chat.scope.locked", scope.editorObject())
 						: Messages.get("chat.scope.packageTip"));
@@ -607,7 +655,8 @@ public class ChatView extends ViewPart {
 			String current = scope.transport();
 			if (current == null) {
 				ids.add("");
-				transportChoice.add(Messages.get("chat.scope.chooseTransport"));
+				transportChoice.add(Messages.get(requestsProblem == null ? "chat.scope.chooseTransport"
+						: "chat.scope.requestsFailed"));
 			}
 			for (AdtTransportRequest t : requests) {
 				ids.add(t.id().toUpperCase(java.util.Locale.ROOT));
@@ -620,6 +669,8 @@ public class ChatView extends ViewPart {
 			}
 		}
 		transportIds = ids;
+		transportChoice.setToolTipText(requestsProblem == null ? Messages.get("chat.scope.transportTip")
+				: Messages.fmt("chat.scope.requestsFailedTip", requestsProblem));
 		transportChoice.select(scope == null || scope.transport() == null ? 0 : ids.indexOf(scope.transport()));
 		if (scope != null && scope.pkg() != null) {
 			remember(scope.pkg());
@@ -660,6 +711,33 @@ public class ChatView extends ViewPart {
 		js("notice(0,\"info\"," + str(Markdown.escape(text)) + ")");
 	}
 
+	/** Runs {@code choice} once the drop-down has rested for {@link #CHOICE_DELAY_MILLIS}. UI thread. */
+	private void chooseLater(Runnable choice) {
+		cancelPendingChoice();
+		pendingChoice = () -> {
+			pendingChoice = null;
+			if (scopeBar != null && !scopeBar.isDisposed()) {
+				choice.run();
+			}
+		};
+		Display.getCurrent().timerExec(CHOICE_DELAY_MILLIS, pendingChoice);
+	}
+
+	private void cancelPendingChoice() {
+		if (pendingChoice != null) {
+			Display.getCurrent().timerExec(-1, pendingChoice);
+			pendingChoice = null;
+		}
+	}
+
+	private void chooseTransport() {
+		int i = transportChoice.getSelectionIndex();
+		if (i >= 0 && i < transportIds.size() && !transportIds.get(i).isEmpty()
+				&& (shownScope == null || !transportIds.get(i).equals(shownScope.transport()))) {
+			choose(null, transportIds.get(i));
+		}
+	}
+
 	private void choosePackage(String name) {
 		String pkg = name == null ? "" : name.trim().toUpperCase(java.util.Locale.ROOT);
 		if (pkg.isEmpty() || shownScope == null || pkg.equals(shownScope.pkg())) {
@@ -687,8 +765,8 @@ public class ChatView extends ViewPart {
 	 */
 	private void choose(String pkg, String transport) {
 		Optional<AdtToolProvider> tools = BellaPlugin.getDefault().adtTools();
-		if (tools.isEmpty()) {
-			return;
+		if (tools.isEmpty() || running != null) {
+			return; // e.g. a delayed drop-down choice after Send: the scope stays as the turn found it
 		}
 		packageChoice.setEnabled(false);
 		transportChoice.setEnabled(false);
@@ -700,10 +778,7 @@ public class ChatView extends ViewPart {
 						MessageDialog.openError(getSite().getShell(), Messages.get("chat.scope.title"), refused.get());
 					}
 				} else {
-					scopeChosen = true;
-					if (pkg != null) {
-						remember(pkg);
-					}
+					scopeChosen = true; // the refresh below puts the package into the history
 				}
 				// a recorded choice reaches the bar through the scope listener as well
 				if (scopeJob != null) {
@@ -828,6 +903,7 @@ public class ChatView extends ViewPart {
 		updateStatus();
 		Renderer renderer = new Renderer(botId);
 		String sent = withScopeNote(prompt);
+		int generation = chatGeneration;
 		Job job = Job.create(Messages.get("chat.jobName"), (IProgressMonitor monitor) -> {
 			try {
 				List<String> toolErrors = new ArrayList<>();
@@ -848,8 +924,14 @@ public class ChatView extends ViewPart {
 					js("endAssistant(" + botId + ")");
 					running = null;
 					turnOverride = null;
+					if (generation != chatGeneration) {
+						// New chat during this turn: a tool still running may have set package or request after
+						// the reset; nothing of the new chat could, since the bar and Send wait for this turn
+						BellaPlugin.getDefault().devScope().reset();
+					}
 					setBusy(false);
 					updateStatus();
+					refreshScope();
 					if (planning && answered.get()) {
 						showPlanBar(true);
 					}

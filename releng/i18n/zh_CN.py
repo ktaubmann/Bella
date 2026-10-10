@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "包",
  "chat.scope.column.description": "描述",
  "chat.newTip": "重新开始：模型忘记对话，包和传输请求被重置",
+ "chat.scope.requestsFailed": "无法读取请求",
+ "chat.scope.requestsFailedTip": "无法读取您的未完成请求：{0}",
 }

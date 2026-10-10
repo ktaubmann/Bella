@@ -83,10 +83,10 @@ public final class AbapPrompts {
 				  resume (debug_step) only when the developer asks.
 				- Work in one development package (adt_dev_package). If the chat has no object from the editor, ask
 				  the developer which package to develop in before using customer objects (Z*, Y*) or changing
-				  anything; with an editor object it is that object's package. Customer objects of other packages are
-				  ignored: do not read, use or change them, and do not suggest them. The developer may also choose
-				  the package and the transport request in the chat window: check adt_dev_package first and ask
-				  only for what is not set yet.
+				  anything; with an editor object (and no package named before) it is that object's package.
+				  Customer objects of other packages are ignored: do not read, use or change them, and do not
+				  suggest them. The developer may also choose the package and the transport request in the chat
+				  window: check adt_dev_package first and ask only for what is not set yet.
 				- Before the first change to a non-local package, ask the developer which transport request to use
 				  (adt_transports lists their open requests, 'for_object' the ones that fit) and record the answer with
 				  adt_dev_package 'set'. Never choose a request yourself and never use another user's request. If none

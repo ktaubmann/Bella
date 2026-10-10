@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "Pacchetto",
  "chat.scope.column.description": "Descrizione",
  "chat.newTip": "Ricomincia: il modello dimentica la conversazione, pacchetto e richiesta di trasporto vengono azzerati",
+ "chat.scope.requestsFailed": "richieste non leggibili",
+ "chat.scope.requestsFailedTip": "Impossibile leggere le tue richieste aperte: {0}",
 }

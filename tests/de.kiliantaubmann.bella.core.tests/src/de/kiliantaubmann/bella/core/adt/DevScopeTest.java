@@ -232,14 +232,14 @@ class DevScopeTest {
 		scope.transport("qas", "QASK900001"); // another system: nothing changes
 		assertEquals(2, changes.get());
 		assertEquals("dev", scope.destination());
+		scope.reset();
+		assertEquals(3, changes.get());
+		assertEquals(null, scope.destination());
 		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_own", "ZCL_OWN", "CLAS/OC"));
 		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_next", "ZCL_NEXT", "CLAS/OC"));
-		assertEquals(3, changes.get());
-		scope.reset();
 		assertEquals(4, changes.get());
-		assertEquals(null, scope.destination());
 		scope.removeListener(listener);
-		scope.developerPackage("dev", "ZSD_DELIV");
+		scope.reset();
 		assertEquals(4, changes.get());
 	}
 
@@ -287,5 +287,28 @@ class DevScopeTest {
 		assertEquals("ZCL_OWN", shown.editorObject());
 		Optional<String> other = p.choose("ZMM_OTHER", null, CancelToken.NONE);
 		assertTrue(other.isPresent() && other.get().contains("stays so"), other.toString());
+	}
+
+	@Test
+	void aNamedPackageStaysWhenAnEditorObjectComes() {
+		DevScope scope = new DevScope();
+		scope.developerPackage("dev", "ZMM_OTHER");
+		scope.transport("dev", "DEVK900001");
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_own", "ZCL_OWN", "CLAS/OC"));
+		assertEquals(null, scope.editorObject());
+		assertEquals("ZMM_OTHER", scope.developerPackage("dev"));
+		assertEquals("DEVK900001", scope.transport("dev"));
+	}
+
+	@Test
+	void theDeveloperReadsTheFactTheModelAlsoTheHint() {
+		FakeAdt adt = system();
+		adt.route("GET /sap/bc/adt/cts/transportrequests/DEVK900003",
+				r -> FakeAdt.ok(request("DEVK900003", "DEV", "R")));
+		AdtToolProvider p = provider(adt, new DevScope());
+		assertEquals(Optional.empty(), p.choose("ZSD_DELIV", null, CancelToken.NONE));
+		assertEquals(Optional.of("DEVK900003 is released."), p.choose(null, "DEVK900003", CancelToken.NONE));
+		ToolResult model = call(p, "adt_dev_package", "{\"action\":\"set\",\"transport\":\"DEVK900003\"}");
+		assertEquals("DEVK900003 is released. Ask the developer for an open request.", model.content());
 	}
 }

@@ -59,11 +59,12 @@ public final class DevScope {
 	 * development package. Only the first one binds the chat: later editor
 	 * objects (another include, another class) keep the package and the
 	 * transport request, and writes to objects of other packages are refused.
-	 * A package the developer named before is replaced and its request dropped.
+	 * A package the developer named before stays: the editor object is then
+	 * only context and binds nothing.
 	 */
 	public void editorObject(AdtEditorObject object) {
 		synchronized (this) {
-			if (object == null || editor != null) {
+			if (object == null || editor != null || pkg != null) {
 				return;
 			}
 			editor = object;

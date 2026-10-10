@@ -39,6 +39,8 @@ final class PackageDialog extends Dialog {
 	private Label info;
 	private Table table;
 	private String result;
+	/** Counts the searches; only the newest one fills the table. */
+	private int searches;
 
 	PackageDialog(Shell parent, AdtToolProvider tools, String initial) {
 		super(parent);
@@ -70,7 +72,14 @@ final class PackageDialog extends Dialog {
 		pattern.setMessage(Messages.get("chat.scope.searchHint"));
 		pattern.setText(initial);
 		GridDataFactory.fillDefaults().grab(true, false).applyTo(pattern);
-		pattern.addListener(SWT.DefaultSelection, e -> search());
+		// Enter searches and must not also press OK with a row selected from the previous search
+		pattern.addListener(SWT.Traverse, e -> {
+			if (e.detail == SWT.TRAVERSE_RETURN) {
+				e.doit = false;
+				e.detail = SWT.TRAVERSE_NONE;
+				search();
+			}
+		});
 		Button find = new Button(area, SWT.PUSH);
 		find.setText(Messages.get("chat.scope.searchButton"));
 		find.addListener(SWT.Selection, e -> search());
@@ -108,6 +117,7 @@ final class PackageDialog extends Dialog {
 		info.setText(Messages.get("chat.scope.searching"));
 		table.removeAll();
 		getButton(IDialogConstants.OK_ID).setEnabled(false);
+		int search = ++searches;
 		Job.create(Messages.get("chat.scope.searchTitle"), monitor -> {
 			List<AdtObjectRef> hits;
 			String problem = null;
@@ -119,7 +129,11 @@ final class PackageDialog extends Dialog {
 			}
 			List<AdtObjectRef> found = hits;
 			String error = problem;
-			Display.getDefault().asyncExec(() -> show(found, error));
+			Display.getDefault().asyncExec(() -> {
+				if (search == searches) {
+					show(found, error);
+				}
+			});
 			return Status.OK_STATUS;
 		}).schedule();
 	}

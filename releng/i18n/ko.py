@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "패키지",
  "chat.scope.column.description": "설명",
  "chat.newTip": "새로 시작합니다: 모델이 대화를 잊고 패키지와 전송 요청이 초기화됩니다",
+ "chat.scope.requestsFailed": "요청을 읽을 수 없음",
+ "chat.scope.requestsFailedTip": "열린 요청을 읽을 수 없습니다: {0}",
 }

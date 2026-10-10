@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "Paquete",
  "chat.scope.column.description": "Descripción",
  "chat.newTip": "Empieza de nuevo: el modelo olvida la conversación y se restablecen el paquete y la orden de transporte",
+ "chat.scope.requestsFailed": "no se pudieron leer las órdenes",
+ "chat.scope.requestsFailedTip": "No se pudieron leer sus órdenes abiertas: {0}",
 }

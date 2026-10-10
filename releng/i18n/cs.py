@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "Balík",
  "chat.scope.column.description": "Popis",
  "chat.newTip": "Začne znovu: model zapomene konverzaci, balík a transportní požadavek se vynulují",
+ "chat.scope.requestsFailed": "požadavky nelze načíst",
+ "chat.scope.requestsFailedTip": "Vaše otevřené požadavky nelze načíst: {0}",
 }

@@ -305,4 +305,6 @@ MESSAGES = {
  "chat.scope.column.name": "Paket",
  "chat.scope.column.description": "Beschreibung",
  "chat.newTip": "Beginnt von vorn: Das Modell vergisst das Gespräch, Paket und Transportauftrag werden zurückgesetzt",
+ "chat.scope.requestsFailed": "Aufträge nicht lesbar",
+ "chat.scope.requestsFailedTip": "Deine offenen Aufträge konnten nicht gelesen werden: {0}",
 }

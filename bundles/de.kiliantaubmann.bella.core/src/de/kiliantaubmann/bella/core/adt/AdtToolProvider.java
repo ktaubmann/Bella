@@ -852,7 +852,7 @@ public final class AdtToolProvider implements ToolProvider {
 		if (chosen == null && hasGiven && creatingFirstPackage(tool, in, s)) {
 			// a new package can be the development package only once it exists; its request is checked here and
 			// both are recorded after the creation
-			return ownOpenRequest(c, s, given.trim().toUpperCase(Locale.ROOT), cancel);
+			return ownOpenRequest(c, s, given.trim().toUpperCase(Locale.ROOT), cancel).map(Refusal::forModel);
 		}
 		if (chosen == null) {
 			return Optional.of("The developer has not named a transport request yet. Ask them which of their own "
@@ -877,20 +877,31 @@ public final class AdtToolProvider implements ToolProvider {
 				&& scope.developerPackage(s.destinationId()) == null;
 	}
 
+	/**
+	 * Why a package or request is refused: {@code fact} for the developer and
+	 * the model, {@code hint} only for the model.
+	 */
+	private record Refusal(String fact, String hint) {
+
+		String forModel() {
+			return hint.isEmpty() ? fact : fact + " " + hint;
+		}
+	}
+
 	/** Refuses a request that does not exist, is released or belongs to another user. */
-	private static Optional<String> ownOpenRequest(AdtClient c, AdtSystem s, String id, CancelToken cancel)
+	private static Optional<Refusal> ownOpenRequest(AdtClient c, AdtSystem s, String id, CancelToken cancel)
 			throws IOException {
 		Optional<AdtTransportRequest> request = c.transport(id, cancel);
 		if (request.isEmpty()) {
-			return Optional.of("There is no transport request " + id + " (a task does not count; give "
-					+ "its request). Ask the developer again.");
+			return Optional.of(new Refusal("There is no transport request " + id + " (a task does not count; give "
+					+ "its request).", "Ask the developer again."));
 		}
 		if (!request.get().owner().equalsIgnoreCase(s.user())) {
-			return Optional.of(id + " belongs to " + request.get().owner().toUpperCase(Locale.ROOT)
-					+ "; Bella only uses the developer's own requests. Ask the developer for one of theirs.");
+			return Optional.of(new Refusal(id + " belongs to " + request.get().owner().toUpperCase(Locale.ROOT)
+					+ "; Bella only uses the developer's own requests.", "Ask the developer for one of theirs."));
 		}
 		if (request.get().released()) {
-			return Optional.of(id + " is released; ask the developer for an open request.");
+			return Optional.of(new Refusal(id + " is released.", "Ask the developer for an open request."));
 		}
 		return Optional.empty();
 	}
@@ -917,6 +928,55 @@ public final class AdtToolProvider implements ToolProvider {
 		return scope == null ? r -> true : AdtContext.inPackage(c, scopePackage(s, c, cancel), cancel);
 	}
 
+	/**
+	 * Records package and/or request the developer named (blank or {@code null}
+	 * leaves a value): the package must exist and must not differ from an
+	 * editor object's, the request must be one of the developer's own open ones.
+	 */
+	private Optional<Refusal> recordChoice(AdtSystem s, AdtClient c, String pkg, String tr, CancelToken cancel)
+			throws IOException {
+		AdtEditorObject editor = scope.editorObject();
+		boolean fromEditor = editor != null && editor.destinationId().equals(s.destinationId());
+		if (pkg != null && !pkg.isBlank()) {
+			String wanted = pkg.trim().toUpperCase(Locale.ROOT);
+			if (fromEditor) {
+				String own = scopePackage(s, c, cancel);
+				if (!wanted.equals(own)) {
+					return Optional.of(new Refusal("The chat works on " + editor.name() + " from the editor, so the "
+							+ "development package is " + own + " and stays so. For another package start a new "
+							+ "chat without editor context.", ""));
+				}
+			} else {
+				try {
+					c.packageOf(AdtManage.packageUri(wanted), cancel);
+				} catch (AdtException e) {
+					if (e.status() == 404) {
+						return Optional.of(new Refusal("Package " + wanted + " does not exist in " + s.label() + ".",
+								"Ask the developer again."));
+					}
+					throw e;
+				}
+				scope.developerPackage(s.destinationId(), wanted);
+			}
+		}
+		if (tr != null && !tr.isBlank()) {
+			String dev = scopePackage(s, c, cancel);
+			if (dev == null) {
+				return Optional.of(new Refusal("Set the package first.", ASK_PACKAGE));
+			}
+			if (DevScope.local(dev)) {
+				return Optional.of(new Refusal(dev + " is a local package; its objects need no transport request.", ""));
+			}
+			String id = tr.trim().toUpperCase(Locale.ROOT);
+			Optional<Refusal> refused = ownOpenRequest(c, s, id, cancel);
+			if (refused.isPresent()) {
+				return refused;
+			}
+			scope.transport(s.destinationId(), id);
+		}
+		return Optional.empty();
+	}
+
 	private ToolResult devPackage(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem s = system(in);
 		AdtClient c = client(s);
@@ -930,42 +990,9 @@ public final class AdtToolProvider implements ToolProvider {
 			if ((pkg == null || pkg.isBlank()) && (tr == null || tr.isBlank())) {
 				return ToolResult.error("Give 'package' and/or 'transport', as the developer named them.");
 			}
-			if (pkg != null && !pkg.isBlank()) {
-				String wanted = pkg.trim().toUpperCase(Locale.ROOT);
-				if (fromEditor) {
-					String own = scopePackage(s, c, cancel);
-					if (!wanted.equals(own)) {
-						return ToolResult.error("The chat works on " + editor.name() + " from the editor, so the "
-								+ "development package is " + own + " and stays so. For another package the "
-								+ "developer starts a new chat without editor context.");
-					}
-				} else {
-					try {
-						c.packageOf(AdtManage.packageUri(wanted), cancel);
-					} catch (AdtException e) {
-						if (e.status() == 404) {
-							return ToolResult.error("Package " + wanted + " does not exist in " + s.label()
-									+ ". Ask the developer again.");
-						}
-						throw e;
-					}
-					scope.developerPackage(s.destinationId(), wanted);
-				}
-			}
-			if (tr != null && !tr.isBlank()) {
-				String dev = scopePackage(s, c, cancel);
-				if (dev == null) {
-					return ToolResult.error("Set the package first. " + ASK_PACKAGE);
-				}
-				if (DevScope.local(dev)) {
-					return ToolResult.error(dev + " is a local package; its objects need no transport request.");
-				}
-				String id = tr.trim().toUpperCase(Locale.ROOT);
-				Optional<String> refused = ownOpenRequest(c, s, id, cancel);
-				if (refused.isPresent()) {
-					return ToolResult.error(refused.get());
-				}
-				scope.transport(s.destinationId(), id);
+			Optional<Refusal> refused = recordChoice(s, c, pkg, tr, cancel);
+			if (refused.isPresent()) {
+				return ToolResult.error(refused.get().forModel());
 			}
 		} else if (!action.equals("get")) {
 			return ToolResult.error("Unknown action " + action + "; use get or set.");
@@ -1041,18 +1068,13 @@ public final class AdtToolProvider implements ToolProvider {
 	 * @return why the choice was refused, for the developer; empty when recorded
 	 */
 	public Optional<String> choose(String pkg, String transport, CancelToken cancel) {
-		JsonObject in = scopeSystem();
-		in.addProperty("action", "set");
-		if (pkg != null) {
-			in.addProperty("package", pkg);
+		try {
+			AdtSystem s = system(scopeSystem());
+			// the developer reads only the fact, the hints are for the model
+			return recordChoice(s, client(s), pkg, transport, cancel).map(Refusal::fact);
+		} catch (IOException | IllegalArgumentException e) {
+			return Optional.of(e.getMessage());
 		}
-		if (transport != null) {
-			in.addProperty("transport", transport);
-		}
-		ToolResult r = call("adt_dev_package", in, cancel);
-		// the hints for the model ("Ask the developer again.") mean nothing to the developer
-		return r.isError() ? Optional.of(r.content().replaceAll("\\s*Ask the developer[^.]*\\.", "").strip())
-				: Optional.empty();
 	}
 
 	/** Tool input naming the system the scope is bound to, empty for the default system. */

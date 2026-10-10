@@ -224,4 +224,6 @@ MESSAGES = {
  "chat.scope.column.name": "Пакет",
  "chat.scope.column.description": "Описание",
  "chat.newTip": "Начать заново: модель забывает разговор, пакет и транспортный запрос сбрасываются",
+ "chat.scope.requestsFailed": "не удалось прочитать запросы",
+ "chat.scope.requestsFailedTip": "Не удалось прочитать ваши открытые запросы: {0}",
 }

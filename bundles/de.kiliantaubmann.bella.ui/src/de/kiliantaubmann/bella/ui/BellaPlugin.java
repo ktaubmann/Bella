@@ -97,6 +97,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant,
 						() -> conventions(activeDestination).naming(), devScope);
 				tools.addProvider(adtTools);
+				refreshChatScope();
 				return backend;
 			}
 
@@ -104,6 +105,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 			public void removedService(org.osgi.framework.ServiceReference<AdtBackend> reference, AdtBackend service) {
 				tools.removeProvider(ToolRegistry.ADT_PROVIDER_ID);
 				adtTools = null;
+				refreshChatScope();
 				Log.info("bella", "ADT integration removed");
 				super.removedService(reference, service);
 			}
@@ -521,6 +523,15 @@ public class BellaPlugin extends AbstractUIPlugin {
 	/** Destination of the ABAP object in the active editor; {@code null} before one was active. */
 	public String activeDestination() {
 		return activeDestination;
+	}
+
+	/** The chat's package bar reads package and request again, e.g. once ADT is there. Any thread. */
+	private static void refreshChatScope() {
+		if (!org.eclipse.ui.PlatformUI.isWorkbenchRunning()) {
+			return; // a view opened later reads the scope itself
+		}
+		org.eclipse.ui.PlatformUI.getWorkbench().getDisplay()
+				.asyncExec(() -> de.kiliantaubmann.bella.ui.views.ChatView.find().ifPresent(v -> v.refreshScope()));
 	}
 
 	/** Bella's SAP tools, empty without the ADT integration. */

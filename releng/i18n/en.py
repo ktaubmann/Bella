@@ -308,4 +308,6 @@ MESSAGES = {
  "chat.scope.column.name": "Package",
  "chat.scope.column.description": "Description",
  "chat.newTip": "Starts over: the model forgets the conversation, package and transport request are reset",
+ "chat.scope.requestsFailed": "requests could not be read",
+ "chat.scope.requestsFailedTip": "Your open requests could not be read: {0}",
 }
