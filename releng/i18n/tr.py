@@ -223,4 +223,5 @@ MESSAGES = {
  "chat.scope.searchCut": "İlk {0} paket; diğerleri için aramayı daraltın.",
  "chat.scope.column.name": "Paket",
  "chat.scope.column.description": "Açıklama",
+ "chat.newTip": "Baştan başlar: model konuşmayı unutur, paket ve transport talebi sıfırlanır",
 }

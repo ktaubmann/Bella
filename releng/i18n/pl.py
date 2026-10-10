@@ -223,4 +223,5 @@ MESSAGES = {
  "chat.scope.searchCut": "Pierwsze {0} pakietów; zawęź wyszukiwanie, aby zobaczyć inne.",
  "chat.scope.column.name": "Pakiet",
  "chat.scope.column.description": "Opis",
+ "chat.newTip": "Zaczyna od nowa: model zapomina rozmowę, pakiet i zlecenie transportowe są resetowane",
 }

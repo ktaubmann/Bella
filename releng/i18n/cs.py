@@ -223,4 +223,5 @@ MESSAGES = {
  "chat.scope.searchCut": "Prvních {0} balíků; pro další zužte hledání.",
  "chat.scope.column.name": "Balík",
  "chat.scope.column.description": "Popis",
+ "chat.newTip": "Začne znovu: model zapomene konverzaci, balík a transportní požadavek se vynulují",
 }

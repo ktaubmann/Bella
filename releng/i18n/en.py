@@ -307,4 +307,5 @@ MESSAGES = {
  "chat.scope.searchCut": "The first {0} packages; narrow the search for others.",
  "chat.scope.column.name": "Package",
  "chat.scope.column.description": "Description",
+ "chat.newTip": "Starts over: the model forgets the conversation, package and transport request are reset",
 }

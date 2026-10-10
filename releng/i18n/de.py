@@ -304,4 +304,5 @@ MESSAGES = {
  "chat.scope.searchCut": "Die ersten {0} Pakete; für weitere die Suche eingrenzen.",
  "chat.scope.column.name": "Paket",
  "chat.scope.column.description": "Beschreibung",
+ "chat.newTip": "Beginnt von vorn: Das Modell vergisst das Gespräch, Paket und Transportauftrag werden zurückgesetzt",
 }

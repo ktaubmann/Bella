@@ -223,4 +223,5 @@ MESSAGES = {
  "chat.scope.searchCut": "Os primeiros {0} pacotes; restrinja a pesquisa para ver outros.",
  "chat.scope.column.name": "Pacote",
  "chat.scope.column.description": "Descrição",
+ "chat.newTip": "Recomeça: o modelo esquece a conversa, e o pacote e a requisição de transporte são redefinidos",
 }

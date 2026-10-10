@@ -223,4 +223,5 @@ MESSAGES = {
  "chat.scope.searchCut": "最初の {0} 件のパッケージです。他を表示するには検索を絞り込んでください。",
  "chat.scope.column.name": "パッケージ",
  "chat.scope.column.description": "説明",
+ "chat.newTip": "最初からやり直します: モデルは会話を忘れ、パッケージと移送依頼はリセットされます",
 }

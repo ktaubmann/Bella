@@ -235,17 +235,19 @@ public class ChatView extends ViewPart {
 		send.setImage(BellaPlugin.image("send"));
 		send.setToolTipText(Messages.get("chat.send"));
 		send.addListener(SWT.Selection, e -> sendFromInput());
+		// Send and Stop as wide as the text buttons below them
+		GridDataFactory.fillDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(send);
 		stop = new Button(bottom, SWT.PUSH);
 		stop.setImage(BellaPlugin.image("stop"));
 		stop.setToolTipText(Messages.get("chat.stop"));
 		stop.setEnabled(false);
 		stop.addListener(SWT.Selection, e -> cancel());
+		GridDataFactory.fillDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(stop);
 		planning = new Button(bottom, SWT.TOGGLE);
 		planning.setImage(BellaPlugin.image("plan"));
 		planning.setText(Messages.get("chat.plan.button"));
 		planning.setToolTipText(Messages.get("chat.plan.buttonTip"));
-		// as wide as Send and Stop together, normal button height
-		GridDataFactory.swtDefaults().span(2, 1).align(SWT.FILL, SWT.BEGINNING).applyTo(planning);
+		GridDataFactory.swtDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(planning);
 		planning.addListener(SWT.Selection, e -> {
 			if (planning.getSelection()) {
 				setPlanning(true);
@@ -257,6 +259,12 @@ public class ChatView extends ViewPart {
 				cancelPlan();
 			}
 		});
+		Button newChatButton = new Button(bottom, SWT.PUSH);
+		newChatButton.setImage(BellaPlugin.image("new_chat"));
+		newChatButton.setText(Messages.get("chat.new"));
+		newChatButton.setToolTipText(Messages.get("chat.newTip"));
+		GridDataFactory.swtDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(newChatButton);
+		newChatButton.addListener(SWT.Selection, e -> newChat());
 		// context, mode and status in one row below, so the button columns stay narrow
 		Composite options = new Composite(bottom, SWT.NONE);
 		GridDataFactory.fillDefaults().span(3, 1).grab(true, false).applyTo(options);

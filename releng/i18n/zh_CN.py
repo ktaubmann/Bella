@@ -223,4 +223,5 @@ MESSAGES = {
  "chat.scope.searchCut": "前 {0} 个包；如需其他包请缩小搜索范围。",
  "chat.scope.column.name": "包",
  "chat.scope.column.description": "描述",
+ "chat.newTip": "重新开始：模型忘记对话，包和传输请求被重置",
 }

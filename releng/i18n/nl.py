@@ -223,4 +223,5 @@ MESSAGES = {
  "chat.scope.searchCut": "De eerste {0} pakketten; verfijn de zoekopdracht voor andere.",
  "chat.scope.column.name": "Pakket",
  "chat.scope.column.description": "Beschrijving",
+ "chat.newTip": "Begint opnieuw: het model vergeet het gesprek, pakket en transportopdracht worden gewist",
 }
