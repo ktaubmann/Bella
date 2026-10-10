@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "Günlük",
  "context.editor.name": "Bella ile düzenleme",
  "context.editor.description": "Bella’nın bağlı olduğu metin düzenleyiciler (satır içi tamamlama)",
- "cmd.explainDebugState": "Bella: Hata ayıklayıcı durumunu açıkla",
+ "cmd.explainDebugState": "Bella: Hata ayıklayıcı durumunu açıkla (deneysel)",
  "cmd.explainDebugState.desc": "Durdurulmuş ABAP hata ayıklama oturumunun durumunu Bella sohbetinde açıkla ve bir hatanın nedenini ara",
  "cmd.analyzeDump": "En yeni kısa dökümü analiz et",
  "cmd.analyzeDump.desc": "Bella en yeni kısa dökümünüzün (ST22) nedenini bulsun ve bir düzeltme önersin",
- "menu.explainDebugState": "Bella: Hata ayıklayıcı durumunu açıkla",
+ "menu.explainDebugState": "Bella: Hata ayıklayıcı durumunu açıkla (deneysel)",
  "menu.analyzeDump": "En yeni kısa dökümü analiz et",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "En yeni kısa dökümümü analiz et",
  "chat.display.analyzeDumpFor": "En yeni kısa dökümümü analiz et ({0})",
  "debug.reading": "Hata ayıklama oturumu okunuyor…",
- "debug.title": "Bella ile hata ayıklama",
+ "debug.title": "Bella ile hata ayıklama (deneysel)",
  "debug.noSession": "Durdurulmuş bir ABAP hata ayıklama oturumu yok. Önce programı bir kesme noktasında durdurun.",
  "debug.exception.text": "Hata ayıklayıcı {1} içinde {0} istisnasında durdu.",
  "debug.exception.link": "Nedeni Bella analiz etsin",
- "prefs.debugOffer": "Hata ayıklayıcı bir istisnada durduğunda analiz öner",
+ "prefs.debugOffer": "Hata ayıklayıcı bir istisnada durduğunda analiz öner (deneysel)",
 }

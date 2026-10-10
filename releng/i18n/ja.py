@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "ログ",
  "context.editor.name": "Bella で編集",
  "context.editor.description": "Bella が接続されたテキストエディター（インライン補完）",
- "cmd.explainDebugState": "Bella: デバッガーの状態を説明",
+ "cmd.explainDebugState": "Bella: デバッガーの状態を説明（試験的）",
  "cmd.explainDebugState.desc": "停止中の ABAP デバッグセッションの状態を Bella チャットで説明し、エラーの原因を探します",
  "cmd.analyzeDump": "最新のショートダンプを分析",
  "cmd.analyzeDump.desc": "最新のショートダンプ（ST22）の原因を Bella に調べさせ、修正を提案させます",
- "menu.explainDebugState": "Bella: デバッガーの状態を説明",
+ "menu.explainDebugState": "Bella: デバッガーの状態を説明（試験的）",
  "menu.analyzeDump": "最新のショートダンプを分析",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "最新のショートダンプを分析",
  "chat.display.analyzeDumpFor": "最新のショートダンプを分析（{0}）",
  "debug.reading": "デバッグセッションを読み込み中…",
- "debug.title": "Bella デバッグ",
+ "debug.title": "Bella デバッグ（試験的）",
  "debug.noSession": "停止中の ABAP デバッグセッションがありません。まずブレークポイントでプログラムを停止してください。",
  "debug.exception.text": "デバッガーが {1} で例外 {0} により停止しました。",
  "debug.exception.link": "Bella に原因を分析させる",
- "prefs.debugOffer": "デバッガーが例外で停止したときに分析を提案する",
+ "prefs.debugOffer": "デバッガーが例外で停止したときに分析を提案する（試験的）",
 }

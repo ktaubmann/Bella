@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "Журнал",
  "context.editor.name": "Редактирование с Bella",
  "context.editor.description": "Текстовые редакторы, к которым подключена Bella (встроенное дополнение)",
- "cmd.explainDebugState": "Bella: объяснить состояние отладчика",
+ "cmd.explainDebugState": "Bella: объяснить состояние отладчика (экспериментально)",
  "cmd.explainDebugState.desc": "Объяснить в чате Bella состояние остановленного сеанса отладки ABAP и найти причину ошибки",
  "cmd.analyzeDump": "Анализировать последний дамп",
  "cmd.analyzeDump.desc": "Bella найдёт причину вашего последнего краткого дампа (ST22) и предложит исправление",
- "menu.explainDebugState": "Bella: объяснить состояние отладчика",
+ "menu.explainDebugState": "Bella: объяснить состояние отладчика (экспериментально)",
  "menu.analyzeDump": "Анализировать последний дамп",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "Анализировать мой последний дамп",
  "chat.display.analyzeDumpFor": "Анализировать мой последний дамп ({0})",
  "debug.reading": "Чтение сеанса отладки…",
- "debug.title": "Отладка с Bella",
+ "debug.title": "Отладка с Bella (экспериментально)",
  "debug.noSession": "Нет остановленного сеанса отладки ABAP. Сначала остановите программу в точке останова.",
  "debug.exception.text": "Отладчик остановился на исключении {0} в {1}.",
  "debug.exception.link": "Пусть Bella проанализирует причину",
- "prefs.debugOffer": "Предлагать анализ, когда отладчик останавливается на исключении",
+ "prefs.debugOffer": "Предлагать анализ, когда отладчик останавливается на исключении (экспериментально)",
 }

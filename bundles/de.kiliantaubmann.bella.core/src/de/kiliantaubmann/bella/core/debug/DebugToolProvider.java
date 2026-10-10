@@ -55,7 +55,7 @@ public final class DebugToolProvider implements ToolProvider {
 	public List<ToolSpec> listTools() {
 		return List.of(
 				ToolSpec.of("debug_context",
-						"State of the ABAP debug session the developer runs in Eclipse: the line the debugger stands "
+						"Experimental. State of the ABAP debug session the developer runs in Eclipse: the line the debugger stands "
 								+ "at, the call stack, the variables of the current frame (tables and structures two "
 								+ "levels deep, at most " + DebugSnapshot.MAX_CHILDREN + " rows), the exception it "
 								+ "stopped at and the breakpoints. With 'variable' one variable in full, e.g. "
@@ -64,7 +64,7 @@ public final class DebugToolProvider implements ToolProvider {
 								"Path of one variable as in the Variables view, parts separated by /."),
 						Capability.DEBUG_STATE, ToolSpec.Kind.READ),
 				ToolSpec.of("debug_breakpoint",
-						"Set or remove a line breakpoint in Eclipse, as the developer would in the editor; an object "
+						"Experimental. Set or remove a line breakpoint in Eclipse, as the developer would in the editor; an object "
 								+ "that is not open is opened in an editor first. Suggest breakpoints with the reason "
 								+ "first and set them when the developer agrees.",
 						schema(new String[] { "action", "name", "line" }, "action", "string", "set or remove.",
@@ -74,7 +74,7 @@ public final class DebugToolProvider implements ToolProvider {
 						// changes Eclipse only, not the SAP system: also offered in the suggest and plan modes
 						null, ToolSpec.Kind.READ),
 				ToolSpec.of("debug_step",
-						"Go on in the stopped debug session: into (step into), over (step over), return (to the "
+						"Experimental. Go on in the stopped debug session: into (step into), over (step over), return (to the "
 								+ "caller) or resume (run to the next breakpoint). Returns the new state. Only when the "
 								+ "developer asked for it: resuming may run COMMIT WORK and change data.",
 						schema(new String[] { "action" }, "action", "string", "into, over, return or resume."),

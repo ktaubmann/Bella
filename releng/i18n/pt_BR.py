@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "Log",
  "context.editor.name": "Edição com a Bella",
  "context.editor.description": "Editores de texto aos quais a Bella está conectada (conclusão em linha)",
- "cmd.explainDebugState": "Bella: explicar o estado do depurador",
+ "cmd.explainDebugState": "Bella: explicar o estado do depurador (experimental)",
  "cmd.explainDebugState.desc": "Explicar no chat da Bella o estado da sessão de depuração ABAP parada e procurar a causa de um erro",
  "cmd.analyzeDump": "Analisar o último dump",
  "cmd.analyzeDump.desc": "Deixar a Bella encontrar a causa do seu último short dump (ST22) e propor uma correção",
- "menu.explainDebugState": "Bella: explicar o estado do depurador",
+ "menu.explainDebugState": "Bella: explicar o estado do depurador (experimental)",
  "menu.analyzeDump": "Analisar o último dump",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "Analisar meu último short dump",
  "chat.display.analyzeDumpFor": "Analisar meu último short dump ({0})",
  "debug.reading": "Lendo a sessão de depuração…",
- "debug.title": "Depuração com a Bella",
+ "debug.title": "Depuração com a Bella (experimental)",
  "debug.noSession": "Nenhuma sessão de depuração ABAP está parada. Pare primeiro o programa em um breakpoint.",
  "debug.exception.text": "O depurador parou na exceção {0} em {1}.",
  "debug.exception.link": "Deixar a Bella analisar a causa",
- "prefs.debugOffer": "Oferecer uma análise quando o depurador parar em uma exceção",
+ "prefs.debugOffer": "Oferecer uma análise quando o depurador parar em uma exceção (experimental)",
 }

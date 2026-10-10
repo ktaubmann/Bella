@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "Dziennik",
  "context.editor.name": "Edycja z Bellą",
  "context.editor.description": "Edytory tekstu, do których podłączona jest Bella (uzupełnianie w linii)",
- "cmd.explainDebugState": "Bella: wyjaśnij stan debugera",
+ "cmd.explainDebugState": "Bella: wyjaśnij stan debugera (eksperymentalne)",
  "cmd.explainDebugState.desc": "Wyjaśnij w czacie Bella stan zatrzymanej sesji debugowania ABAP i poszukaj przyczyny błędu",
  "cmd.analyzeDump": "Analizuj najnowszy zrzut",
  "cmd.analyzeDump.desc": "Pozwól Belli znaleźć przyczynę najnowszego zrzutu (ST22) i zaproponować poprawkę",
- "menu.explainDebugState": "Bella: wyjaśnij stan debugera",
+ "menu.explainDebugState": "Bella: wyjaśnij stan debugera (eksperymentalne)",
  "menu.analyzeDump": "Analizuj najnowszy zrzut",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "Analizuj mój najnowszy zrzut",
  "chat.display.analyzeDumpFor": "Analizuj mój najnowszy zrzut ({0})",
  "debug.reading": "Odczyt sesji debugowania…",
- "debug.title": "Debugowanie z Bellą",
+ "debug.title": "Debugowanie z Bellą (eksperymentalne)",
  "debug.noSession": "Żadna sesja debugowania ABAP nie jest zatrzymana. Najpierw zatrzymaj program w punkcie przerwania.",
  "debug.exception.text": "Debuger zatrzymał się na wyjątku {0} w {1}.",
  "debug.exception.link": "Pozwól Belli przeanalizować przyczynę",
- "prefs.debugOffer": "Proponuj analizę, gdy debuger zatrzyma się na wyjątku",
+ "prefs.debugOffer": "Proponuj analizę, gdy debuger zatrzyma się na wyjątku (eksperymentalne)",
 }

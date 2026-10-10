@@ -36,11 +36,11 @@ PLUGIN = {
  "prefs.log": "Protokoll",
  "context.editor.name": "Bearbeiten mit Bella",
  "context.editor.description": "Texteditoren, in die Bella eingebunden ist (Inline-Vervollständigung)",
- "cmd.explainDebugState": "Bella: Debugger-Zustand erklären",
+ "cmd.explainDebugState": "Bella: Debugger-Zustand erklären (experimentell)",
  "cmd.explainDebugState.desc": "Den Zustand der angehaltenen ABAP-Debug-Session im Bella-Chat erklären und die Ursache eines Fehlers suchen",
  "cmd.analyzeDump": "Neuesten Kurzdump analysieren",
  "cmd.analyzeDump.desc": "Bella die Ursache deines neuesten Kurzdumps (ST22) finden und einen Fix vorschlagen lassen",
- "menu.explainDebugState": "Bella: Debugger-Zustand erklären",
+ "menu.explainDebugState": "Bella: Debugger-Zustand erklären (experimentell)",
  "menu.analyzeDump": "Neuesten Kurzdump analysieren",
 }
 MESSAGES = {
@@ -276,9 +276,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "Meinen neuesten Kurzdump analysieren",
  "chat.display.analyzeDumpFor": "Meinen neuesten Kurzdump analysieren ({0})",
  "debug.reading": "Debug-Session wird gelesen…",
- "debug.title": "Bella-Debugging",
+ "debug.title": "Bella-Debugging (experimentell)",
  "debug.noSession": "Es ist keine ABAP-Debug-Session angehalten. Halte das Programm zuerst an einem Breakpoint an.",
  "debug.exception.text": "Der Debugger hat bei der Ausnahme {0} in {1} angehalten.",
  "debug.exception.link": "Ursache von Bella analysieren lassen",
- "prefs.debugOffer": "Analyse anbieten, wenn der Debugger bei einer Ausnahme anhält",
+ "prefs.debugOffer": "Analyse anbieten, wenn der Debugger bei einer Ausnahme anhält (experimentell)",
 }

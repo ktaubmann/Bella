@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "Log",
  "context.editor.name": "Modifica con Bella",
  "context.editor.description": "Editor di testo a cui Bella è collegata (completamento in linea)",
- "cmd.explainDebugState": "Bella: spiega lo stato del debugger",
+ "cmd.explainDebugState": "Bella: spiega lo stato del debugger (sperimentale)",
  "cmd.explainDebugState.desc": "Spiega nella chat di Bella lo stato della sessione di debug ABAP fermata e cerca la causa di un errore",
  "cmd.analyzeDump": "Analizza l’ultimo dump",
  "cmd.analyzeDump.desc": "Lascia che Bella trovi la causa del tuo ultimo short dump (ST22) e proponga una correzione",
- "menu.explainDebugState": "Bella: spiega lo stato del debugger",
+ "menu.explainDebugState": "Bella: spiega lo stato del debugger (sperimentale)",
  "menu.analyzeDump": "Analizza l’ultimo dump",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "Analizza il mio ultimo short dump",
  "chat.display.analyzeDumpFor": "Analizza il mio ultimo short dump ({0})",
  "debug.reading": "Lettura della sessione di debug…",
- "debug.title": "Debug con Bella",
+ "debug.title": "Debug con Bella (sperimentale)",
  "debug.noSession": "Nessuna sessione di debug ABAP è ferma. Ferma prima il programma a un breakpoint.",
  "debug.exception.text": "Il debugger si è fermato sull’eccezione {0} in {1}.",
  "debug.exception.link": "Lascia che Bella analizzi la causa",
- "prefs.debugOffer": "Proponi un’analisi quando il debugger si ferma su un’eccezione",
+ "prefs.debugOffer": "Proponi un’analisi quando il debugger si ferma su un’eccezione (sperimentale)",
 }

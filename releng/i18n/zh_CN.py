@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "日志",
  "context.editor.name": "使用 Bella 编辑",
  "context.editor.description": "已接入 Bella 的文本编辑器（行内补全）",
- "cmd.explainDebugState": "Bella：解释调试器状态",
+ "cmd.explainDebugState": "Bella：解释调试器状态（实验性）",
  "cmd.explainDebugState.desc": "在 Bella 聊天中解释已暂停的 ABAP 调试会话状态，并查找错误原因",
  "cmd.analyzeDump": "分析最新的短转储",
  "cmd.analyzeDump.desc": "让 Bella 找出最新短转储（ST22）的原因并提出修复建议",
- "menu.explainDebugState": "Bella：解释调试器状态",
+ "menu.explainDebugState": "Bella：解释调试器状态（实验性）",
  "menu.analyzeDump": "分析最新的短转储",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "分析我最新的短转储",
  "chat.display.analyzeDumpFor": "分析我最新的短转储（{0}）",
  "debug.reading": "正在读取调试会话…",
- "debug.title": "Bella 调试",
+ "debug.title": "Bella 调试（实验性）",
  "debug.noSession": "没有已暂停的 ABAP 调试会话。请先在断点处暂停程序。",
  "debug.exception.text": "调试器在 {1} 中因异常 {0} 而暂停。",
  "debug.exception.link": "让 Bella 分析原因",
- "prefs.debugOffer": "调试器因异常暂停时提供分析",
+ "prefs.debugOffer": "调试器因异常暂停时提供分析（实验性）",
 }

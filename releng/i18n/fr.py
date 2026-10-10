@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "Journal",
  "context.editor.name": "Édition avec Bella",
  "context.editor.description": "Éditeurs de texte auxquels Bella est rattachée (complétion en ligne)",
- "cmd.explainDebugState": "Bella : expliquer l’état du débogueur",
+ "cmd.explainDebugState": "Bella : expliquer l’état du débogueur (expérimental)",
  "cmd.explainDebugState.desc": "Expliquer l’état de la session de débogage ABAP arrêtée dans le chat Bella et chercher la cause d’une erreur",
  "cmd.analyzeDump": "Analyser le dernier vidage",
  "cmd.analyzeDump.desc": "Laisser Bella trouver la cause de votre dernier vidage court (ST22) et proposer une correction",
- "menu.explainDebugState": "Bella : expliquer l’état du débogueur",
+ "menu.explainDebugState": "Bella : expliquer l’état du débogueur (expérimental)",
  "menu.analyzeDump": "Analyser le dernier vidage",
 }
 MESSAGES = {
@@ -196,9 +196,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "Analyser mon dernier vidage court",
  "chat.display.analyzeDumpFor": "Analyser mon dernier vidage court ({0})",
  "debug.reading": "Lecture de la session de débogage…",
- "debug.title": "Débogage Bella",
+ "debug.title": "Débogage Bella (expérimental)",
  "debug.noSession": "Aucune session de débogage ABAP n’est arrêtée. Arrêtez d’abord le programme à un point d’arrêt.",
  "debug.exception.text": "Le débogueur s’est arrêté sur l’exception {0} dans {1}.",
  "debug.exception.link": "Laisser Bella analyser la cause",
- "prefs.debugOffer": "Proposer une analyse quand le débogueur s’arrête sur une exception",
+ "prefs.debugOffer": "Proposer une analyse quand le débogueur s’arrête sur une exception (expérimental)",
 }

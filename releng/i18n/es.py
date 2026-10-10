@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "Registro",
  "context.editor.name": "Edición con Bella",
  "context.editor.description": "Editores de texto a los que Bella está conectada (autocompletado en línea)",
- "cmd.explainDebugState": "Bella: explicar el estado del depurador",
+ "cmd.explainDebugState": "Bella: explicar el estado del depurador (experimental)",
  "cmd.explainDebugState.desc": "Explicar en el chat de Bella el estado de la sesión de depuración ABAP detenida y buscar la causa de un error",
  "cmd.analyzeDump": "Analizar el último volcado",
  "cmd.analyzeDump.desc": "Dejar que Bella encuentre la causa de tu último volcado (ST22) y proponga una corrección",
- "menu.explainDebugState": "Bella: explicar el estado del depurador",
+ "menu.explainDebugState": "Bella: explicar el estado del depurador (experimental)",
  "menu.analyzeDump": "Analizar el último volcado",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "Analizar mi último volcado",
  "chat.display.analyzeDumpFor": "Analizar mi último volcado ({0})",
  "debug.reading": "Leyendo la sesión de depuración…",
- "debug.title": "Depuración con Bella",
+ "debug.title": "Depuración con Bella (experimental)",
  "debug.noSession": "No hay ninguna sesión de depuración ABAP detenida. Detén primero el programa en un punto de interrupción.",
  "debug.exception.text": "El depurador se detuvo en la excepción {0} en {1}.",
  "debug.exception.link": "Dejar que Bella analice la causa",
- "prefs.debugOffer": "Ofrecer un análisis cuando el depurador se detiene en una excepción",
+ "prefs.debugOffer": "Ofrecer un análisis cuando el depurador se detiene en una excepción (experimental)",
 }

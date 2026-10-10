@@ -18,11 +18,11 @@ PLUGIN = {
  "prefs.log": "로그",
  "context.editor.name": "Bella로 편집",
  "context.editor.description": "Bella가 연결된 텍스트 편집기(인라인 완성)",
- "cmd.explainDebugState": "Bella: 디버거 상태 설명",
+ "cmd.explainDebugState": "Bella: 디버거 상태 설명 (실험적)",
  "cmd.explainDebugState.desc": "중지된 ABAP 디버그 세션의 상태를 Bella 채팅에서 설명하고 오류 원인을 찾습니다",
  "cmd.analyzeDump": "최신 숏 덤프 분석",
  "cmd.analyzeDump.desc": "Bella가 최신 숏 덤프(ST22)의 원인을 찾고 수정을 제안하도록 합니다",
- "menu.explainDebugState": "Bella: 디버거 상태 설명",
+ "menu.explainDebugState": "Bella: 디버거 상태 설명 (실험적)",
  "menu.analyzeDump": "최신 숏 덤프 분석",
 }
 MESSAGES = {
@@ -195,9 +195,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "내 최신 숏 덤프 분석",
  "chat.display.analyzeDumpFor": "내 최신 숏 덤프 분석 ({0})",
  "debug.reading": "디버그 세션을 읽는 중…",
- "debug.title": "Bella 디버깅",
+ "debug.title": "Bella 디버깅 (실험적)",
  "debug.noSession": "중지된 ABAP 디버그 세션이 없습니다. 먼저 중단점에서 프로그램을 중지하세요.",
  "debug.exception.text": "디버거가 {1}에서 예외 {0}로 중지되었습니다.",
  "debug.exception.link": "Bella가 원인을 분석하도록 하기",
- "prefs.debugOffer": "디버거가 예외에서 중지되면 분석 제안",
+ "prefs.debugOffer": "디버거가 예외에서 중지되면 분석 제안 (실험적)",
 }

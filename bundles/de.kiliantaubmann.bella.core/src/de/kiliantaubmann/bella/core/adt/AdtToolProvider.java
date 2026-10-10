@@ -469,7 +469,7 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "'id' one error in detail), 'traces' (ABAP profiler traces; with 'id' and 'part' hitlist, "
 						+ "statements or db_accesses one analysis), 'trace_requests' (armed traces), 'sql_trace_state' "
 						+ "(ST05), 'sql_trace_directory', 'authorization_trace' (STUSERTRACE; 'user', 'auth_object', "
-						+ "'only_failures'), 'atc_variants' ('filter'), 'odata_request' (GET of an OData service to test "
+						+ "'only_failures'), 'atc_variants' ('filter'), 'odata_request' (experimental; GET of an OData service to test "
 						+ "it: 'url' host-relative, e.g. /sap/opu/odata/sap/<SRV>/$metadata or <EntitySet>?$top=5&$format=json, "
 						+ "encode blanks as %20; returns status, answer and the sap-statistics timing split with a verdict "
 						+ "where the time goes).",
@@ -483,7 +483,7 @@ public final class AdtToolProvider implements ToolProvider {
 						SYSTEM_DESC),
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_http_send",
-				"Send a changing HTTP request (POST, PUT, PATCH, DELETE) to a service of the SAP system to test it, e.g. "
+				"Experimental. Send a changing HTTP request (POST, PUT, PATCH, DELETE) to a service of the SAP system to test it, e.g. "
 						+ "create an OData entity or call a REST handler; Bella always asks first. Runs with the "
 						+ "developer's ADT logon in one session and fetches the CSRF token itself. 'url' is host-relative "
 						+ "(/sap/opu/odata/…, /sap/bc/rest/…, own ICF nodes; not /sap/bc/adt). Only when the developer "

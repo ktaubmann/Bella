@@ -39,11 +39,11 @@ PLUGIN = {
  "prefs.log": "Log file",
  "context.editor.name": "Editing with Bella",
  "context.editor.description": "Text editors Bella is attached to (inline completion)",
- "cmd.explainDebugState": "Bella: Explain debugger state",
+ "cmd.explainDebugState": "Bella: Explain debugger state (experimental)",
  "cmd.explainDebugState.desc": "Explain the state of the stopped ABAP debug session in the Bella chat and look for the cause of an error",
  "cmd.analyzeDump": "Analyse newest short dump",
  "cmd.analyzeDump.desc": "Let Bella find the cause of your newest short dump (ST22) and propose a fix",
- "menu.explainDebugState": "Bella: Explain debugger state",
+ "menu.explainDebugState": "Bella: Explain debugger state (experimental)",
  "menu.analyzeDump": "Analyse newest short dump",
 }
 MESSAGES = {
@@ -279,9 +279,9 @@ MESSAGES = {
  "chat.display.analyzeDump": "Analyse my newest short dump",
  "chat.display.analyzeDumpFor": "Analyse my newest short dump ({0})",
  "debug.reading": "Reading the debug session…",
- "debug.title": "Bella debugging",
+ "debug.title": "Bella debugging (experimental)",
  "debug.noSession": "No ABAP debug session is stopped. Stop the program at a breakpoint first.",
  "debug.exception.text": "The debugger stopped at exception {0} in {1}.",
  "debug.exception.link": "Let Bella analyse the cause",
- "prefs.debugOffer": "Offer an analysis when the debugger stops at an exception",
+ "prefs.debugOffer": "Offer an analysis when the debugger stops at an exception (experimental)",
 }
