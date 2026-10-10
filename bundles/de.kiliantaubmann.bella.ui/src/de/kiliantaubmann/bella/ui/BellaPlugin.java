@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import org.eclipse.core.runtime.ILog;
@@ -70,6 +71,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 	private ServiceTracker<AdtBackend, AdtBackend> adtTracker;
 	private volatile String activeDestination;
 	private final DevScope devScope = new DevScope();
+	/** Bella's SAP tools while the ADT integration is available. */
+	private volatile AdtToolProvider adtTools;
 	private LogFile logFile;
 	private final Masker masker = new Masker(this::maskSettings);
 	private volatile List<AdtSystem> maskSystems = List.of();
@@ -88,15 +91,17 @@ public class BellaPlugin extends AbstractUIPlugin {
 			public AdtBackend addingService(org.osgi.framework.ServiceReference<AdtBackend> reference) {
 				AdtBackend backend = super.addingService(reference);
 				Log.info("bella", "ADT integration available");
-				tools.addProvider(new AdtToolProvider(backend, () -> activeDestination,
+				adtTools = new AdtToolProvider(backend, () -> activeDestination,
 						() -> prefs().getString(Prefs.WRITE_PACKAGES), BellaPlugin.this::atcVariant,
-						() -> conventions(activeDestination).naming(), devScope));
+						() -> conventions(activeDestination).naming(), devScope);
+				tools.addProvider(adtTools);
 				return backend;
 			}
 
 			@Override
 			public void removedService(org.osgi.framework.ServiceReference<AdtBackend> reference, AdtBackend service) {
 				tools.removeProvider(ToolRegistry.ADT_PROVIDER_ID);
+				adtTools = null;
 				Log.info("bella", "ADT integration removed");
 				super.removedService(reference, service);
 			}
@@ -508,6 +513,11 @@ public class BellaPlugin extends AbstractUIPlugin {
 	/** Development package and transport request of the chat, which the SAP tools keep to. */
 	public DevScope devScope() {
 		return devScope;
+	}
+
+	/** Bella's SAP tools, empty without the ADT integration. */
+	public Optional<AdtToolProvider> adtTools() {
+		return Optional.ofNullable(adtTools);
 	}
 
 	/** Destination of the ABAP object in the active editor; default system for tools. */

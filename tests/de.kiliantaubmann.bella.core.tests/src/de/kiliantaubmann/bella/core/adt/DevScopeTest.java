@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
@@ -218,5 +219,73 @@ class DevScopeTest {
 		// without a scope the tool does not exist
 		assertTrue(new AdtToolProvider(system(), () -> "dev").listTools().stream()
 				.noneMatch(t -> t.name().equals("adt_dev_package")));
+	}
+
+	@Test
+	void listenersHearEveryChange() {
+		DevScope scope = new DevScope();
+		AtomicInteger changes = new AtomicInteger();
+		Runnable listener = changes::incrementAndGet;
+		scope.addListener(listener);
+		scope.developerPackage("dev", "zsd_deliv");
+		scope.transport("dev", "DEVK900001");
+		scope.transport("qas", "QASK900001"); // another system: nothing changes
+		assertEquals(2, changes.get());
+		assertEquals("dev", scope.destination());
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_own", "ZCL_OWN", "CLAS/OC"));
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_next", "ZCL_NEXT", "CLAS/OC"));
+		assertEquals(3, changes.get());
+		scope.reset();
+		assertEquals(4, changes.get());
+		assertEquals(null, scope.destination());
+		scope.removeListener(listener);
+		scope.developerPackage("dev", "ZSD_DELIV");
+		assertEquals(4, changes.get());
+	}
+
+	@Test
+	void theChatWindowChoosesWithTheChecksOfTheTool() throws Exception {
+		DevScope scope = new DevScope();
+		FakeAdt adt = system();
+		adt.route("GET /sap/bc/adt/cts/transportrequests?", r -> FakeAdt.ok(request("DEVK900001", "DEV", "D")));
+		AdtToolProvider p = provider(adt, scope);
+		AdtToolProvider.Scope none = p.scope(CancelToken.NONE);
+		assertEquals(null, none.pkg());
+		assertEquals(null, none.transport());
+
+		Optional<String> unknown = p.choose("ZNOPE", null, CancelToken.NONE);
+		assertTrue(unknown.isPresent() && unknown.get().contains("does not exist"), unknown.toString());
+		// the hint for the model is left out for the developer
+		assertFalse(unknown.get().contains("Ask the developer"), unknown.get());
+		assertEquals(Optional.empty(), p.choose("zsd_deliv", null, CancelToken.NONE));
+		Optional<String> foreign = p.choose(null, "DEVK900002", CancelToken.NONE);
+		assertTrue(foreign.isPresent() && foreign.get().contains("belongs to OTHER"), foreign.toString());
+		assertEquals(Optional.empty(), p.choose(null, "devk900001", CancelToken.NONE));
+
+		AdtToolProvider.Scope chosen = p.scope(CancelToken.NONE);
+		assertEquals("ZSD_DELIV", chosen.pkg());
+		assertEquals("DEVK900001", chosen.transport());
+		assertEquals(null, chosen.editorObject());
+		assertFalse(chosen.local());
+		assertEquals(List.of("DEVK900001"), p.openTransports(CancelToken.NONE).stream()
+				.map(AdtTransportRequest::id).toList());
+		assertTrue(adt.log.contains("GET /sap/bc/adt/cts/transportrequests?user=DEV&target=true&requestType=KWT"
+				+ "&requestStatus=D"), adt.log.toString());
+
+		p.packages("zsd", 50, CancelToken.NONE);
+		assertTrue(adt.log.stream().anyMatch(l -> l.contains("query=ZSD*") && l.contains("objectType=DEVC%2FK")),
+				adt.log.toString());
+	}
+
+	@Test
+	void theChatWindowShowsTheEditorObjectsPackage() throws Exception {
+		DevScope scope = new DevScope();
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_own", "ZCL_OWN", "CLAS/OC"));
+		AdtToolProvider p = provider(system(), scope);
+		AdtToolProvider.Scope shown = p.scope(CancelToken.NONE);
+		assertEquals("ZSD_DELIV", shown.pkg());
+		assertEquals("ZCL_OWN", shown.editorObject());
+		Optional<String> other = p.choose("ZMM_OTHER", null, CancelToken.NONE);
+		assertTrue(other.isPresent() && other.get().contains("stays so"), other.toString());
 	}
 }
