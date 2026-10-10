@@ -991,6 +991,83 @@ public final class AdtToolProvider implements ToolProvider {
 		return ToolResult.ok(sb.toString());
 	}
 
+	// ---- development package in the chat window -------------------------------------
+
+	/**
+	 * Package and request of the chat as the chat window shows them.
+	 *
+	 * @param system       label of the system the chat works on
+	 * @param pkg          development package, {@code null} while none is set
+	 * @param editorObject the editor object whose package it is, {@code null}
+	 *                     when the developer named the package
+	 * @param transport    transport request, {@code null} while none is set
+	 */
+	public record Scope(String system, String pkg, String editorObject, String transport) {
+
+		/** A local package needs no transport request. */
+		public boolean local() {
+			return DevScope.local(pkg);
+		}
+	}
+
+	/** The chat's package and request on the system it is bound to (else the default one). */
+	public Scope scope(CancelToken cancel) throws IOException {
+		AdtSystem s = system(scopeSystem());
+		String dev = scopePackage(s, client(s), cancel);
+		AdtEditorObject editor = scope.editorObject();
+		boolean fromEditor = editor != null && editor.destinationId().equals(s.destinationId());
+		return new Scope(s.label(), dev, fromEditor && dev != null ? editor.name() : null,
+				scope.transport(s.destinationId()));
+	}
+
+	/** Packages whose name starts with {@code prefix} (wildcards allowed), for the chat window's choice. */
+	public List<AdtObjectRef> packages(String prefix, int max, CancelToken cancel) throws IOException {
+		String q = prefix.trim().toUpperCase(Locale.ROOT);
+		return client(system(scopeSystem())).search(q.endsWith("*") ? q : q + "*", "DEVC/K", null, max, cancel);
+	}
+
+	/** The developer's own modifiable transport requests on the chat's system. */
+	public List<AdtTransportRequest> openTransports(CancelToken cancel) throws IOException {
+		AdtSystem s = system(scopeSystem());
+		return client(s).transports(s.user(), "D", cancel);
+	}
+
+	/**
+	 * Records what the developer chose in the chat window, with the checks of
+	 * adt_dev_package 'set': the package must exist and must not differ from
+	 * an editor object's, the request must be one of the developer's own open
+	 * ones. {@code null} leaves a value as it is.
+	 *
+	 * @return why the choice was refused, for the developer; empty when recorded
+	 */
+	public Optional<String> choose(String pkg, String transport, CancelToken cancel) {
+		JsonObject in = scopeSystem();
+		in.addProperty("action", "set");
+		if (pkg != null) {
+			in.addProperty("package", pkg);
+		}
+		if (transport != null) {
+			in.addProperty("transport", transport);
+		}
+		ToolResult r = call("adt_dev_package", in, cancel);
+		// the hints for the model ("Ask the developer again.") mean nothing to the developer
+		return r.isError() ? Optional.of(r.content().replaceAll("\\s*Ask the developer[^.]*\\.", "").strip())
+				: Optional.empty();
+	}
+
+	/** Tool input naming the system the scope is bound to, empty for the default system. */
+	private JsonObject scopeSystem() {
+		if (scope == null) {
+			throw new IllegalStateException("This provider binds no development package.");
+		}
+		JsonObject in = new JsonObject();
+		String destination = scope.destination();
+		if (destination != null) {
+			in.addProperty("system", destination);
+		}
+		return in;
+	}
+
 	@Override
 	public ToolResult call(String name, JsonObject in, CancelToken cancel) {
 		try {

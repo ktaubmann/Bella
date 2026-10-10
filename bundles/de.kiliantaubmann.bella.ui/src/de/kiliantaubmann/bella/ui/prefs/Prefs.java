@@ -35,6 +35,9 @@ public final class Prefs {
 	/** Language tag for ABAP comments in generated code. */
 	public static final String COMMENT_LANGUAGE = "comment.language";
 
+	/** Packages last chosen in the chat window, most recent first, comma separated. */
+	public static final String PACKAGE_HISTORY = "chat.packageHistory";
+
 	public static final String DIFF_PREVIEW = "editor.diffPreview";
 	/** Editor actions load the definitions of the SAP objects the code uses. */
 	public static final String EDITOR_SAP_CONTEXT = "editor.sapContext";

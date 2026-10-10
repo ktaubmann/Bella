@@ -1,6 +1,8 @@
 package de.kiliantaubmann.bella.core.adt;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * The package a chat develops in and the transport request the developer
@@ -10,22 +12,46 @@ import java.util.Locale;
  * package and cannot be changed.
  * <p>
  * Thread safe; one instance belongs to the chat and is reset with it.
+ * Listeners hear of every change, e.g. to show package and request in the
+ * chat window; they run on the thread that made the change.
  */
 public final class DevScope {
 
+	private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
 	private AdtEditorObject editor;
 	private String editorPackage;
 	private String destination;
 	private String pkg;
 	private String transport;
 
+	/** {@code listener} runs after each change of package, request or editor object. */
+	public void addListener(Runnable listener) {
+		listeners.add(listener);
+	}
+
+	public void removeListener(Runnable listener) {
+		listeners.remove(listener);
+	}
+
+	private void changed() {
+		listeners.forEach(Runnable::run);
+	}
+
 	/** Forgets package, transport and editor object, e.g. for a new chat. */
-	public synchronized void reset() {
-		editor = null;
-		editorPackage = null;
-		destination = null;
-		pkg = null;
-		transport = null;
+	public void reset() {
+		synchronized (this) {
+			editor = null;
+			editorPackage = null;
+			destination = null;
+			pkg = null;
+			transport = null;
+		}
+		changed();
+	}
+
+	/** The system the chat is bound to, {@code null} while no package or editor object binds it. */
+	public synchronized String destination() {
+		return destination;
 	}
 
 	/**
@@ -35,15 +61,18 @@ public final class DevScope {
 	 * transport request, and writes to objects of other packages are refused.
 	 * A package the developer named before is replaced and its request dropped.
 	 */
-	public synchronized void editorObject(AdtEditorObject object) {
-		if (object == null || editor != null) {
-			return;
+	public void editorObject(AdtEditorObject object) {
+		synchronized (this) {
+			if (object == null || editor != null) {
+				return;
+			}
+			editor = object;
+			editorPackage = null;
+			destination = object.destinationId();
+			pkg = null;
+			transport = null;
 		}
-		editor = object;
-		editorPackage = null;
-		destination = object.destinationId();
-		pkg = null;
-		transport = null;
+		changed();
 	}
 
 	public synchronized AdtEditorObject editorObject() {
@@ -55,20 +84,27 @@ public final class DevScope {
 		return object.equals(editor) ? editorPackage : null;
 	}
 
-	synchronized void editorPackage(AdtEditorObject object, String resolved) {
-		if (object.equals(editor)) {
+	void editorPackage(AdtEditorObject object, String resolved) {
+		synchronized (this) {
+			if (!object.equals(editor)) {
+				return;
+			}
 			editorPackage = resolved.toUpperCase(Locale.ROOT);
 		}
+		changed();
 	}
 
 	/** Sets the package the developer named; a different package drops the transport request. */
-	public synchronized void developerPackage(String destinationId, String name) {
-		String p = name.trim().toUpperCase(Locale.ROOT);
-		if (!p.equals(pkg) || !destinationId.equals(destination)) {
-			transport = null;
+	public void developerPackage(String destinationId, String name) {
+		synchronized (this) {
+			String p = name.trim().toUpperCase(Locale.ROOT);
+			if (!p.equals(pkg) || !destinationId.equals(destination)) {
+				transport = null;
+			}
+			destination = destinationId;
+			pkg = p;
 		}
-		destination = destinationId;
-		pkg = p;
+		changed();
 	}
 
 	/** The package the developer named for this system, {@code null} if none. */
@@ -76,10 +112,14 @@ public final class DevScope {
 		return destinationId.equals(destination) ? pkg : null;
 	}
 
-	public synchronized void transport(String destinationId, String request) {
-		if (destinationId.equals(destination)) {
+	public void transport(String destinationId, String request) {
+		synchronized (this) {
+			if (!destinationId.equals(destination)) {
+				return;
+			}
 			transport = request.trim().toUpperCase(Locale.ROOT);
 		}
+		changed();
 	}
 
 	/** The request the developer chose for this system, {@code null} if none. */

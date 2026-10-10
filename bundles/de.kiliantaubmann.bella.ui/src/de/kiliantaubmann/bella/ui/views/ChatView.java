@@ -48,6 +48,8 @@ import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
 import de.kiliantaubmann.bella.core.agent.Conversation;
+import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
+import de.kiliantaubmann.bella.core.adt.AdtTransportRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.prompt.EditorContext;
@@ -64,6 +66,7 @@ import de.kiliantaubmann.bella.ui.editor.CodeActions;
 import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.editor.EditorTracker;
 import de.kiliantaubmann.bella.ui.editor.OpenEditorRouter;
+import de.kiliantaubmann.bella.ui.prefs.Prefs;
 
 /** Bella's chat window. */
 public class ChatView extends ViewPart {
@@ -102,6 +105,29 @@ public class ChatView extends ViewPart {
 	/** Scripts issued before the page finished loading. */
 	private final List<String> pendingScripts = new ArrayList<>();
 	private boolean pageLoaded;
+	/** Development package and transport request above the chat. */
+	private Composite scopeBar;
+	private Combo packageChoice;
+	private Button packageSearch;
+	private Combo transportChoice;
+	/** Request ids in the order of {@link #transportChoice}; "" for the placeholder. */
+	private List<String> transportIds = List.of();
+	/** Package and request last shown, {@code null} without SAP or before the first look. */
+	private AdtToolProvider.Scope shownScope;
+	/** Package and request last announced in the chat, "" while none is set. */
+	private String announcedScope = "";
+	/** The developer chose package or request above the chat; the next message tells the model. */
+	private boolean scopeChosen;
+	/** Reads package, request and the developer's open requests in the background. */
+	private Job scopeJob;
+	private final Runnable scopeListener = () -> {
+		Job j = scopeJob;
+		if (j != null) {
+			j.schedule(50);
+		}
+	};
+	/** Packages kept in the drop-down. */
+	static final int PACKAGE_HISTORY = 10;
 
 	/** The chat view if it is open, without opening it. UI thread. */
 	public static Optional<ChatView> find() {
@@ -133,6 +159,7 @@ public class ChatView extends ViewPart {
 		EditorTracker.install();
 		updateTitle();
 		GridLayoutFactory.fillDefaults().spacing(0, 0).applyTo(parent);
+		createScopeBar(parent);
 		try {
 			browser = new Browser(parent, SWT.NONE);
 		} catch (org.eclipse.swt.SWTError e) {
@@ -289,6 +316,8 @@ public class ChatView extends ViewPart {
 		getViewSite().getActionBars().getMenuManager().add(openLog);
 		newSession();
 		setMode(ChatMode.NORMAL);
+		BellaPlugin.getDefault().devScope().addListener(scopeListener);
+		scopeJob.schedule();
 	}
 
 	/** Selects a mode in the drop-down and uses it from the next tool call on. UI thread. */
@@ -435,6 +464,8 @@ public class ChatView extends ViewPart {
 		setPlanning(false);
 		newSession();
 		codeBlocks.clear();
+		announcedScope = "";
+		scopeChosen = false;
 		js("showEmpty()");
 		updateStatus();
 	}
@@ -479,6 +510,231 @@ public class ChatView extends ViewPart {
 
 	private static String str(String s) {
 		return Json.GSON.toJson(s);
+	}
+
+	// ---- development package and transport request ------------------------------------
+
+	/** Package and request of the chat, above it; chosen here or by Bella when the developer names them. */
+	private void createScopeBar(Composite parent) {
+		scopeBar = new Composite(parent, SWT.NONE);
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(scopeBar);
+		GridLayoutFactory.swtDefaults().numColumns(5).margins(6, 4).applyTo(scopeBar);
+		Label pkgLabel = new Label(scopeBar, SWT.NONE);
+		pkgLabel.setText(Messages.get("chat.scope.package"));
+		packageChoice = new Combo(scopeBar, SWT.DROP_DOWN);
+		packageChoice.setToolTipText(Messages.get("chat.scope.packageTip"));
+		GridDataFactory.fillDefaults().grab(true, false).hint(140, SWT.DEFAULT).applyTo(packageChoice);
+		// Enter in the field or a package from the list
+		packageChoice.addListener(SWT.DefaultSelection, e -> choosePackage(packageChoice.getText()));
+		packageChoice.addListener(SWT.Selection, e -> choosePackage(packageChoice.getText()));
+		packageSearch = new Button(scopeBar, SWT.PUSH);
+		packageSearch.setText("…");
+		packageSearch.setToolTipText(Messages.get("chat.scope.searchTip"));
+		packageSearch.addListener(SWT.Selection, e -> searchPackage());
+		Label trLabel = new Label(scopeBar, SWT.NONE);
+		trLabel.setText(Messages.get("chat.scope.transport"));
+		transportChoice = new Combo(scopeBar, SWT.READ_ONLY | SWT.DROP_DOWN);
+		transportChoice.setToolTipText(Messages.get("chat.scope.transportTip"));
+		GridDataFactory.fillDefaults().grab(true, false).hint(160, SWT.DEFAULT).applyTo(transportChoice);
+		transportChoice.addListener(SWT.Selection, e -> {
+			int i = transportChoice.getSelectionIndex();
+			if (i >= 0 && i < transportIds.size() && !transportIds.get(i).isEmpty()
+					&& (shownScope == null || !transportIds.get(i).equals(shownScope.transport()))) {
+				choose(null, transportIds.get(i));
+			}
+		});
+		scopeJob = Job.create(Messages.get("chat.scope.jobName"), monitor -> {
+			readScope();
+			return Status.OK_STATUS;
+		});
+		scopeJob.setSystem(true);
+		showScope(null, List.of(), null);
+	}
+
+	/** Job thread: package, request and, for a transported package, the developer's open requests. */
+	private void readScope() {
+		Optional<AdtToolProvider> tools = BellaPlugin.getDefault().adtTools();
+		AdtToolProvider.Scope scope = null;
+		List<AdtTransportRequest> requests = List.of();
+		String problem = null;
+		if (tools.isEmpty()) {
+			problem = Messages.get("chat.scope.noAdt");
+		} else {
+			try {
+				scope = tools.get().scope(CancelToken.NONE);
+				if (scope.pkg() != null && !scope.local()) {
+					requests = tools.get().openTransports(CancelToken.NONE);
+				}
+			} catch (IOException | RuntimeException e) {
+				problem = e.getMessage() == null ? e.toString() : e.getMessage();
+			}
+		}
+		AdtToolProvider.Scope s = scope;
+		List<AdtTransportRequest> r = requests;
+		String p = problem;
+		Display.getDefault().asyncExec(() -> showScope(s, r, p));
+	}
+
+	/** UI thread. {@code scope} is {@code null} when it cannot be read; {@code problem} says why. */
+	private void showScope(AdtToolProvider.Scope scope, List<AdtTransportRequest> requests, String problem) {
+		if (scopeBar == null || scopeBar.isDisposed()) {
+			return;
+		}
+		shownScope = scope;
+		String pkg = scope == null || scope.pkg() == null ? "" : scope.pkg();
+		packageChoice.setItems(packageHistory().toArray(String[]::new));
+		packageChoice.setText(pkg);
+		packageChoice.setToolTipText(scope == null ? problem
+				: scope.editorObject() != null ? Messages.fmt("chat.scope.locked", scope.editorObject())
+						: Messages.get("chat.scope.packageTip"));
+		List<String> ids = new ArrayList<>();
+		transportChoice.removeAll();
+		if (scope == null || scope.pkg() == null) {
+			ids.add("");
+			transportChoice.add(Messages.get("chat.scope.packageFirst"));
+		} else if (scope.local()) {
+			ids.add("");
+			transportChoice.add(Messages.get("chat.scope.local"));
+		} else {
+			String current = scope.transport();
+			if (current == null) {
+				ids.add("");
+				transportChoice.add(Messages.get("chat.scope.chooseTransport"));
+			}
+			for (AdtTransportRequest t : requests) {
+				ids.add(t.id().toUpperCase(java.util.Locale.ROOT));
+				transportChoice.add(t.id().toUpperCase(java.util.Locale.ROOT)
+						+ (t.description().isBlank() ? "" : "  " + t.description()));
+			}
+			if (current != null && !ids.contains(current)) {
+				ids.add(0, current);
+				transportChoice.add(current, 0);
+			}
+		}
+		transportIds = ids;
+		transportChoice.select(scope == null || scope.transport() == null ? 0 : ids.indexOf(scope.transport()));
+		if (scope != null && scope.pkg() != null) {
+			remember(scope.pkg());
+		}
+		enableScope();
+		announceScope(scope);
+		scopeBar.layout(true, true);
+	}
+
+	/** Locked while Bella answers, without SAP and, for the package, while an editor object binds it. */
+	private void enableScope() {
+		if (scopeBar == null || scopeBar.isDisposed()) {
+			return;
+		}
+		boolean idle = running == null && shownScope != null;
+		boolean ownPackage = idle && shownScope.editorObject() == null;
+		packageChoice.setEnabled(ownPackage);
+		packageSearch.setEnabled(ownPackage);
+		transportChoice.setEnabled(idle && shownScope.pkg() != null && !shownScope.local());
+	}
+
+	/** A note in the chat whenever package or request change, whoever changed them. */
+	private void announceScope(AdtToolProvider.Scope scope) {
+		if (scope == null || scope.pkg() == null) {
+			announcedScope = "";
+			return;
+		}
+		String key = scope.pkg() + "|" + scope.transport();
+		if (key.equals(announcedScope)) {
+			return;
+		}
+		announcedScope = key;
+		String text = scope.local() || scope.transport() == null ? Messages.fmt("chat.scope.notice", scope.pkg())
+				: Messages.fmt("chat.scope.noticeTransport", scope.pkg(), scope.transport());
+		if (scope.editorObject() != null) {
+			text += " " + Messages.fmt("chat.scope.noticeEditor", scope.editorObject());
+		}
+		js("notice(0,\"info\"," + str(Markdown.escape(text)) + ")");
+	}
+
+	private void choosePackage(String name) {
+		String pkg = name == null ? "" : name.trim().toUpperCase(java.util.Locale.ROOT);
+		if (pkg.isEmpty() || shownScope == null || pkg.equals(shownScope.pkg())) {
+			return;
+		}
+		choose(pkg, null);
+	}
+
+	private void searchPackage() {
+		Optional<AdtToolProvider> tools = BellaPlugin.getDefault().adtTools();
+		if (tools.isEmpty()) {
+			return;
+		}
+		PackageDialog dialog = new PackageDialog(getSite().getShell(), tools.get(), packageChoice.getText());
+		if (dialog.open() == PackageDialog.OK && dialog.result() != null) {
+			packageChoice.setText(dialog.result());
+			choosePackage(dialog.result());
+		}
+	}
+
+	/**
+	 * Records the developer's choice with the checks of adt_dev_package; a
+	 * refusal is shown and the bar returns to what is set. {@code null} keeps
+	 * a value.
+	 */
+	private void choose(String pkg, String transport) {
+		Optional<AdtToolProvider> tools = BellaPlugin.getDefault().adtTools();
+		if (tools.isEmpty()) {
+			return;
+		}
+		packageChoice.setEnabled(false);
+		transportChoice.setEnabled(false);
+		Job job = Job.create(Messages.get("chat.scope.jobName"), monitor -> {
+			Optional<String> refused = tools.get().choose(pkg, transport, CancelToken.NONE);
+			Display.getDefault().asyncExec(() -> {
+				if (refused.isPresent()) {
+					if (!scopeBar.isDisposed()) {
+						MessageDialog.openError(getSite().getShell(), Messages.get("chat.scope.title"), refused.get());
+					}
+				} else {
+					scopeChosen = true;
+					if (pkg != null) {
+						remember(pkg);
+					}
+				}
+				// a recorded choice reaches the bar through the scope listener as well
+				if (scopeJob != null) {
+					scopeJob.schedule();
+				}
+			});
+			return Status.OK_STATUS;
+		});
+		job.setSystem(true);
+		job.schedule();
+	}
+
+	/** The model reads package and request with adt_dev_package; this note tells it they were chosen here. */
+	private String withScopeNote(String prompt) {
+		if (!scopeChosen) {
+			return prompt;
+		}
+		scopeChosen = false;
+		return prompt + "\n\n" + SCOPE_NOTE;
+	}
+
+	static final String SCOPE_NOTE = "<dev_scope>The developer chose the development package and/or the transport "
+			+ "request above the chat. Read them with adt_dev_package; do not ask for them again.</dev_scope>";
+
+	private static List<String> packageHistory() {
+		String stored = BellaPlugin.getDefault().prefs().getString(Prefs.PACKAGE_HISTORY);
+		return stored == null || stored.isBlank() ? List.of() : List.of(stored.split(","));
+	}
+
+	/** Puts {@code pkg} first in the drop-down's history. */
+	private static void remember(String pkg) {
+		List<String> history = new ArrayList<>(packageHistory());
+		if (!history.isEmpty() && history.get(0).equals(pkg)) {
+			return;
+		}
+		history.remove(pkg);
+		history.add(0, pkg);
+		BellaPlugin.getDefault().prefs().setValue(Prefs.PACKAGE_HISTORY,
+				String.join(",", history.subList(0, Math.min(PACKAGE_HISTORY, history.size()))));
 	}
 
 	// ---- sending ------------------------------------------------------------------------
@@ -563,6 +819,7 @@ public class ChatView extends ViewPart {
 		setBusy(true);
 		updateStatus();
 		Renderer renderer = new Renderer(botId);
+		String sent = withScopeNote(prompt);
 		Job job = Job.create(Messages.get("chat.jobName"), (IProgressMonitor monitor) -> {
 			try {
 				List<String> toolErrors = new ArrayList<>();
@@ -571,7 +828,7 @@ public class ChatView extends ViewPart {
 					toolErrors.forEach(err -> renderer.notice("warn", Markdown.escape(err)));
 				}
 				shownToolErrors = List.copyOf(toolErrors);
-				session.ask(turnMode.apply(prompt), renderer, cancel);
+				session.ask(turnMode.apply(sent), renderer, cancel);
 				answered.set(!cancel.isCancelled() && !renderer.incomplete);
 			} catch (CancelToken.CancelledException e) {
 				renderer.notice("warn", Messages.get("chat.cancelled"));
@@ -603,6 +860,7 @@ public class ChatView extends ViewPart {
 		send.setEnabled(!busy);
 		planning.setEnabled(!busy || planActive); // releasing it stops a running plan
 		stop.setEnabled(busy);
+		enableScope();
 	}
 
 	private void cancel() {
@@ -614,6 +872,8 @@ public class ChatView extends ViewPart {
 
 	@Override
 	public void dispose() {
+		BellaPlugin.getDefault().devScope().removeListener(scopeListener);
+		scopeJob = null;
 		cancel();
 		if (session != null) {
 			session.close();
