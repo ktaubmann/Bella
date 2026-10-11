@@ -146,8 +146,10 @@ public final class ToolExecutor {
 		}
 		JsonObject effective = input;
 		if (rules.mode() == ChatMode.AUTO && ToolRegistry.ADT_PROVIDER_ID.equals(tool.providerId())
-				&& "adt_activate".equals(tool.remoteName())) {
-			// Automode tests every activation; the model can neither forget nor switch it off.
+				&& ("adt_activate".equals(tool.remoteName())
+						|| "adt_create_object".equals(tool.remoteName()) && input.has("objects"))) {
+			// Automode tests every activation, also the one at the end of a batch create; the model can
+			// neither forget nor switch it off.
 			effective = input.deepCopy();
 			effective.addProperty(AUTO_TEST, true);
 		}

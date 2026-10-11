@@ -168,7 +168,7 @@ public final class AdtToolProvider implements ToolProvider {
 			+ "headings (list and column headings).";
 	private static final String SYSTEM_DESC = "ABAP project / system id to use. Omit to use the system of the active editor.";
 	private static final String NAME_DESC = "Object name, e.g. ZCL_SALES_ORDER.";
-	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD. Omit if unknown.";
+	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), SKTD (knowledge transfer document). Omit if unknown.";
 
 	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
 			+ "module, needs 'group'), MSAG (message class), DTEL, DOMA, TTYP, TABL/DT (table), TABL/DS (structure), "
@@ -237,6 +237,17 @@ public final class AdtToolProvider implements ToolProvider {
 		return a;
 	}
 
+	/** 'package' and 'include_subpackages' of the tools that also run over a package. */
+	private static final String[] PACKAGE_PROPS = { "package", "string",
+			"Instead of 'name': run over the objects of this package.", "include_subpackages", "boolean",
+			"With 'package': also the objects of its subpackages (default false)." };
+
+	private static String[] withPackage(String... extra) {
+		List<String> p = new ArrayList<>(List.of(PACKAGE_PROPS));
+		p.addAll(List.of(extra));
+		return p.toArray(String[]::new);
+	}
+
 	private static String[] objectProps(String... extra) {
 		List<String> p = new ArrayList<>(List.of("name", "string", NAME_DESC, "type", "string", TYPE_DESC, "system",
 				"string", SYSTEM_DESC));
@@ -282,7 +293,9 @@ public final class AdtToolProvider implements ToolProvider {
 				Capability.SEARCH, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_read_source",
 				"Read the saved source or definition of a repository object: classes, interfaces, programs, CDS views, function modules, "
-						+ "DDIC tables and structures (fields and types), data elements, domains (incl. fixed values), table types and message classes. "
+						+ "DDIC tables and structures (fields and types), data elements, domains (incl. fixed values), table types, message classes, "
+						+ "classic DDIC views (VIEW), lock objects (ENQU), transactions (TRAN), enhancement implementations (ENHO) "
+						+ "and knowledge transfer documents (SKTD, the documented purpose of an object, as Markdown). "
 						+ "For classes, 'include' selects main (default), definitions, implementations, macros or testclasses. "
 						+ "To save tokens, read one method with 'method' or only matching lines with 'grep' instead of the whole source.",
 				schema(new String[] { "name" }, objectProps("include", "string",
@@ -316,13 +329,18 @@ public final class AdtToolProvider implements ToolProvider {
 				"Syntax check of an object. Pass 'source' to check code that is not saved yet (e.g. a proposed change) without writing it.",
 				schema(new String[] { "name" }, objectProps("source", "string", "Optional full source to check instead of the saved version.")),
 				Capability.SYNTAX_CHECK, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_run_unit_tests", "Run the ABAP Unit tests of an object and report failures.",
-				schema(new String[] { "name" }, objectProps()), Capability.UNIT_TEST, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_run_unit_tests",
+				"Run the ABAP Unit tests of an object ('name') or of all classes, programs and function groups of a "
+						+ "package ('package', with 'include_subpackages' also its subpackages) and report failures. "
+						+ "A package run can take minutes; use it to check a whole development, not after every change.",
+				schema(new String[0], objectProps(PACKAGE_PROPS)), Capability.UNIT_TEST, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_atc_check",
-				"Run ATC (ABAP Test Cockpit) checks on an object and list the findings by priority. ATC checks the "
-						+ "active version: activate first (or activate with run_atc, which runs ATC after a successful activation).",
-				schema(new String[] { "name" }, objectProps("check_variant", "string",
-						"ATC check variant; omit for the one set in Bella's preferences, else the system default.")),
+				"Run ATC (ABAP Test Cockpit) checks on an object ('name') or on all objects of a package ('package', "
+						+ "with 'include_subpackages' also its subpackages) and list the findings by priority. ATC checks the "
+						+ "active version: activate first (or activate with run_atc, which runs ATC after a successful activation). "
+						+ "A package run can take minutes.",
+				schema(new String[0], objectProps(withPackage("check_variant", "string",
+						"ATC check variant; omit for the one set in Bella's preferences, else the system default."))),
 				Capability.ATC, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_quickfix",
 				"SAP's quick fixes (Ctrl+1 in ADT) for a syntax or ATC finding. action 'list' shows the fixes for a "
@@ -351,19 +369,29 @@ public final class AdtToolProvider implements ToolProvider {
 				"More about one object, read only. action 'api_state': release state of an SAP object (C0 extend, C1 "
 						+ "use in cloud and key user apps, C2 remote API …) and its successor, before using it in ABAP "
 						+ "Cloud or clean core code; 'versions': version history of the source; 'version_source': the "
-						+ "source of one version ('version': its number); 'variants': variants of a program.",
+						+ "source of one version ('version': its number); 'diff': unified diff between two versions, "
+						+ "'from' (default active) and 'to' (default inactive), each active, inactive or a number from "
+						+ "'versions', e.g. to see the saved changes that are not activated yet; 'variants': variants "
+						+ "of a program.",
 				schema(new String[] { "name", "action" }, objectProps("action", "string",
-						"api_state, versions, version_source or variants.", "version", "string",
-						"version_source: version number from 'versions'.", "include", "string",
-						"Class include for versions, default main.")),
+						"api_state, versions, version_source, diff or variants.", "version", "string",
+						"version_source: version number from 'versions'.", "from", "string",
+						"diff: old side, active (default), inactive or a version number.", "to", "string",
+						"diff: new side, inactive (default), active or a version number.", "include", "string",
+						"Class include for versions and diff, default main.")),
 				null, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_navigate",
 				"Code navigation, read only. 'definition': where the symbol at line/column is defined; 'references': "
 						+ "where-used list of the object (without line), or the uses of the symbol at line/column; 'completion': ADT's code "
-						+ "completion at line/column; 'hierarchy': superclass, interfaces and subclasses of a class. "
+						+ "completion at line/column; 'hierarchy': superclass, interfaces and subclasses of a class; "
+						+ "'impact': what a CDS view (DDLS) reads and associates and what uses it (CDS views, behavior "
+						+ "and service definitions, bindings, access controls, metadata extensions, ABAP code), before "
+						+ "changing it; 'structure': includes and append structures of a table or structure (TABL). "
 						+ "Lines count from 1, columns from 0.",
 				schema(new String[] { "name", "action" }, objectProps("action", "string",
-						"definition, references, completion or hierarchy.", "line", "integer", "Line (from 1).",
+						"definition, references, completion, hierarchy, impact or structure.", "include_indirect",
+						"boolean", "impact: also uses through other objects (default false).", "appends", "boolean",
+						"structure: also look for append structures (default true).", "line", "integer", "Line (from 1).",
 						"column", "integer", "Column (from 0).", "include", "string", "Class include, default main.",
 						"source", "string", "Unsaved source to navigate in; default the saved source.")),
 				null, ToolSpec.Kind.READ));
@@ -417,13 +445,31 @@ public final class AdtToolProvider implements ToolProvider {
 						"Transport request, required for non-local objects unless already assigned.", "allow_errors",
 						"boolean", "Save even though the new source adds syntax errors; only for an intended step.")),
 				Capability.WRITE_SOURCE, ToolSpec.Kind.WRITE));
-		JsonObject createSchema = schema(new String[] { "name", "type", "description" }, createProps());
+		JsonObject createSchema = schema(new String[0], createProps());
 		addArrays(createSchema);
 		createSchema.getAsJsonObject("properties").getAsJsonObject("type").addProperty("description", CREATE_TYPE_DESC);
+		JsonObject batch = new JsonObject();
+		batch.addProperty("type", "array");
+		batch.addProperty("description", "Instead of one object: up to " + MAX_BATCH + " objects that depend on "
+				+ "each other, created in this order, each with the fields of a single create (name, type, "
+				+ "description, source …). 'package', 'transport', 'language' and 'system' given outside apply to "
+				+ "every entry that has none.");
+		JsonObject batchItem = new JsonObject();
+		batchItem.addProperty("type", "object");
+		batch.add("items", batchItem);
+		createSchema.getAsJsonObject("properties").add("objects", batch);
+		JsonObject activateAll = new JsonObject();
+		activateAll.addProperty("type", "boolean");
+		activateAll.addProperty("description", "With 'objects': activate all of them together at the end "
+				+ "(default true), so objects that need each other activate in one run.");
+		createSchema.getAsJsonObject("properties").add("activate", activateAll);
 		t.add(ToolSpec.of("adt_create_object",
-				"Create a new object, optionally with initial source; does not activate. Types: " + CREATE_TYPE_DESC
+				"Create a new object ('name', 'type', 'description'), optionally with initial source; does not "
+						+ "activate. Types: " + CREATE_TYPE_DESC
 						+ " Message classes take 'messages', data elements 'domain' or 'data_type' and labels, domains "
-						+ "'data_type' and 'length', table types 'row_type', service bindings 'service_definition'.",
+						+ "'data_type' and 'length', table types 'row_type', service bindings 'service_definition'. "
+						+ "Objects that depend on each other (domain and data element, table and its CDS view, a RAP "
+						+ "stack) go together in 'objects' and are activated together at the end.",
 				createSchema, Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
 		JsonObject metadataSchema = schema(new String[] { "name", "type" }, metadataProps());
 		addArrays(metadataSchema);
@@ -609,6 +655,25 @@ public final class AdtToolProvider implements ToolProvider {
 
 	@Override
 	public Optional<String> refuse(String name, JsonObject in, CancelToken cancel) {
+		if (name.equals("adt_create_object") && Json.arr(in, "objects") != null) {
+			// every entry passes the checks of a single create; their fills (package, transport) stay in the entry
+			List<JsonObject> items;
+			try {
+				items = batchItems(in);
+			} catch (IllegalArgumentException e) {
+				return Optional.of(e.getMessage());
+			}
+			JsonArray checked = new JsonArray();
+			for (JsonObject item : items) {
+				Optional<String> refused = refuse(name, item, cancel);
+				if (refused.isPresent()) {
+					return Optional.of(Json.str(item, "name") + ": " + refused.get() + " Nothing was created.");
+				}
+				checked.add(item);
+			}
+			in.add("objects", checked);
+			return Optional.empty();
+		}
 		if (scope != null) {
 			Optional<String> outside = scopeRefusal(name, in, cancel);
 			if (outside.isPresent()) {
@@ -1456,13 +1521,65 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private ToolResult unitTests(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
+		Optional<ToolResult> target = packageOrName(sys, c, in, cancel);
+		if (target.isPresent()) {
+			return target.get();
+		}
+		String pkg = Json.str(in, "package");
+		if (pkg != null && !pkg.isBlank()) {
+			PackageRuns.Selection s = PackageRuns.forUnitTests(c, pkg, flag(in, "include_subpackages", false),
+					scopeFilter(sys, c, cancel), cancel);
+			return ToolResult.ok(PackageRuns.unitTests(c, s, cancel));
+		}
 		AdtObjectRef ref = resolve(c, in, cancel);
 		return ToolResult.ok(c.runUnitTests(AdtObjectRef.objectUri(ref.uri()), cancel));
 	}
 
+	/**
+	 * Checks that a unit test or ATC call names either an object or a
+	 * package, and that a customer package is the development package.
+	 *
+	 * @return the refusal, empty when the call may run
+	 */
+	private Optional<ToolResult> packageOrName(AdtSystem sys, AdtClient c, JsonObject in, CancelToken cancel)
+			throws IOException {
+		String pkg = Json.str(in, "package");
+		boolean hasPackage = pkg != null && !pkg.isBlank();
+		boolean hasName = Json.str(in, "name") != null && !Json.str(in, "name").isBlank();
+		if (hasPackage == hasName) {
+			return Optional.of(ToolResult.error("Give either 'name' (one object) or 'package' (all its objects)."));
+		}
+		if (hasPackage && scope != null && DevScope.customer(pkg)) {
+			String dev = scopePackage(sys, c, cancel);
+			String p = pkg.trim().toUpperCase(Locale.ROOT);
+			if (dev == null) {
+				return Optional.of(ToolResult.error(p + " is a customer package; customer objects are used only "
+						+ "from the development package, which is not set. " + ASK_PACKAGE));
+			}
+			if (!p.equals(dev)) {
+				return Optional.of(ToolResult.error(p + " is not the development package " + dev
+						+ ". Bella ignores customer objects of other packages: do not use it. Do not retry; if it "
+						+ "is needed, tell the developer."));
+			}
+		}
+		return Optional.empty();
+	}
+
 	private ToolResult atc(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
+		Optional<ToolResult> target = packageOrName(sys, c, in, cancel);
+		if (target.isPresent()) {
+			return target.get();
+		}
+		String pkg = Json.str(in, "package");
+		if (pkg != null && !pkg.isBlank()) {
+			PackageRuns.Selection s = PackageRuns.forAtc(c, pkg, flag(in, "include_subpackages", false),
+					scopeFilter(sys, c, cancel), cancel);
+			return ToolResult.ok(PackageRuns.atc(c, s, Json.str(in, "check_variant"), cancel));
+		}
 		AdtObjectRef ref = resolve(c, in, cancel);
 		List<AdtClient.Message> msgs = c.atcCheck(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "check_variant"),
 				cancel);
@@ -1671,10 +1788,76 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.ok(body.isBlank() ? ref.name() + " has no variants."
 					: body.length() > DUMP_TEXT_CHARS ? body.substring(0, DUMP_TEXT_CHARS) + "\n…" : body);
 		}
+		case "diff" -> {
+			return diff(c, ref, objectUri, in, cancel);
+		}
 		default -> {
-			return ToolResult.error("action is api_state, versions, version_source or variants.");
+			return ToolResult.error("action is api_state, versions, version_source, diff or variants.");
 		}
 		}
+	}
+
+	/** Characters of a diff returned at most. */
+	static final int MAX_DIFF_CHARS = 60_000;
+
+	/**
+	 * Unified diff between two versions of a source: 'from' (default active)
+	 * and 'to' (default inactive), each active, inactive or a version number.
+	 */
+	private ToolResult diff(AdtClient c, AdtObjectRef ref, String objectUri, JsonObject in, CancelToken cancel)
+			throws IOException {
+		if (AdtClient.xmlOnly(ref.type())) {
+			return ToolResult.error(ref.name() + " has no source text to compare; read its versions with action "
+					+ "'versions'.");
+		}
+		String include = Json.str(in, "include");
+		String from = side(Json.str(in, "from"), "active");
+		String to = side(Json.str(in, "to"), "inactive");
+		List<AdtRevisions.Revision> revisions = null;
+		String[] texts = new String[2];
+		String[] sides = { from, to };
+		for (int i = 0; i < 2; i++) {
+			String v = sides[i];
+			if (v.equals("active") || v.equals("inactive")) {
+				texts[i] = c.readSource(objectUri, include, v, cancel);
+				continue;
+			}
+			if (revisions == null) {
+				revisions = c.revisions(versionsUri(ref, objectUri, include), cancel);
+			}
+			AdtRevisions.Revision found = null;
+			for (AdtRevisions.Revision r : revisions) {
+				if (v.equals(r.number()) || v.equals(r.id())) {
+					found = r;
+				}
+			}
+			if (found == null) {
+				return ToolResult.error("Unknown version '" + v + "'. Use active, inactive or a number from "
+						+ "action 'versions'.");
+			}
+			texts[i] = c.revisionText(found.uri(), cancel);
+		}
+		LineDiff.Result d = LineDiff.unified(texts[0], texts[1], label(from), label(to), 3);
+		String what = ref.name() + (include == null || include.isBlank() || include.equalsIgnoreCase("main") ? ""
+				: " (" + include + ")") + ", " + label(from) + " → " + label(to);
+		if (d.unchanged()) {
+			return ToolResult.ok(what + ": no difference."
+					+ (from.equals("active") && to.equals("inactive") ? " There are no saved changes that are not "
+							+ "activated yet." : ""));
+		}
+		String text = d.text();
+		if (text.length() > MAX_DIFF_CHARS) {
+			text = text.substring(0, MAX_DIFF_CHARS) + "\n… (diff cut; compare single includes or read the versions)";
+		}
+		return ToolResult.ok(what + ": +" + d.added() + " −" + d.removed() + " lines\n```diff\n" + text + "```");
+	}
+
+	private static String side(String value, String def) {
+		return value == null || value.isBlank() ? def : value.trim().toLowerCase(Locale.ROOT);
+	}
+
+	private static String label(String side) {
+		return side.equals("active") || side.equals("inactive") ? side : "version " + side;
 	}
 
 	private static String versionsUri(AdtObjectRef ref, String objectUri, String include) {
@@ -1736,6 +1919,21 @@ public final class AdtToolProvider implements ToolProvider {
 		String sourceUri = AdtObjectRef.sourceUri(objectUri, Json.str(in, "include"));
 		int line = Json.integer(in, "line", 0);
 		int column = Math.max(0, Json.integer(in, "column", 0));
+		if (a.equals("impact")) {
+			if (!ref.type().toUpperCase(Locale.ROOT).startsWith("DDLS")) {
+				return ToolResult.error("'impact' is for CDS views (DDLS); " + ref.name() + " is " + ref.type()
+						+ ". Use 'references' for other objects.");
+			}
+			return ToolResult.ok(AdtRelations.impact(c, ref, flag(in, "include_indirect", false),
+					scopeFilter(sys, c, cancel), cancel));
+		}
+		if (a.equals("structure")) {
+			if (!ref.type().toUpperCase(Locale.ROOT).startsWith("TABL")) {
+				return ToolResult.error("'structure' is for tables and structures (TABL); " + ref.name() + " is "
+						+ ref.type() + ".");
+			}
+			return ToolResult.ok(AdtRelations.structure(c, ref, flag(in, "appends", true), cancel));
+		}
 		if (a.equals("references")) {
 			String uri = line > 0 ? sourceUri + "#start=" + line + "," + column : objectUri;
 			List<AdtObjectRef> refs = c.whereUsed(uri, cancel);
@@ -1785,10 +1983,10 @@ public final class AdtToolProvider implements ToolProvider {
 					.append(p.description().isEmpty() ? "" : " - " + p.description()).append('\n'));
 			return ToolResult.ok(sb.toString());
 		}
-		return ToolResult.error("action is definition, references, completion or hierarchy.");
+		return ToolResult.error("action is definition, references, completion, hierarchy, impact or structure.");
 	}
 
-	private static final String OUTSIDE_PACKAGE = "Customer objects outside the development package, ignored: ";
+	static final String OUTSIDE_PACKAGE = "Customer objects outside the development package, ignored: ";
 
 	/** Whether a class or interface of a navigation result may be shown; the others are collected. */
 	private static boolean keep(Predicate<AdtObjectRef> allowed, String name, String type, List<String> hidden) {
@@ -2792,7 +2990,101 @@ public final class AdtToolProvider implements ToolProvider {
 				+ checks);
 	}
 
+	/** Objects one batch creates at most. */
+	static final int MAX_BATCH = 20;
+
+	/** Keys given once for a batch that apply to every entry without its own. */
+	private static final List<String> BATCH_SHARED = List.of("package", "transport", "language", "system");
+
+	/** The entries of a batch create with the shared keys filled in. */
+	private static List<JsonObject> batchItems(JsonObject in) {
+		JsonArray arr = Json.arr(in, "objects");
+		if (arr == null || arr.isEmpty()) {
+			throw new IllegalArgumentException("'objects' is empty.");
+		}
+		if (arr.size() > MAX_BATCH) {
+			throw new IllegalArgumentException("At most " + MAX_BATCH + " objects per call; split the rest.");
+		}
+		for (String key : List.of("name", "type", "source")) {
+			if (in.has(key)) {
+				throw new IllegalArgumentException("Give '" + key + "' inside each entry of 'objects', not outside.");
+			}
+		}
+		List<JsonObject> out = new ArrayList<>();
+		for (JsonElement e : arr) {
+			if (!e.isJsonObject()) {
+				throw new IllegalArgumentException("Every entry of 'objects' is an object with name, type and description.");
+			}
+			JsonObject item = e.getAsJsonObject().deepCopy();
+			item.remove("objects");
+			for (String key : BATCH_SHARED) {
+				String own = Json.str(item, key);
+				if ((own == null || own.isBlank()) && in.has(key)) {
+					item.add(key, in.get(key));
+				}
+			}
+			out.add(item);
+		}
+		return out;
+	}
+
+	private ToolResult createBatch(JsonObject in, CancelToken cancel) throws IOException {
+		List<JsonObject> items = batchItems(in);
+		StringBuilder sb = new StringBuilder();
+		JsonArray created = new JsonArray();
+		for (int i = 0; i < items.size(); i++) {
+			JsonObject item = items.get(i);
+			if (cancel.isCancelled()) {
+				return ToolResult.error(sb + "Cancelled; not created: " + names(items.subList(i, items.size())) + ".");
+			}
+			ToolResult r;
+			try {
+				r = create(item, cancel);
+			} catch (IOException | IllegalArgumentException e) {
+				r = ToolResult.error(e.getMessage());
+			}
+			if (r.isError()) {
+				return ToolResult.error(sb + "Stopped at " + Json.str(item, "name") + ": " + r.content()
+						+ (i + 1 < items.size() ? "\nNot created: " + names(items.subList(i + 1, items.size())) + "." : "")
+						+ (created.isEmpty() ? "" : "\nThe objects above exist and are not activated."));
+			}
+			sb.append(r.content()).append("\n\n");
+			JsonObject ref = new JsonObject();
+			ref.addProperty("name", Json.str(item, "name"));
+			ref.addProperty("type", AdtDdic.normalizeType(Json.str(item, "type")));
+			created.add(ref);
+		}
+		if (!flag(in, "activate", true)) {
+			return ToolResult.ok(sb + "Not activated; activate them together with adt_activate.");
+		}
+		JsonObject act = new JsonObject();
+		act.add("objects", created);
+		if (in.has("system")) {
+			act.add("system", in.get("system"));
+		}
+		for (String key : List.of("run_unit_tests", "run_atc")) {
+			if (in.has(key)) {
+				act.add(key, in.get(key));
+			}
+		}
+		ToolResult activated = activate(act, cancel);
+		return activated.isError() ? ToolResult.error(sb + activated.content())
+				: ToolResult.ok(sb + activated.content());
+	}
+
+	private static String names(List<JsonObject> items) {
+		return String.join(", ", items.stream().map(o -> String.valueOf(Json.str(o, "name"))).toList());
+	}
+
 	private ToolResult create(JsonObject in, CancelToken cancel) throws IOException {
+		if (Json.arr(in, "objects") != null) {
+			return createBatch(in, cancel);
+		}
+		for (String key : List.of("name", "type", "description")) {
+			if (Json.str(in, key) == null || Json.str(in, key).isBlank()) {
+				return ToolResult.error("Give '" + key + "' (or several objects in 'objects').");
+			}
+		}
 		AdtSystem s = system(in);
 		AdtClient c = client(s);
 		String type = AdtDdic.normalizeType(Json.str(in, "type"));
