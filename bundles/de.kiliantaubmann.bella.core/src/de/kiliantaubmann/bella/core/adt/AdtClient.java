@@ -1061,6 +1061,31 @@ public final class AdtClient {
 
 	/** ABAP Unit run over several objects; returns a readable summary. */
 	public String runUnitTests(List<String> objectUris, CancelToken cancel) throws IOException {
+		return unitTestResult(objectUris, false, cancel).summary();
+	}
+
+	/**
+	 * Outcome of an ABAP Unit run.
+	 *
+	 * @param methods test methods executed
+	 * @param failed  test methods with an alert
+	 * @param details failures and notes, one per line
+	 */
+	public record UnitResult(int methods, int failed, String details) {
+
+		public String summary() {
+			return (methods == 0 ? "No test methods were executed.\n"
+					: (methods - failed) + " of " + methods + " test methods passed.\n") + details;
+		}
+	}
+
+	/**
+	 * ABAP Unit run over several objects.
+	 *
+	 * @param withProgram name the tested object in front of each failure, for runs over many objects
+	 */
+	public UnitResult unitTestResult(List<String> objectUris, boolean withProgram, CancelToken cancel)
+			throws IOException {
 		StringBuilder refs = new StringBuilder();
 		for (String uri : objectUris) {
 			refs.append("<adtcore:objectReference adtcore:uri=\"").append(AdtXml.escape(uri)).append("\"/>");
@@ -1078,10 +1103,14 @@ public final class AdtClient {
 				+ "</adtcore:objectReferences></objectSet></adtcore:objectSets></aunit:runConfiguration>";
 		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/abapunit/testruns", UNIT_RESULT_TYPES, body,
 				"application/vnd.sap.adt.abapunit.testruns.config.v4+xml"), cancel);
-		return summarizeUnitResult(r.body());
+		return parseUnitResult(r.body(), withProgram);
 	}
 
 	static String summarizeUnitResult(String xml) throws IOException {
+		return parseUnitResult(xml, false).summary();
+	}
+
+	static UnitResult parseUnitResult(String xml, boolean withProgram) throws IOException {
 		Document doc = AdtXml.parse(xml);
 		StringBuilder sb = new StringBuilder();
 		int methods = 0;
@@ -1092,8 +1121,12 @@ public final class AdtClient {
 				List<Element> alerts = AdtXml.elements(m, "alert");
 				if (!alerts.isEmpty()) {
 					failed++;
-					sb.append("FAILED ").append(AdtXml.attr(cls, "name")).append("->").append(AdtXml.attr(m, "name"))
-							.append('\n');
+					sb.append("FAILED ");
+					String program = withProgram ? programOf(cls) : "";
+					if (!program.isEmpty()) {
+						sb.append(program).append(": ");
+					}
+					sb.append(AdtXml.attr(cls, "name")).append("->").append(AdtXml.attr(m, "name")).append('\n');
 					for (Element a : alerts) {
 						sb.append("  [").append(AdtXml.attr(a, "severity")).append("] ");
 						List<Element> titles = AdtXml.elements(a, "title");
@@ -1113,14 +1146,25 @@ public final class AdtClient {
 			for (Element a : AdtXml.elements(prog, "alert")) {
 				if (a.getParentNode() != null && a.getParentNode().getParentNode() == prog) {
 					List<Element> titles = AdtXml.elements(a, "title");
-					sb.append("Note: ").append(titles.isEmpty() ? AdtXml.attr(a, "kind") : AdtXml.text(titles.get(0)))
-							.append('\n');
+					sb.append("Note: ");
+					if (withProgram && !AdtXml.attr(prog, "name").isEmpty()) {
+						sb.append(AdtXml.attr(prog, "name")).append(": ");
+					}
+					sb.append(titles.isEmpty() ? AdtXml.attr(a, "kind") : AdtXml.text(titles.get(0))).append('\n');
 				}
 			}
 		}
-		String head = methods == 0 ? "No test methods were executed.\n"
-				: (methods - failed) + " of " + methods + " test methods passed.\n";
-		return head + sb;
+		return new UnitResult(methods, failed, sb.toString());
+	}
+
+	/** Name of the program element a test class belongs to, empty if none. */
+	private static String programOf(Element cls) {
+		for (Node n = cls.getParentNode(); n != null; n = n.getParentNode()) {
+			if (n instanceof Element e && "program".equals(e.getLocalName())) {
+				return AdtXml.attr(e, "name");
+			}
+		}
+		return "";
 	}
 
 	/** ATC check with the given variant (or the configured one, or the system default). */
@@ -1135,6 +1179,18 @@ public final class AdtClient {
 	 * reached is replaced by the system's own default, see {@link #atcNote()}.
 	 */
 	public List<Message> atcCheck(List<String> objectUris, String variant, CancelToken cancel) throws IOException {
+		return atcCheck(objectUris, variant, ATC_MAX_VERDICTS, cancel);
+	}
+
+	/** Findings one ATC run returns by default. */
+	static final int ATC_MAX_VERDICTS = 100;
+
+	/**
+	 * As {@link #atcCheck(List, String, CancelToken)}, returning at most
+	 * {@code maxVerdicts} findings.
+	 */
+	public List<Message> atcCheck(List<String> objectUris, String variant, int maxVerdicts, CancelToken cancel)
+			throws IOException {
 		atcNote = "";
 		String v = variant == null || variant.isBlank() ? atcVariant : variant.trim().toUpperCase(Locale.ROOT);
 		if (v.isBlank()) {
@@ -1148,7 +1204,7 @@ public final class AdtClient {
 			reason = "it failed a few minutes ago";
 		} else {
 			try {
-				return runAtc(objectUris, v, cancel);
+				return runAtc(objectUris, v, maxVerdicts, cancel);
 			} catch (AdtException e) {
 				if (!isRemoteFailure(e)) {
 					throw e;
@@ -1166,7 +1222,7 @@ public final class AdtClient {
 		if (fallback.equalsIgnoreCase(v)) {
 			throw new AdtException(500, "ATC with variant " + v + " is not possible: " + reason);
 		}
-		List<Message> out = runAtc(objectUris, fallback, cancel);
+		List<Message> out = runAtc(objectUris, fallback, maxVerdicts, cancel);
 		atcNote = "ATC ran with the local variant " + fallback + " instead of " + v + ", whose checks run in another "
 				+ "system that is not reachable (" + reason + "). Tell the developer; the remote checks are missing.";
 		return out;
@@ -1191,10 +1247,12 @@ public final class AdtClient {
 				|| m.contains("system failure") || m.contains("for dest") || m.contains("rfc destination"));
 	}
 
-	private List<Message> runAtc(List<String> objectUris, String v, CancelToken cancel) throws IOException {
+	private List<Message> runAtc(List<String> objectUris, String v, int maxVerdicts, CancelToken cancel)
+			throws IOException {
 		String worklist = send(AdtRequest.post("/sap/bc/adt/atc/worklists?checkVariant=" + enc(v), "text/plain", null,
 				null), cancel).body().trim();
-		String run = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><atc:run maximumVerdicts=\"100\" xmlns:atc=\"http://www.sap.com/adt/atc\">"
+		String run = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><atc:run maximumVerdicts=\"" + maxVerdicts
+				+ "\" xmlns:atc=\"http://www.sap.com/adt/atc\">"
 				+ "<objectSets xmlns:adtcore=\"http://www.sap.com/adt/core\"><objectSet kind=\"inclusive\"><adtcore:objectReferences>"
 				+ objectUris.stream().map(u -> "<adtcore:objectReference adtcore:uri=\"" + AdtXml.escape(u) + "\"/>")
 						.collect(Collectors.joining())

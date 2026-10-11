@@ -237,6 +237,17 @@ public final class AdtToolProvider implements ToolProvider {
 		return a;
 	}
 
+	/** 'package' and 'include_subpackages' of the tools that also run over a package. */
+	private static final String[] PACKAGE_PROPS = { "package", "string",
+			"Instead of 'name': run over the objects of this package.", "include_subpackages", "boolean",
+			"With 'package': also the objects of its subpackages (default false)." };
+
+	private static String[] withPackage(String... extra) {
+		List<String> p = new ArrayList<>(List.of(PACKAGE_PROPS));
+		p.addAll(List.of(extra));
+		return p.toArray(String[]::new);
+	}
+
 	private static String[] objectProps(String... extra) {
 		List<String> p = new ArrayList<>(List.of("name", "string", NAME_DESC, "type", "string", TYPE_DESC, "system",
 				"string", SYSTEM_DESC));
@@ -316,13 +327,18 @@ public final class AdtToolProvider implements ToolProvider {
 				"Syntax check of an object. Pass 'source' to check code that is not saved yet (e.g. a proposed change) without writing it.",
 				schema(new String[] { "name" }, objectProps("source", "string", "Optional full source to check instead of the saved version.")),
 				Capability.SYNTAX_CHECK, ToolSpec.Kind.READ));
-		t.add(ToolSpec.of("adt_run_unit_tests", "Run the ABAP Unit tests of an object and report failures.",
-				schema(new String[] { "name" }, objectProps()), Capability.UNIT_TEST, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_run_unit_tests",
+				"Run the ABAP Unit tests of an object ('name') or of all classes, programs and function groups of a "
+						+ "package ('package', with 'include_subpackages' also its subpackages) and report failures. "
+						+ "A package run can take minutes; use it to check a whole development, not after every change.",
+				schema(new String[0], objectProps(PACKAGE_PROPS)), Capability.UNIT_TEST, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_atc_check",
-				"Run ATC (ABAP Test Cockpit) checks on an object and list the findings by priority. ATC checks the "
-						+ "active version: activate first (or activate with run_atc, which runs ATC after a successful activation).",
-				schema(new String[] { "name" }, objectProps("check_variant", "string",
-						"ATC check variant; omit for the one set in Bella's preferences, else the system default.")),
+				"Run ATC (ABAP Test Cockpit) checks on an object ('name') or on all objects of a package ('package', "
+						+ "with 'include_subpackages' also its subpackages) and list the findings by priority. ATC checks the "
+						+ "active version: activate first (or activate with run_atc, which runs ATC after a successful activation). "
+						+ "A package run can take minutes.",
+				schema(new String[0], objectProps(withPackage("check_variant", "string",
+						"ATC check variant; omit for the one set in Bella's preferences, else the system default."))),
 				Capability.ATC, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_quickfix",
 				"SAP's quick fixes (Ctrl+1 in ADT) for a syntax or ATC finding. action 'list' shows the fixes for a "
@@ -1337,13 +1353,65 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private ToolResult unitTests(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
+		Optional<ToolResult> target = packageOrName(sys, c, in, cancel);
+		if (target.isPresent()) {
+			return target.get();
+		}
+		String pkg = Json.str(in, "package");
+		if (pkg != null && !pkg.isBlank()) {
+			PackageRuns.Selection s = PackageRuns.forUnitTests(c, pkg, flag(in, "include_subpackages", false),
+					scopeFilter(sys, c, cancel), cancel);
+			return ToolResult.ok(PackageRuns.unitTests(c, s, cancel));
+		}
 		AdtObjectRef ref = resolve(c, in, cancel);
 		return ToolResult.ok(c.runUnitTests(AdtObjectRef.objectUri(ref.uri()), cancel));
 	}
 
+	/**
+	 * Checks that a unit test or ATC call names either an object or a
+	 * package, and that a customer package is the development package.
+	 *
+	 * @return the refusal, empty when the call may run
+	 */
+	private Optional<ToolResult> packageOrName(AdtSystem sys, AdtClient c, JsonObject in, CancelToken cancel)
+			throws IOException {
+		String pkg = Json.str(in, "package");
+		boolean hasPackage = pkg != null && !pkg.isBlank();
+		boolean hasName = Json.str(in, "name") != null && !Json.str(in, "name").isBlank();
+		if (hasPackage == hasName) {
+			return Optional.of(ToolResult.error("Give either 'name' (one object) or 'package' (all its objects)."));
+		}
+		if (hasPackage && scope != null && DevScope.customer(pkg)) {
+			String dev = scopePackage(sys, c, cancel);
+			String p = pkg.trim().toUpperCase(Locale.ROOT);
+			if (dev == null) {
+				return Optional.of(ToolResult.error(p + " is a customer package; customer objects are used only "
+						+ "from the development package, which is not set. " + ASK_PACKAGE));
+			}
+			if (!p.equals(dev)) {
+				return Optional.of(ToolResult.error(p + " is not the development package " + dev
+						+ ". Bella ignores customer objects of other packages: do not use it. Do not retry; if it "
+						+ "is needed, tell the developer."));
+			}
+		}
+		return Optional.empty();
+	}
+
 	private ToolResult atc(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem sys = system(in);
+		AdtClient c = client(sys);
+		Optional<ToolResult> target = packageOrName(sys, c, in, cancel);
+		if (target.isPresent()) {
+			return target.get();
+		}
+		String pkg = Json.str(in, "package");
+		if (pkg != null && !pkg.isBlank()) {
+			PackageRuns.Selection s = PackageRuns.forAtc(c, pkg, flag(in, "include_subpackages", false),
+					scopeFilter(sys, c, cancel), cancel);
+			return ToolResult.ok(PackageRuns.atc(c, s, Json.str(in, "check_variant"), cancel));
+		}
 		AdtObjectRef ref = resolve(c, in, cancel);
 		List<AdtClient.Message> msgs = c.atcCheck(AdtObjectRef.objectUri(ref.uri()), Json.str(in, "check_variant"),
 				cancel);
