@@ -35,6 +35,16 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 		default:
 			break;
 		}
+		String vit = switch (full.indexOf('/') > 0 ? full.substring(0, full.indexOf('/')) : full) {
+		// classic DDIC views and transactions only answer on the generic workbench endpoint (as in ARC-1)
+		case "VIEW" -> "viewdv";
+		case "TRAN" -> "trant";
+		default -> null;
+		};
+		if (vit != null) {
+			return "/sap/bc/adt/vit/wb/object_type/" + vit + "/object_name/"
+					+ URLEncoder.encode(name.toUpperCase(Locale.ROOT), StandardCharsets.UTF_8);
+		}
 		String main = full;
 		int slash = main.indexOf('/');
 		if (slash > 0) {
@@ -55,6 +65,8 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 		case "DOMA" -> "/sap/bc/adt/ddic/domains/";
 		case "TTYP" -> "/sap/bc/adt/ddic/tabletypes/";
 		case "MSAG" -> "/sap/bc/adt/messageclass/";
+		case "ENQU" -> "/sap/bc/adt/ddic/lockobjects/sources/";
+		case "SKTD" -> "/sap/bc/adt/documentation/ktd/documents/";
 		default -> null;
 		};
 		return base == null ? null : base + encodeName(name);

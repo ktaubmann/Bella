@@ -340,6 +340,11 @@ public final class AdtClient {
 		case "PROGRAM", "REPORT" -> "PROG";
 		case "REPT", "TEXTPOOL", "TEXT_POOL", "TEXT_ELEMENTS", "TEXTELEMENTS" -> TEXT_POOL;
 		case "CDS" -> "DDLS";
+		case "TRANSACTION", "TCODE" -> "TRAN";
+		case "LOCK_OBJECT", "LOCKOBJECT" -> "ENQU";
+		case "KTD", "KNOWLEDGE_TRANSFER_DOCUMENT" -> "SKTD";
+		case "ENHANCEMENT", "ENHANCEMENT_IMPLEMENTATION" -> "ENHO";
+		case "DDIC_VIEW" -> "VIEW";
 		default -> t;
 		};
 	}
@@ -423,7 +428,8 @@ public final class AdtClient {
 	}
 
 	/** Main types ADT describes only as XML, without a source text. */
-	private static final List<String> XML_ONLY = List.of("DTEL", "DOMA", "TTYP", "MSAG", "VIEW", "SHLP", "ENQU");
+	private static final List<String> XML_ONLY = List.of("DTEL", "DOMA", "TTYP", "MSAG", "VIEW", "SHLP", "ENQU",
+			"TRAN", "SKTD");
 
 	/** Characters of an XML description kept by {@link #readDefinition}. */
 	static final int XML_SUMMARY_CHARS = 8_000;
@@ -445,6 +451,9 @@ public final class AdtClient {
 	 */
 	public String readDefinition(AdtObjectRef ref, CancelToken cancel) throws IOException {
 		String uri = AdtObjectRef.objectUri(ref.uri());
+		if (ref.type() != null && ref.type().toUpperCase(Locale.ROOT).startsWith("SKTD")) {
+			return knowledgeTransferDocument(ref, uri, cancel);
+		}
 		if (!xmlOnly(ref.type())) {
 			try {
 				return readSource(uri, null, cancel);
@@ -464,6 +473,52 @@ public final class AdtClient {
 			throw new AdtException(e.status(), "The definition of " + ref.name() + " (" + ref.type()
 					+ ") cannot be read through ADT on this SAP release. ARC-1 may be able to read it.");
 		}
+	}
+
+	/**
+	 * A knowledge transfer document as Markdown: ADT wraps the text of each
+	 * documented element base64 encoded in {@code <sktd:text>}.
+	 */
+	private String knowledgeTransferDocument(AdtObjectRef ref, String uri, CancelToken cancel) throws IOException {
+		AdtResponse r = exchange(transport, AdtRequest.get(uri, "application/vnd.sap.adt.sktdv2+xml, application/xml;q=0.8"),
+				cancel);
+		if (r.status() == 404) {
+			throw new AdtException(404, "No knowledge transfer document (SKTD) " + ref.name() + ". They are optional "
+					+ "documentation of an object; this one has none, or the name is wrong.");
+		}
+		if (!r.ok()) {
+			throw new AdtException(r.status(), AdtErrors.message(r));
+		}
+		return ktdText(r.body());
+	}
+
+	static String ktdText(String xml) throws IOException {
+		Document doc = AdtXml.parse(xml);
+		StringBuilder sb = new StringBuilder();
+		List<Element> elements = AdtXml.elements(doc, "element");
+		for (Element e : elements.isEmpty() ? List.of(doc.getDocumentElement()) : elements) {
+			List<Element> texts = AdtXml.elements(e, "text");
+			if (texts.isEmpty()) {
+				continue;
+			}
+			String encoded = AdtXml.text(texts.get(0)).replaceAll("\\s+", "");
+			if (encoded.isEmpty()) {
+				continue;
+			}
+			String text;
+			try {
+				text = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+			} catch (IllegalArgumentException notBase64) {
+				text = AdtXml.text(texts.get(0));
+			}
+			List<Element> ids = AdtXml.elements(e, "id");
+			String id = ids.isEmpty() ? "" : AdtXml.text(ids.get(0)).trim();
+			if (elements.size() > 1 && !id.isEmpty()) {
+				sb.append("## ").append(id).append("\n\n");
+			}
+			sb.append(text.strip()).append("\n\n");
+		}
+		return sb.isEmpty() ? "(The document has no text.)" : sb.toString().strip();
 	}
 
 	private static boolean isMissingEndpoint(AdtException e) {
@@ -1316,6 +1371,20 @@ public final class AdtClient {
 
 	/** Where-used list. */
 	public List<AdtObjectRef> whereUsed(String objectUri, CancelToken cancel) throws IOException {
+		return usages(objectUri, cancel).stream().map(Usage::ref).toList();
+	}
+
+	/**
+	 * One entry of a where-used list.
+	 *
+	 * @param direct    SAP grades the use as direct (false for uses through another object)
+	 * @param container a package or group node that only holds other entries
+	 */
+	public record Usage(AdtObjectRef ref, boolean direct, boolean container) {
+	}
+
+	/** Where-used list with SAP's grading of each use. */
+	public List<Usage> usages(String objectUri, CancelToken cancel) throws IOException {
 		String body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
 				+ "<usagereferences:usageReferenceRequest xmlns:usagereferences=\"http://www.sap.com/adt/ris/usageReferences\">"
 				+ "<usagereferences:affectedObjects/></usagereferences:usageReferenceRequest>";
@@ -1323,8 +1392,12 @@ public final class AdtClient {
 				"/sap/bc/adt/repository/informationsystem/usageReferences?uri=" + enc(objectUri),
 				"application/vnd.sap.adt.repository.usagereferences.result.v1+xml", body,
 				"application/vnd.sap.adt.repository.usagereferences.request.v1+xml"), cancel);
-		List<AdtObjectRef> out = new ArrayList<>();
-		for (Element e : AdtXml.elements(AdtXml.parse(r.body()), "referencedObject")) {
+		return parseUsages(r.body());
+	}
+
+	static List<Usage> parseUsages(String xml) throws IOException {
+		List<Usage> out = new ArrayList<>();
+		for (Element e : AdtXml.elements(AdtXml.parse(xml), "referencedObject")) {
 			String uri = AdtXml.attr(e, "uri");
 			List<Element> adt = AdtXml.elements(e, "adtObject");
 			Element src = adt.isEmpty() ? e : adt.get(0);
@@ -1332,8 +1405,14 @@ public final class AdtClient {
 			if (name.isEmpty()) {
 				continue;
 			}
-			out.add(new AdtObjectRef(uri.isEmpty() ? AdtXml.attr(src, "uri") : uri, name, AdtXml.attr(src, "type"),
-					"", AdtXml.attr(src, "description")));
+			List<Element> pkg = AdtXml.elements(src, "packageRef");
+			String type = AdtXml.attr(src, "type");
+			String usage = AdtXml.attr(e, "usageInformation");
+			boolean container = "false".equals(AdtXml.attr(e, "isResult"))
+					&& "true".equals(AdtXml.attr(e, "canHaveChildren"));
+			out.add(new Usage(new AdtObjectRef(uri.isEmpty() ? AdtXml.attr(src, "uri") : uri, name, type,
+					pkg.isEmpty() ? "" : AdtXml.attr(pkg.get(0), "name"), AdtXml.attr(src, "description")),
+					usage.isEmpty() || usage.contains("gradeDirect"), container));
 		}
 		return out;
 	}
