@@ -162,13 +162,48 @@ class AdtHttpTest {
 
 	@Test
 	void sendSaysWhenNoTokenCame() {
-		FakeAdt adt = adt().route("GET /sap/bc/rest/zorders", r -> new AdtResponse(405, "text/plain", ""))
-				.route("DELETE /sap/bc/rest/zorders/1", r -> new AdtResponse(204, "", ""));
+		FakeAdt adt = adt().route("GET /sap/opu/odata/sap/ZSRV/", r -> new AdtResponse(405, "text/plain", ""))
+				.route("DELETE /sap/opu/odata/sap/ZSRV/Items('1')", r -> new AdtResponse(204, "", ""));
 		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_http_send",
-				"{\"method\":\"DELETE\",\"url\":\"/sap/bc/rest/zorders/1\",\"headers\":{\"If-Match\":\"*\"}}");
+				"{\"method\":\"DELETE\",\"url\":\"/sap/opu/odata/sap/ZSRV/Items('1')\",\"headers\":{\"If-Match\":\"*\"}}");
 		assertFalse(r.isError(), r.content());
 		assertTrue(r.content().contains("No CSRF token"), r.content());
 		assertTrue(r.content().contains("HTTP 204"), r.content());
+	}
+
+	@Test
+	void restTargetsAreNeverReadForTheToken() {
+		FakeAdt adt = adt().route("DELETE /sap/bc/rest/zorders/1", r -> new AdtResponse(204, "", ""))
+				.route("POST /sap/bc/rest/zorders", r -> new AdtResponse(403, "text/plain", "CSRF token validation failed",
+						Map.of("x-csrf-token", "Required")));
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		ToolResult r = call(p, "adt_http_send", "{\"method\":\"DELETE\",\"url\":\"/sap/bc/rest/zorders/1\"}");
+		assertTrue(r.content().contains("HTTP 204"), r.content());
+		assertFalse(r.content().contains("CSRF"), r.content());
+		ToolResult needs = call(p, "adt_http_send", "{\"method\":\"POST\",\"url\":\"/sap/bc/rest/zorders\",\"body\":\"{}\"}");
+		assertTrue(needs.content().contains("Give 'token_url'"), needs.content());
+		assertTrue(adt.log.stream().noneMatch(l -> l.contains("GET")), adt.log.toString());
+	}
+
+	@Test
+	void logonDataIsRefusedInHeadersAndForms() {
+		FakeAdt adt = adt();
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		for (String json : List.of(
+				"{\"method\":\"POST\",\"url\":\"/sap/bc/rest/x\",\"headers\":{\"sap-user\":\"OTHER\",\"SAP-Password\":\"p\"}}",
+				"{\"method\":\"POST\",\"url\":\"/sap/bc/rest/x\",\"content_type\":\"application/x-www-form-urlencoded\","
+						+ "\"body\":\"a=1&sap-user=OTHER&sap-password=p\"}",
+				"{\"method\":\"POST\",\"url\":\"/sap/bc/rest/x\",\"headers\":{\"Content-Type\":\"application/x-www-form-urlencoded\"},"
+						+ "\"body\":\"%73ap-user=OTHER\"}",
+				"{\"method\":\"POST\",\"url\":\"/sap/bc/rest/x\",\"content_type\":\"multipart/form-data; boundary=b\","
+						+ "\"body\":\"--b\\r\\nContent-Disposition: form-data; name=\\\"sap-user\\\"\\r\\n\\r\\nOTHER\\r\\n--b--\"}",
+				"{\"method\":\"POST\",\"url\":\"/sap/bc/rest/x\",\"token_url\":\"/sap/bc/rest/x?sap-user=OTHER\"}")) {
+			ToolResult r = call(p, "adt_http_send", json);
+			assertTrue(r.isError() && r.content().contains("Logon parameters"), json + " -> " + r.content());
+		}
+		assertTrue(adt.log.isEmpty(), adt.log.toString());
+		// a JSON body may name the fields; ICF reads logon data from forms only
+		AdtHttp.checkBody("{\"sap-user\":\"x\"}", "application/json");
 	}
 
 	@Test
@@ -192,7 +227,16 @@ class AdtHttpTest {
 		assertEquals("/sap/opu/odata/sap/ZSRV/", AdtHttp.tokenPath("/sap/opu/odata/sap/ZSRV"));
 		assertEquals("/sap/opu/odata4/sap/zui/srvd_a2x/sap/z/0001/",
 				AdtHttp.tokenPath("/sap/opu/odata4/sap/zui/srvd_a2x/sap/z/0001/Items(1)"));
-		assertEquals("/sap/bc/rest/zorders/1", AdtHttp.tokenPath("/sap/bc/rest/zorders/1?x=1"));
+		// never the target itself: a GET there could read or run it
+		assertEquals(null, AdtHttp.tokenPath("/sap/bc/rest/zorders/1?x=1"));
+		// URL mangling, other casing and repeated slashes still lead to the service root
+		assertEquals("/sap(bD1kZQ==)/opu/odata/sap/ZSRV/",
+				AdtHttp.tokenPath("/sap(bD1kZQ==)/opu/odata/sap/ZSRV/Orders"));
+		assertEquals("/SAP/OPU/ODATA/sap/ZSRV/", AdtHttp.tokenPath("/SAP/OPU/ODATA/sap/ZSRV/Orders"));
+		assertEquals("/sap/opu/odata/sap/ZSRV/", AdtHttp.tokenPath("/sap//opu/odata/sap/ZSRV/Orders"));
+		assertTrue(AdtHttp.isODataUrl("/sap(bD1kZQ==)/OPU/odata4/sap/zui/srvd_a2x/sap/z/0001/Items"));
+		assertFalse(AdtHttp.isODataUrl("/sap/bc/rest/zorders"));
+		assertFalse(AdtHttp.isODataUrl("/sap/opu/odatax/y"));
 	}
 
 	@Test
@@ -223,7 +267,7 @@ class AdtHttpTest {
 							: new AdtResponse(201, "", "");
 				});
 		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_http_send",
-				"{\"method\":\"POST\",\"url\":\"/sap/bc/rest/z\",\"body\":\"{}\"}");
+				"{\"method\":\"POST\",\"url\":\"/sap/bc/rest/z\",\"body\":\"{}\",\"token_url\":\"/sap/bc/rest/z\"}");
 		assertFalse(r.isError(), r.content());
 		assertEquals(2, posts.size());
 		assertTrue(r.content().contains("HTTP 201"), r.content());

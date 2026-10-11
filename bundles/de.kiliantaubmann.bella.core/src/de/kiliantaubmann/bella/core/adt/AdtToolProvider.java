@@ -146,22 +146,7 @@ public final class AdtToolProvider implements ToolProvider {
 	// ---- schemas -------------------------------------------------------------
 
 	private static JsonObject schema(String[] required, String... props) {
-		JsonObject s = new JsonObject();
-		s.addProperty("type", "object");
-		JsonObject p = new JsonObject();
-		for (int i = 0; i + 2 < props.length; i += 3) {
-			JsonObject prop = new JsonObject();
-			prop.addProperty("type", props[i + 1]);
-			prop.addProperty("description", props[i + 2]);
-			p.add(props[i], prop);
-		}
-		s.add("properties", p);
-		JsonArray req = new JsonArray();
-		for (String r : required) {
-			req.add(r);
-		}
-		s.add("required", req);
-		return s;
+		return ToolSpec.schema(required, props);
 	}
 
 	private static final String TEXT_PART_DESC = "symbols (text symbols TEXT-nnn), selections (selection texts) or "
@@ -531,14 +516,18 @@ public final class AdtToolProvider implements ToolProvider {
 		t.add(ToolSpec.of("adt_http_send",
 				"Experimental. Send a changing HTTP request (POST, PUT, PATCH, DELETE) to a service of the SAP system to test it, e.g. "
 						+ "create an OData entity or call a REST handler; Bella always asks first. Runs with the "
-						+ "developer's ADT logon in one session and fetches the CSRF token itself. 'url' is host-relative "
+						+ "developer's ADT logon in one session and fetches the CSRF token itself (from the service "
+						+ "root for OData; for other services from 'token_url' if the service asks for one). 'url' is host-relative "
 						+ "(/sap/opu/odata/…, /sap/bc/rest/…, own ICF nodes; not /sap/bc/adt). Only when the developer "
 						+ "asks for it; read with adt_diagnose 'odata_request'.",
 				schema(new String[] { "method", "url" }, "method", "string", "POST, PUT, PATCH or DELETE.", "url",
 						"string", "Host-relative path with query; encode blanks as %20.", "headers", "object",
 						"Extra request headers, e.g. {\"If-Match\": \"*\"}; not Authorization, Cookie or x-csrf-token.",
 						"body", "string", "Request body.", "content_type", "string",
-						"Content type of the body; default application/json.", "system", "string", SYSTEM_DESC),
+						"Content type of the body; default application/json.", "token_url", "string",
+						"Non-OData services: a path of the same service whose GET is harmless, to fetch the CSRF token "
+								+ "from; Bella never sends a GET to 'url' for it.",
+						"system", "string", SYSTEM_DESC),
 				null, ToolSpec.Kind.WRITE));
 		t.add(ToolSpec.of("adt_trace_control",
 				"Start or stop traces; Bella always asks first. 'trace_start' arms an ABAP profiler trace for the next "
@@ -973,19 +962,27 @@ public final class AdtToolProvider implements ToolProvider {
 
 	/** The development package on this system (upper case), {@code null} if not known yet. */
 	private String scopePackage(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
+		String own = editorPackage(s, c, cancel);
+		// an editor object whose package SAP does not name leaves the choice to the developer
+		return own != null ? own : scope.developerPackage(s.destinationId());
+	}
+
+	/**
+	 * The package of the chat's editor object on this system, {@code null}
+	 * when there is none or SAP names none. The answer is kept, also an empty
+	 * one, so the chat window does not ask SAP on every focus.
+	 */
+	private String editorPackage(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
 		AdtEditorObject editor = scope.editorObject();
-		if (editor != null && editor.destinationId().equals(s.destinationId())) {
-			String pkg = scope.editorPackage(editor);
-			if (pkg == null) {
-				pkg = c.packageOf(editor.uri(), cancel);
-				if (pkg.isEmpty()) {
-					return null;
-				}
-				scope.editorPackage(editor, pkg);
-			}
-			return pkg.toUpperCase(Locale.ROOT);
+		if (editor == null || !editor.destinationId().equals(s.destinationId())) {
+			return null;
 		}
-		return scope.developerPackage(s.destinationId());
+		String pkg = scope.editorPackage(editor);
+		if (pkg == null) {
+			pkg = c.packageOf(editor.uri(), cancel);
+			scope.editorPackage(editor, pkg);
+		}
+		return pkg.isEmpty() ? null : pkg.toUpperCase(Locale.ROOT);
 	}
 
 	/** Objects may be used: SAP's always, customer objects only from the development package. */
@@ -1001,11 +998,10 @@ public final class AdtToolProvider implements ToolProvider {
 	private Optional<Refusal> recordChoice(AdtSystem s, AdtClient c, String pkg, String tr, CancelToken cancel)
 			throws IOException {
 		AdtEditorObject editor = scope.editorObject();
-		boolean fromEditor = editor != null && editor.destinationId().equals(s.destinationId());
+		String own = editorPackage(s, c, cancel);
 		if (pkg != null && !pkg.isBlank()) {
 			String wanted = pkg.trim().toUpperCase(Locale.ROOT);
-			if (fromEditor) {
-				String own = scopePackage(s, c, cancel);
+			if (own != null) {
 				if (!wanted.equals(own)) {
 					return Optional.of(new Refusal("The chat works on " + editor.name() + " from the editor, so the "
 							+ "development package is " + own + " and stays so. For another package start a new "
@@ -1048,7 +1044,7 @@ public final class AdtToolProvider implements ToolProvider {
 		String action = Json.str(in, "action");
 		action = action == null || action.isBlank() ? "get" : action.trim().toLowerCase(Locale.ROOT);
 		AdtEditorObject editor = scope.editorObject();
-		boolean fromEditor = editor != null && editor.destinationId().equals(s.destinationId());
+		boolean fromEditor = editorPackage(s, c, cancel) != null;
 		if (action.equals("set")) {
 			String pkg = Json.str(in, "package");
 			String tr = Json.str(in, "transport");
@@ -1105,10 +1101,11 @@ public final class AdtToolProvider implements ToolProvider {
 	/** The chat's package and request on the system it is bound to (else the default one). */
 	public Scope scope(CancelToken cancel) throws IOException {
 		AdtSystem s = system(scopeSystem());
-		String dev = scopePackage(s, client(s), cancel);
-		AdtEditorObject editor = scope.editorObject();
-		boolean fromEditor = editor != null && editor.destinationId().equals(s.destinationId());
-		return new Scope(s.label(), dev, fromEditor && dev != null ? editor.name() : null,
+		AdtClient c = client(s);
+		String own = editorPackage(s, c, cancel);
+		String dev = own != null ? own : scope.developerPackage(s.destinationId());
+		// the package field stays open while the editor object's package is unknown
+		return new Scope(s.label(), dev, own != null ? scope.editorObject().name() : null,
 				scope.transport(s.destinationId()));
 	}
 
@@ -2217,9 +2214,18 @@ public final class AdtToolProvider implements ToolProvider {
 		String method = AdtHttp.checkMethod(Json.str(in, "method"));
 		String url = AdtHttp.checkUrl(Json.str(in, "url"), false);
 		Map<String, String> headers = AdtHttp.headers(in);
+		String tokenUrl = Json.str(in, "token_url");
+		if (tokenUrl != null && !tokenUrl.isBlank()) {
+			tokenUrl = AdtHttp.checkUrl(tokenUrl, false);
+		}
+		String contentType = Json.str(in, "content_type");
+		String bodyType = contentType != null && !contentType.isBlank() ? contentType
+				: headers.entrySet().stream().filter(e -> e.getKey().equalsIgnoreCase("Content-Type"))
+						.map(Map.Entry::getValue).findFirst().orElse(null);
+		AdtHttp.checkBody(Json.str(in, "body"), bodyType);
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-			return ToolResult.ok(AdtHttp.send(session, method, url, headers, Json.str(in, "body"),
-					Json.str(in, "content_type"), cancel));
+			return ToolResult.ok(AdtHttp.send(session, method, url, headers, Json.str(in, "body"), contentType,
+					tokenUrl, cancel));
 		}
 	}
 
@@ -2644,30 +2650,40 @@ public final class AdtToolProvider implements ToolProvider {
 				+ (tr.isEmpty() ? "" : " (transport " + tr + ")");
 		// SAP answers 200 also when it stored the texts differently, so compare what it reads back
 		List<String> lost = AdtTextPool.differences(texts, c.textElements(ref.type(), ref.name(), part, cancel));
-		if (!lost.isEmpty() && part.equals("selections")) {
-			return selectionTextsByHand(ref.name(), texts, saved, lost);
-		}
-		if (!lost.isEmpty()) {
+		if (!lost.isEmpty() && !part.equals("selections")) {
 			return ToolResult.error(saved + ", but SAP did not keep the texts as written:\n- "
 					+ String.join("\n- ", lost) + "\nRead the part with adt_text_elements and write it again in the "
 					+ "format it shows; if that does not help, ask the developer to maintain the texts in SE38.");
 		}
+		if (!lost.isEmpty() && AdtTextPool.entries(texts).size() <= lost.size()) {
+			return selectionTextsByHand(ref.name(), texts, saved, lost); // none kept: nothing to activate
+		}
+		// selection texts SAP kept are activated even when others were dropped
+		String activation = activateTextPool(s, c, ref, cancel);
+		if (!lost.isEmpty()) {
+			return selectionTextsByHand(ref.name(), texts, saved + activation.replaceFirst("\\.$", ""), lost);
+		}
+		return ToolResult.ok(saved + activation);
+	}
+
+	/** Activates the text pool of an object; the result is the sentence end for the answer. */
+	private String activateTextPool(AdtSystem s, AdtClient c, AdtObjectRef ref, CancelToken cancel)
+			throws AdtException {
 		String poolUri = AdtClient.textElementsUri(ref.type(), ref.name());
 		AdtObjectRef pool = new AdtObjectRef(poolUri, ref.name(), AdtClient.TEXT_POOL, "", "");
 		List<AdtClient.Message> msgs;
 		try {
 			msgs = c.activate(List.of(pool), cancel);
 		} catch (IOException e) {
-			return ToolResult.ok(saved + ". The texts are still inactive: activating the text pool failed ("
-					+ e.getMessage() + "); activate " + ref.name() + " with adt_activate, it takes the pool along.");
+			return ". The texts are still inactive: activating the text pool failed (" + e.getMessage()
+					+ "); activate " + ref.name() + " with adt_activate, it takes the pool along.";
 		} finally {
 			inactive.remove(s.destinationId());
 		}
 		if (msgs.stream().anyMatch(m -> m.severity().equals("Error"))) {
-			return ToolResult.ok(saved + ". The texts are still inactive; activating the text pool reported:\n"
-					+ format(msgs));
+			return ". The texts are still inactive; activating the text pool reported:\n" + format(msgs);
 		}
-		return ToolResult.ok(saved + " and activated the text pool.");
+		return " and activated the text pool.";
 	}
 
 	/**
@@ -2682,7 +2698,14 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "activate the program first, then write them again. If they still do not stick, ask the "
 						+ "developer to maintain them in SE38 for ").append(program.trim().toUpperCase(Locale.ROOT))
 				.append(" (Goto > Text Elements > Selection Texts):");
-		AdtTextPool.entries(texts).forEach((key, text) -> sb.append("\n- ").append(key).append(": ").append(text));
+		// only the dropped ones: the others are stored
+		java.util.Set<String> dropped = new java.util.HashSet<>();
+		lost.forEach(l -> dropped.add(l.substring(0, Math.max(0, l.indexOf(':')))));
+		AdtTextPool.entries(texts).forEach((key, text) -> {
+			if (dropped.contains(key)) {
+				sb.append("\n- ").append(key).append(": ").append(text);
+			}
+		});
 		return ToolResult.error(sb.toString());
 	}
 

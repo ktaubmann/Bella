@@ -33,6 +33,29 @@ public record ToolSpec(String name, String description, JsonObject inputSchema, 
 		remoteName = remoteName == null ? name : remoteName;
 	}
 
+	/**
+	 * An object schema from {@code name, type, description} triples; the
+	 * names in {@code required} must be given.
+	 */
+	public static JsonObject schema(String[] required, String... props) {
+		JsonObject p = new JsonObject();
+		for (int i = 0; i + 2 < props.length; i += 3) {
+			JsonObject prop = new JsonObject();
+			prop.addProperty("type", props[i + 1]);
+			prop.addProperty("description", props[i + 2]);
+			p.add(props[i], prop);
+		}
+		JsonObject s = new JsonObject();
+		s.addProperty("type", "object");
+		s.add("properties", p);
+		com.google.gson.JsonArray req = new com.google.gson.JsonArray();
+		for (String r : required) {
+			req.add(r);
+		}
+		s.add("required", req);
+		return s;
+	}
+
 	public static ToolSpec of(String name, String description, JsonObject inputSchema, String capability, Kind kind) {
 		return new ToolSpec(name, description, inputSchema, capability, kind, null, name);
 	}

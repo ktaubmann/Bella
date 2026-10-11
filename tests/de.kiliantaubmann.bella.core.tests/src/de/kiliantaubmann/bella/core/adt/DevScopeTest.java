@@ -290,6 +290,25 @@ class DevScopeTest {
 	}
 
 	@Test
+	void anEditorObjectWithoutPackageLeavesTheChoiceToTheDeveloper() throws Exception {
+		DevScope scope = new DevScope();
+		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_nopkg", "ZCL_NOPKG", "CLAS/OC"));
+		FakeAdt adt = system().route("GET /sap/bc/adt/oo/classes/zcl_nopkg",
+				r -> FakeAdt.ok("<adtcore:object xmlns:adtcore=\"http://www.sap.com/adt/core\"/>"));
+		AdtToolProvider p = provider(adt, scope);
+		AdtToolProvider.Scope open = p.scope(CancelToken.NONE);
+		assertEquals(null, open.pkg());
+		assertEquals(null, open.editorObject());
+		assertEquals(Optional.empty(), p.choose("zsd_deliv", null, CancelToken.NONE));
+		AdtToolProvider.Scope chosen = p.scope(CancelToken.NONE);
+		assertEquals("ZSD_DELIV", chosen.pkg());
+		assertEquals(null, chosen.editorObject());
+		// SAP is asked for the editor object's package once, not on every look at the chat window
+		assertEquals(1, adt.log.stream().filter(l -> l.equals("GET /sap/bc/adt/oo/classes/zcl_nopkg")).count(),
+				adt.log.toString());
+	}
+
+	@Test
 	void aNamedPackageStaysWhenAnEditorObjectComes() {
 		DevScope scope = new DevScope();
 		scope.developerPackage("dev", "ZMM_OTHER");

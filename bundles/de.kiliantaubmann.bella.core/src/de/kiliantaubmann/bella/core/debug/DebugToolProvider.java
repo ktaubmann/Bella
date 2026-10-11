@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.tools.Capability;
@@ -82,22 +81,7 @@ public final class DebugToolProvider implements ToolProvider {
 	}
 
 	private static JsonObject schema(String[] required, String... props) {
-		JsonObject p = new JsonObject();
-		for (int i = 0; i + 2 < props.length; i += 3) {
-			JsonObject prop = new JsonObject();
-			prop.addProperty("type", props[i + 1]);
-			prop.addProperty("description", props[i + 2]);
-			p.add(props[i], prop);
-		}
-		JsonObject s = new JsonObject();
-		s.addProperty("type", "object");
-		s.add("properties", p);
-		JsonArray req = new JsonArray();
-		for (String r : required) {
-			req.add(r);
-		}
-		s.add("required", req);
-		return s;
+		return ToolSpec.schema(required, props);
 	}
 
 	@Override

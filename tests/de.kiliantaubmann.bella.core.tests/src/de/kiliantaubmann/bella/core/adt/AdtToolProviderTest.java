@@ -619,6 +619,25 @@ class AdtToolProviderTest {
 	}
 
 	@Test
+	void selectionTextsSapKeptAreActivatedWhenOthersAreDropped() {
+		FakeAdt adt = twoSystems()
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/textelements/programs/zrep/source/selections", r -> FakeAdt.ok(""))
+				.route("POST /sap/bc/adt/textelements/programs/zrep?_action=UNLOCK", r -> FakeAdt.ok(""))
+				.route("GET /sap/bc/adt/textelements/programs/zrep/source/selections",
+						r -> new AdtResponse(200, "text/plain", "P_A     =Alpha\r\nP_GONE  =?..."))
+				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(""));
+		ToolResult r = call(new AdtToolProvider(adt, () -> "dev"), "adt_write_text_elements",
+				"{\"name\":\"zrep\",\"type\":\"PROG\",\"part\":\"selections\",\"texts\":\"P_A=Alpha\\nP_GONE=Old\"}");
+		assertTrue(r.isError(), r.content());
+		assertTrue(r.content().contains("and activated the text pool, but SAP did not keep"), r.content());
+		assertTrue(r.content().endsWith("\n- P_GONE: Old"), r.content());
+		assertFalse(r.content().contains("- P_A: Alpha"), r.content());
+		assertTrue(adt.log.stream().anyMatch(l -> l.contains("/activation")), adt.log.toString());
+	}
+
+	@Test
 	void activationTakesTheInactiveTextPoolAlong() {
 		List<String> bodies = new ArrayList<>();
 		FakeAdt adt = twoSystems()

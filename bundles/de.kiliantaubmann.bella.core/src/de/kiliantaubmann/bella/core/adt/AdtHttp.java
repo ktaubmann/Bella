@@ -23,7 +23,7 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
  * {@code sap-statistics} follows ARC-1's {@code odata_perf}
  * ({@code src/adt/diagnostics.ts}, MIT).
  */
-final class AdtHttp {
+public final class AdtHttp {
 
 	static final List<String> SEND_METHODS = List.of("POST", "PUT", "PATCH", "DELETE");
 	/** Headers Bella or the logon sets; the model must not override them. */
@@ -38,6 +38,11 @@ final class AdtHttp {
 			Pattern.CASE_INSENSITIVE);
 	/** Query parameters that would log on as another user. */
 	private static final Set<String> LOGON_PARAMS = Set.of("sap-user", "sap-password", "sap-alias");
+	private static final String LOGON_REFUSED = "Logon parameters (sap-user, sap-password, sap-alias) are not "
+			+ "allowed, neither in the url nor as headers or form fields; the request uses the developer's ADT logon.";
+	/** A multipart part named like a logon parameter, e.g. {@code name="sap-user"}. */
+	private static final Pattern MULTIPART_LOGON = Pattern
+			.compile("(?i)\\bname\\s*=\\s*\"?\\s*sap-(?:user|password|alias)\\b");
 	/**
 	 * What ICF strips from a path segment before it routes: URL mangling such
 	 * as {@code /sap(bD1kZQ==)/} and matrix parameters such as {@code ;x=1}.
@@ -94,8 +99,7 @@ final class AdtHttp {
 			}
 		}
 		if (hasLogonParam(u)) {
-			throw new IllegalArgumentException("Logon parameters (sap-user, sap-password, sap-alias) are not allowed; "
-					+ "the request uses the developer's ADT logon.");
+			throw new IllegalArgumentException(LOGON_REFUSED);
 		}
 		return u;
 	}
@@ -133,6 +137,23 @@ final class AdtHttp {
 		return false;
 	}
 
+	/**
+	 * Refuses a body that carries logon parameters as form fields, which ICF
+	 * reads like those in the query string.
+	 *
+	 * @param contentType the type the body is sent with
+	 */
+	static void checkBody(String body, String contentType) {
+		if (body == null || body.isEmpty()) {
+			return;
+		}
+		String type = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+		if (type.contains("x-www-form-urlencoded") && hasLogonParam("?" + body.strip())
+				|| type.contains("multipart/") && MULTIPART_LOGON.matcher(body).find()) {
+			throw new IllegalArgumentException(LOGON_REFUSED);
+		}
+	}
+
 	static boolean isOData(String path) {
 		return path.equals("/sap/opu/odata") || path.startsWith("/sap/opu/odata/") || path.equals("/sap/opu/odata4")
 				|| path.startsWith("/sap/opu/odata4/");
@@ -156,6 +177,10 @@ final class AdtHttp {
 			if (FORBIDDEN_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
 				throw new IllegalArgumentException("Header " + name
 						+ " is set by the ADT logon or by Bella and cannot be given.");
+			}
+			if (LOGON_PARAMS.contains(name.toLowerCase(Locale.ROOT))) {
+				// ICF also takes logon data from request headers
+				throw new IllegalArgumentException(LOGON_REFUSED);
 			}
 			String value = e.getValue().isJsonPrimitive() ? e.getValue().getAsString() : String.valueOf(e.getValue());
 			if (value.chars().anyMatch(ch -> ch == '\r' || ch == '\n')) {
@@ -278,22 +303,63 @@ final class AdtHttp {
 	}
 
 	/**
-	 * Where to fetch the CSRF token: the service root for OData (its service
-	 * document is small and runs no application logic), else the path itself.
-	 * A GET on an entity set would read the whole set, a GET on a function
-	 * import would run it.
+	 * Where to fetch the CSRF token: the service root for OData, whose
+	 * service document is small and runs no application logic; {@code null}
+	 * for other paths. A GET on the target itself could read a whole entity
+	 * set or run a handler the developer did not approve.
 	 */
 	static String tokenPath(String url) {
 		String raw = url.split("\\?", 2)[0];
-		String[] seg = raw.split("/");
-		// "", "sap", "opu", "odata", namespace, service[, …]
-		String lower = raw.toLowerCase(Locale.ROOT);
-		int keep = lower.startsWith("/sap/opu/odata4/") ? 10 // …/odata4/<ns>/<group>/srvd_a2x/<ns>/<srv>/<version>
-				: lower.startsWith("/sap/opu/odata/") ? 6 : 0;
-		if (keep == 0 || seg.length < keep) {
-			return raw;
+		// segments as ICF routes them; URL mangling, matrix parameters and empty segments do not count
+		List<String> seg = new java.util.ArrayList<>();
+		for (String part : raw.split("/")) {
+			if (!part.isEmpty()) {
+				seg.add(part);
+			}
 		}
-		return String.join("/", java.util.Arrays.copyOf(seg, keep)) + "/";
+		String kind = odataKind(seg);
+		int keep = kind == null ? 0 : kind.equals("odata4") ? 9 // odata4/<ns>/<group>/srvd_a2x/<ns>/<srv>/<version>
+				: 5; // odata/<namespace>/<service>
+		if (keep == 0 || seg.size() < keep) {
+			return null;
+		}
+		return "/" + String.join("/", seg.subList(0, keep)) + "/";
+	}
+
+	/**
+	 * Whether a host-relative url goes to SAP Gateway (OData), as ICF routes
+	 * it: also with URL mangling, other casing or repeated slashes.
+	 */
+	public static boolean isODataUrl(String url) {
+		List<String> seg = new java.util.ArrayList<>();
+		for (String part : (url == null ? "" : url).split("[?#]", 2)[0].split("/")) {
+			if (!part.isEmpty()) {
+				seg.add(part);
+			}
+		}
+		return odataKind(seg) != null && seg.size() > 3;
+	}
+
+	/** {@code odata} or {@code odata4} when the path segments start with sap/opu/odata(4), else {@code null}. */
+	private static String odataKind(List<String> segments) {
+		if (segments.size() < 3) {
+			return null;
+		}
+		List<String> routed = segments.subList(0, 3).stream().map(AdtHttp::routedSegment).toList();
+		if (!routed.get(0).equals("sap") || !routed.get(1).equals("opu")) {
+			return null;
+		}
+		return routed.get(2).equals("odata") || routed.get(2).equals("odata4") ? routed.get(2) : null;
+	}
+
+	private static String routedSegment(String segment) {
+		String decoded;
+		try {
+			decoded = URLDecoder.decode(segment.replace("+", "%2B"), StandardCharsets.UTF_8);
+		} catch (IllegalArgumentException e) {
+			decoded = segment;
+		}
+		return routedPath(decoded);
 	}
 
 	/**
@@ -303,15 +369,20 @@ final class AdtHttp {
 	 * {@link #checkUrl}).
 	 */
 	static String send(AdtTransport.Session session, String method, String url, Map<String, String> headers,
-			String body, String contentType, CancelToken cancel) throws IOException {
+			String body, String contentType, String tokenUrl, CancelToken cancel) throws IOException {
 		String m = checkMethod(method);
 		String u = url.trim();
-		String tokenPath = tokenPath(u);
-		AdtResponse tokenResponse = AdtClient.exchange(session,
-				new AdtRequest("GET", tokenPath, Map.of("x-csrf-token", "Fetch", "Accept", "*/*"), null, null), cancel);
-		String token = tokenResponse.header("x-csrf-token");
-		if (token != null && (token.isBlank() || token.equalsIgnoreCase("Required"))) {
-			token = null;
+		String tokenPath = tokenUrl == null || tokenUrl.isBlank() ? tokenPath(u) : tokenUrl.trim();
+		AdtResponse tokenResponse = null;
+		String token = null;
+		if (tokenPath != null) {
+			tokenResponse = AdtClient.exchange(session,
+					new AdtRequest("GET", tokenPath, Map.of("x-csrf-token", "Fetch", "Accept", "*/*"), null, null),
+					cancel);
+			token = tokenResponse.header("x-csrf-token");
+			if (token != null && (token.isBlank() || token.equalsIgnoreCase("Required"))) {
+				token = null;
+			}
 		}
 		Map<String, String> h = withDefaults(Map.of("Accept", "application/json"), headers);
 		// a Content-Type header is the body's type; sent once, as the body's
@@ -327,6 +398,7 @@ final class AdtHttp {
 		if (type == null && body != null && !body.isBlank()) {
 			type = "application/json";
 		}
+		checkBody(body, type);
 		String payload = body == null || body.isEmpty() ? null : body;
 		long start = System.nanoTime();
 		AdtResponse r = AdtClient.exchange(session, new AdtRequest(m, u, withToken(h, token), payload, type), cancel);
@@ -339,7 +411,13 @@ final class AdtHttp {
 		long ms = (System.nanoTime() - start) / 1_000_000;
 		StringBuilder sb = new StringBuilder(m).append(' ').append(u).append("\nHTTP ").append(r.status()).append(", ")
 				.append(ms).append(" ms\n");
-		if (token == null) {
+		if (tokenPath == null && csrfRefused(r)) {
+			sb.append("The service wants a CSRF token. Bella fetches it only from an OData service root or from "
+					+ "'token_url', not with a GET on the target, which could read or run it. Give 'token_url': a "
+					+ "path of the same service whose GET is harmless. Nothing was changed.\n");
+			return sb.append(describe(r)).toString();
+		}
+		if (tokenPath != null && token == null) {
 			sb.append("No CSRF token came back from GET ").append(tokenPath).append(" (HTTP ")
 					.append(tokenResponse.status()).append("); the request was sent without one.\n");
 		}

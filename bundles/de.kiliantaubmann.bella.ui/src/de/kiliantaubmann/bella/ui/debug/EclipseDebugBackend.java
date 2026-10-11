@@ -20,6 +20,7 @@ import org.eclipse.debug.core.IDebugEventSetListener;
 import org.eclipse.debug.core.model.IBreakpoint;
 import org.eclipse.debug.core.model.IDebugElement;
 import org.eclipse.debug.core.model.IDebugTarget;
+import org.eclipse.debug.core.model.IIndexedValue;
 import org.eclipse.debug.core.model.ILineBreakpoint;
 import org.eclipse.debug.core.model.IStackFrame;
 import org.eclipse.debug.core.model.IThread;
@@ -283,8 +284,7 @@ public final class EclipseDebugBackend implements DebugBackend {
 				if (resource != null && bp.getMarker() != null && resource.equals(bp.getMarker().getResource())) {
 					return true;
 				}
-				String label = labels.getText(bp);
-				if (label != null && label.toUpperCase(Locale.ROOT).contains(object.toUpperCase(Locale.ROOT))) {
+				if (labelNames(labels.getText(bp), object)) {
 					return true;
 				}
 			}
@@ -292,6 +292,18 @@ public final class EclipseDebugBackend implements DebugBackend {
 			labels.dispose();
 		}
 		return false;
+	}
+
+	/**
+	 * Whether a breakpoint label names the object as a whole name: a label of
+	 * ZCL_ORDER_ITEM does not name ZCL_ORDER.
+	 */
+	static boolean labelNames(String label, String object) {
+		if (label == null || object == null || object.isBlank()) {
+			return false;
+		}
+		return java.util.regex.Pattern.compile("(?<![A-Z0-9_/])" + java.util.regex.Pattern.quote(object.trim().toUpperCase(Locale.ROOT))
+				+ "(?![A-Z0-9_/])").matcher(label.toUpperCase(Locale.ROOT)).find();
 	}
 
 	private static int lineBreakpointCount() {
@@ -442,13 +454,22 @@ public final class EclipseDebugBackend implements DebugBackend {
 		private int loaded;
 
 		List<Variable> load(IVariable[] vars, int depth, int max) throws DebugException {
+			return load(vars, vars.length, depth, max);
+		}
+
+		/**
+		 * @param total how many variables there are; {@code vars} may hold only
+		 *              the first ones
+		 */
+		private List<Variable> load(IVariable[] vars, int total, int depth, int max) throws DebugException {
 			List<Variable> out = new ArrayList<>();
 			for (int i = 0; i < vars.length && i < max; i++) {
 				out.add(load(vars[i], depth));
 			}
-			// the rest by name only, so DebugSnapshot#format can say how many more there are
-			for (int i = max; i < vars.length; i++) {
-				out.add(Variable.of(vars[i].getName(), "", ""));
+			// the rest only counted, so DebugSnapshot#format can say how many more there are; asking each for
+			// its name would be a round trip per row of a large internal table
+			if (total > out.size()) {
+				out.addAll(java.util.Collections.nCopies(total - out.size(), Variable.of("", "", "")));
 			}
 			return out;
 		}
@@ -466,10 +487,19 @@ public final class EclipseDebugBackend implements DebugBackend {
 			if (depth >= DebugSnapshot.DEPTH && !group || exhausted()) {
 				return new Variable(v.getName(), type, text, List.of(), true);
 			}
-			IVariable[] children = value.getVariables();
 			int max = group ? DebugSnapshot.MAX_VARIABLES : DebugSnapshot.MAX_CHILDREN;
+			IVariable[] children;
+			int total;
+			if (value instanceof IIndexedValue indexed && indexed.getSize() > max) {
+				// rows of an internal table: fetch only those that are shown
+				total = indexed.getSize();
+				children = indexed.getVariables(indexed.getInitialOffset(), max);
+			} else {
+				children = value.getVariables();
+				total = children.length;
+			}
 			// a group such as "Locals" counts as no level of its own
-			List<Variable> loadedChildren = load(children, group ? depth : depth + 1, max);
+			List<Variable> loadedChildren = load(children, total, group ? depth : depth + 1, max);
 			return new Variable(v.getName(), type, text, loadedChildren, false);
 		}
 

@@ -129,8 +129,9 @@ public final class SdkAdtBackend implements AdtBackend {
 					return true;
 				}
 			} catch (ReflectiveOperationException | RuntimeException e) {
-				Log.warn("adt", "opening " + objectUri + " failed: " + e);
-				return false;
+				// some releases fail here for URIs the external link still opens
+				Log.warn("adt", "opening " + objectUri + " failed, trying the external link: " + e);
+				break;
 			}
 		}
 		for (Method m : service.getClass().getMethods()) {

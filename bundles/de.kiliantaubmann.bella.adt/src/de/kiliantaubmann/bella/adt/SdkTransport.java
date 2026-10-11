@@ -214,8 +214,7 @@ final class SdkTransport implements AdtTransport.Session {
 		if (Reflection.bestMatch(IRestResource.class, "patch", monitor, headers, IResponse.class, body).isPresent()) {
 			return invoke(resource, "patch", monitor, headers, body);
 		}
-		String p = path == null ? "" : path.toLowerCase(java.util.Locale.ROOT);
-		if (!p.startsWith("/sap/opu/odata/") && !p.startsWith("/sap/opu/odata4/")) {
+		if (!de.kiliantaubmann.bella.core.adt.AdtHttp.isODataUrl(path)) {
 			throw new IOException("This ADT version cannot send PATCH, and " + path + " is no SAP Gateway (OData) "
 					+ "service that would read a POST with X-HTTP-Method: PATCH as one. Nothing was sent; use PUT "
 					+ "if the service accepts it.");
