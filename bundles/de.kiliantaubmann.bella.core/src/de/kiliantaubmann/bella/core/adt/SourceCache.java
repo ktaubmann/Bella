@@ -22,7 +22,7 @@ public final class SourceCache {
 		private static final long serialVersionUID = 1L;
 
 		@Override
-		protected boolean removeEldestEntry(Map.Entry<String, Entry> eldest) {
+		protected boolean removeEldestEntry(Map.Entry<String, SourceCache.Entry> eldest) {
 			return size() > MAX_ENTRIES;
 		}
 	};
