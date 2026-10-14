@@ -60,13 +60,36 @@ public class ClassSurgeryTest {
 		assertTrue(abs.contains("METHODS hook ABSTRACT.\nENDCLASS."), abs);
 		assertTrue(!abs.contains("METHOD hook."), abs);
 		assertThrows(SurgeryException.class, () -> ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS run.", "public"));
-		assertThrows(SurgeryException.class, () -> ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS x.", "protected"));
 		assertThrows(SurgeryException.class, () -> ClassSurgery.addMethod(CLASS, "ZCL_A", "DATA x TYPE i.", "public"));
 		String wrapped = ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS\n      size RETURNING VALUE(rv) TYPE i.", "public");
 		assertTrue(wrapped.contains("METHOD size.\n  ENDMETHOD."), wrapped);
 		SurgeryException chained = assertThrows(SurgeryException.class,
 				() -> ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS: size.", "public"));
 		assertTrue(chained.getMessage().contains("chain colon"), chained.getMessage());
+	}
+
+	@Test
+	void addsAMissingSectionInOrder() {
+		String prot = ClassSurgery.addMethod(CLASS, "ZCL_A", "METHODS x.", "protected");
+		assertTrue(prot.contains("    METHODS run IMPORTING iv_id TYPE i.\n  PROTECTED SECTION.\n    METHODS x.\n"
+				+ "  PRIVATE SECTION."), prot);
+		assertTrue(prot.contains("  METHOD x.\n  ENDMETHOD.\nENDCLASS."), prot);
+
+		String onlyPublic = """
+				CLASS zcl_b DEFINITION PUBLIC CREATE PUBLIC.
+				  PUBLIC SECTION.
+				ENDCLASS.
+
+				CLASS zcl_b IMPLEMENTATION.
+				ENDCLASS.
+				""";
+		String priv = ClassSurgery.addMethod(onlyPublic, "zcl_b", "METHODS helper.", "private");
+		assertTrue(priv.contains("  PUBLIC SECTION.\n  PRIVATE SECTION.\n    METHODS helper.\nENDCLASS."), priv);
+		assertTrue(priv.contains("CLASS zcl_b IMPLEMENTATION.\n  METHOD helper.\n  ENDMETHOD.\nENDCLASS."), priv);
+
+		String moved = ClassSurgery.changeVisibility(onlyPublic.replace("PUBLIC SECTION.\n",
+				"PUBLIC SECTION.\n    METHODS run.\n"), "zcl_b", "run", "protected");
+		assertTrue(moved.contains("  PUBLIC SECTION.\n  PROTECTED SECTION.\n    METHODS run.\nENDCLASS."), moved);
 	}
 
 	@Test

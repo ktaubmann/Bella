@@ -313,8 +313,7 @@ public final class ClassSurgery {
 			}
 		}
 		if (header == null) {
-			throw new SurgeryException("There is no " + visibility.toUpperCase(Locale.ROOT)
-					+ " SECTION; add it with edit_class_definition first.");
+			return insertInSection(addSection(src, cls, visibility), cls, visibility, decl);
 		}
 		int at = lineStart(src, next == null ? def.footerStart() : next.start());
 		String indent = AbapEdit.indentationOfLine(src, header.start()) + "  ";
@@ -323,6 +322,42 @@ public final class ClassSurgery {
 			lines.append(indent).append(l.strip()).append('\n');
 		}
 		return src.substring(0, at) + lines + src.substring(at);
+	}
+
+	/**
+	 * Adds an empty {@code visibility SECTION.} in ABAP's order (public,
+	 * protected, private): before the first later section, else before
+	 * ENDCLASS.
+	 */
+	private static String addSection(String src, String cls, String visibility) {
+		Block def = definition(src, cls);
+		int rank = VISIBILITIES.indexOf(visibility);
+		Statement later = null;
+		Statement any = null;
+		for (Statement st : AbapStructureScanner.statements(src)) {
+			if (st.start() < def.headerEnd() || st.start() >= def.footerStart()) {
+				continue;
+			}
+			Matcher sec = SECTION.matcher(st.text().trim().toUpperCase(Locale.ROOT));
+			if (!sec.matches()) {
+				continue;
+			}
+			any = any == null ? st : any;
+			if (VISIBILITIES.indexOf(sec.group(1).toLowerCase(Locale.ROOT)) > rank) {
+				later = st;
+				break;
+			}
+		}
+		int at = lineStart(src, later == null ? def.footerStart() : later.start());
+		if (at < def.headerEnd()) {
+			// header and ENDCLASS on one line
+			at = later == null ? def.footerStart() : later.start();
+		}
+		String indent = any != null ? AbapEdit.indentationOfLine(src, any.start())
+				: AbapEdit.indentationOfLine(src, def.start()) + "  ";
+		String before = src.substring(0, at);
+		String gap = before.endsWith("\n") || before.isEmpty() ? "" : "\n";
+		return before + gap + indent + visibility.toUpperCase(Locale.ROOT) + " SECTION.\n" + src.substring(at);
 	}
 
 	/** Adds an empty METHOD … ENDMETHOD before the ENDCLASS of the implementation. */
