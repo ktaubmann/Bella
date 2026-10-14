@@ -61,8 +61,9 @@ final class AdtCodeIntel {
 
 	static List<Proposal> completion(AdtClient c, String sourceUri, String source, int line, int column,
 			CancelToken cancel) throws IOException {
-		String path = "/sap/bc/adt/abapsource/codecompletion/proposals?uri=" + AdtClient.enc(sourceUri) + "&line="
-				+ line + "&column=" + column;
+		// the position travels in the uri fragment, as for navigation; the endpoint is singular
+		String path = "/sap/bc/adt/abapsource/codecompletion/proposal?uri="
+				+ AdtClient.enc(sourceUri + "#start=" + line + "," + column) + "&signalCompleteness=true";
 		AdtResponse r = c.exchange(AdtRequest.post(path, "application/xml", source, "text/plain"), cancel);
 		if (!r.ok()) {
 			throw new AdtException(r.status(), AdtErrors.message(r));
