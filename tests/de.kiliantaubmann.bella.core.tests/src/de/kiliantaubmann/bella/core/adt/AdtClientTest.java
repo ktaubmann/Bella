@@ -160,6 +160,10 @@ class AdtClientTest {
 				.readSource("/sap/bc/adt/oo/classes/cl_x", "testclasses", CancelToken.NONE));
 		assertEquals(404, e.status());
 		assertTrue(e.getMessage().contains("no local test classes"), e.getMessage());
+		// with an explicit version SAP's message is literal and passed on unchanged
+		e = assertThrows(AdtException.class, () -> new AdtClient(adt.stateless("D"))
+				.readSource("/sap/bc/adt/oo/classes/cl_x", "testclasses", "inactive", CancelToken.NONE));
+		assertEquals("HTTP 404: CL_X does not have any inactive version", e.getMessage());
 	}
 
 	@Test
