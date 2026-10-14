@@ -32,6 +32,15 @@ public final class AdtXml {
 			f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
 			f.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
 			f.setExpandEntityReferences(false);
+			// Since Java 24 secure processing caps the document entity at 100,000 characters,
+			// so larger ADT responses failed; safe to lift because DOCTYPEs (and so entities) are refused
+			for (String limit : List.of("jdk.xml.maxGeneralEntitySizeLimit", "jdk.xml.totalEntitySizeLimit")) {
+				try {
+					f.setAttribute(limit, "0");
+				} catch (IllegalArgumentException unsupported) {
+					// another XML provider without the JDK limits
+				}
+			}
 			return f.newDocumentBuilder();
 		} catch (ParserConfigurationException e) {
 			throw new IllegalStateException("XML parser not available: " + e.getMessage(), e);

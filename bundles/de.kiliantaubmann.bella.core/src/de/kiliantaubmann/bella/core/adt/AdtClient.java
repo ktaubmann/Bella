@@ -375,6 +375,10 @@ public final class AdtClient {
 		if (r.status() == 304 && cached != null) {
 			return cached.text();
 		}
+		if (r.status() == 404 && include != null && !include.isBlank() && !include.equalsIgnoreCase("main")) {
+			// SAP answers a missing local include with "does not have any inactive version"
+			throw new AdtException(404, missingIncludeMessage(include) + " (SAP: " + AdtErrors.message(r) + ")");
+		}
 		if (!r.ok()) {
 			throw new AdtException(r.status(), AdtErrors.message(r));
 		}
@@ -383,6 +387,17 @@ public final class AdtClient {
 			cache.put(cacheScope, path, etag, r.body());
 		}
 		return r.body();
+	}
+
+	static String missingIncludeMessage(String include) {
+		String inc = include.toLowerCase(Locale.ROOT);
+		return switch (inc) {
+		case "testclasses" -> "The class has no local test classes (include testclasses is empty)";
+		case "definitions" -> "The class has no local type definitions (include definitions is empty)";
+		case "implementations" -> "The class has no local class implementations (include implementations is empty)";
+		case "macros" -> "The class has no macros (include macros is empty)";
+		default -> "The include " + inc + " does not exist for this object";
+		};
 	}
 
 	/** Drops cached sources of an object after it was written or activated. */

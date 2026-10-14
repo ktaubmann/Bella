@@ -152,6 +152,24 @@ class AdtClientTest {
 	}
 
 	@Test
+	void missingClassIncludeIsExplained() throws Exception {
+		FakeAdt adt = new FakeAdt().route("GET /sap/bc/adt/oo/classes/cl_x/includes/testclasses",
+				r -> new AdtResponse(404, "application/xml",
+						"<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\"><message lang=\"EN\">CL_X does not have any inactive version</message></exc:exception>"));
+		AdtException e = assertThrows(AdtException.class, () -> new AdtClient(adt.stateless("D"))
+				.readSource("/sap/bc/adt/oo/classes/cl_x", "testclasses", CancelToken.NONE));
+		assertEquals(404, e.status());
+		assertTrue(e.getMessage().contains("no local test classes"), e.getMessage());
+	}
+
+	@Test
+	void parsesResponsesAboveTheJdkEntitySizeLimit() throws Exception {
+		// Java 24+ rejects documents over 100,000 characters under secure processing by default
+		String xml = "<r>" + "x".repeat(250_000) + "</r>";
+		assertEquals(250_000, AdtXml.parse(xml).getDocumentElement().getTextContent().length());
+	}
+
+	@Test
 	void onlyStatefulSessionsAreLabelled() throws Exception {
 		FakeAdt adt = new FakeAdt().route("GET /sap/bc/adt/programs/programs/zr_demo/source/main",
 				r -> new AdtResponse(200, "text/plain", "REPORT zr_demo."));
