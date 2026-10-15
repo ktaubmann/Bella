@@ -42,10 +42,13 @@ public record AdtRequest(String method, String path, Map<String, String> headers
 	 * query parameters such as {@code sap-client} or {@code sap-language} (send
 	 * them as headers instead). Applying a quick fix looks the proposal up by
 	 * the complete request URI and dumps in
-	 * {@code CL_ART_QUICKFIX_PROVIDER=>APPLY} on any extra parameter.
+	 * {@code CL_ART_QUICKFIX_PROVIDER=>APPLY} on any extra parameter. Version
+	 * feeds of older releases (7.50) build the content link of each version by
+	 * appending to the complete request URI, query included.
 	 */
 	public boolean exactPath() {
-		return method.equals("POST") && path.startsWith(QUICKFIXES) && !path.startsWith(QUICKFIXES + "evaluation");
+		return method.equals("POST") && path.startsWith(QUICKFIXES) && !path.startsWith(QUICKFIXES + "evaluation")
+				|| method.equals("GET") && path.startsWith("/sap/bc/adt/") && path.endsWith("/versions");
 	}
 
 	/** Quick fix resources; every proposal SAP offers lies below it. */

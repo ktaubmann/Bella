@@ -122,6 +122,50 @@ public final class AdtClient {
 
 	private static final String AREA = "adt";
 
+	private AdtResponse sendLegacyAware(AdtRequest r, CancelToken cancel) throws IOException {
+		AdtResponse response = exchangeLegacyAware(transport, r, cancel);
+		if (!response.ok()) {
+			throw new AdtException(response.status(), AdtErrors.message(response));
+		}
+		return response;
+	}
+
+	/**
+	 * {@link #exchange}, repeated once with SAP's unversioned media type when
+	 * an old release (7.40) has no handler for the wildcard one and answers
+	 * 400 ExceptionContentHandlerNotFound: class metadata and the create POST
+	 * of classes and programs (as in ARC-1 #907). Not a default, since 7.58
+	 * rejects unversioned types.
+	 */
+	static AdtResponse exchangeLegacyAware(AdtTransport t, AdtRequest r, CancelToken cancel) throws IOException {
+		AdtResponse response = exchange(t, r, cancel);
+		AdtRequest retry = legacyMediaTypeRetry(r, response);
+		return retry == null ? response : exchange(t, retry, cancel);
+	}
+
+	static AdtRequest legacyMediaTypeRetry(AdtRequest r, AdtResponse response) {
+		if (response.status() != 400 || response.body() == null
+				|| !response.body().contains("ExceptionContentHandlerNotFound")) {
+			return null;
+		}
+		String key = r.path().replaceFirst("[?#].*", "");
+		if (r.method().equals("GET") && "application/*".equals(r.headers().get("Accept"))
+				&& key.matches("/sap/bc/adt/oo/classes/[^/]+")) {
+			return r.withHeader("Accept", "application/vnd.sap.adt.oo.classes+xml");
+		}
+		if (r.method().equals("POST") && "application/*".equals(r.contentType())) {
+			String type = switch (key) {
+			case "/sap/bc/adt/oo/classes" -> "application/vnd.sap.adt.oo.classes+xml";
+			case "/sap/bc/adt/programs/programs" -> "application/vnd.sap.adt.programs.programs+xml";
+			default -> null;
+			};
+			if (type != null) {
+				return new AdtRequest(r.method(), r.path(), r.headers(), r.body(), type);
+			}
+		}
+		return null;
+	}
+
 	// ---- search ----------------------------------------------------------
 
 	public List<AdtObjectRef> search(String query, String type, int max, CancelToken cancel) throws IOException {
@@ -140,7 +184,24 @@ public final class AdtClient {
 			path.append("&packageName=").append(enc(pkg.trim().toUpperCase(Locale.ROOT)));
 		}
 		AdtResponse r = send(AdtRequest.get(path.toString(), "application/xml"), cancel);
-		return parseObjectReferences(r.body());
+		return inPackage(parseObjectReferences(r.body()), pkg);
+	}
+
+	/**
+	 * Only the objects of {@code pkg} ({@code null}: all). The quick search
+	 * also lists objects of subpackages, and releases that do not know the
+	 * packageName filter ignore it and return objects of any package (ARC-1
+	 * #999). Subpackages themselves stay: their package is {@code pkg}. Once
+	 * other packages show up, objects without a package are dropped as well.
+	 */
+	static List<AdtObjectRef> inPackage(List<AdtObjectRef> refs, String pkg) {
+		if (pkg == null || pkg.isBlank()) {
+			return refs;
+		}
+		String p = pkg.trim();
+		boolean ignored = refs.stream().anyMatch(r -> !r.packageName().isBlank() && !r.packageName().equalsIgnoreCase(p));
+		return refs.stream().filter(r -> r.packageName().equalsIgnoreCase(p) || !ignored && r.packageName().isBlank())
+				.toList();
 	}
 
 	/** One object with lines that contain the searched text. */
@@ -552,7 +613,7 @@ public final class AdtClient {
 	 */
 	public String packageOf(String objectUri, CancelToken cancel) throws IOException {
 		String uri = AdtObjectRef.objectUri(objectUri);
-		String pkg = parsePackage(send(AdtRequest.get(uri, "application/*"), cancel).body());
+		String pkg = parsePackage(sendLegacyAware(AdtRequest.get(uri, "application/*"), cancel).body());
 		int fm = uri.indexOf("/fmodules/");
 		if (pkg.isEmpty() && fm > 0) {
 			pkg = parsePackage(send(AdtRequest.get(uri.substring(0, fm), "application/*"), cancel).body());
@@ -1330,12 +1391,85 @@ public final class AdtClient {
 				+ objectUris.stream().map(u -> "<adtcore:objectReference adtcore:uri=\"" + AdtXml.escape(u) + "\"/>")
 						.collect(Collectors.joining())
 				+ "</adtcore:objectReferences></objectSet></objectSets></atc:run>";
-		send(AdtRequest.post("/sap/bc/adt/atc/runs?worklistId=" + enc(worklist), "application/xml", run,
-				"application/xml"), cancel);
+		AdtResponse started = send(AdtRequest.post("/sap/bc/adt/atc/runs?worklistId=" + enc(worklist)
+				+ "&clientWait=false", "application/xml", run, "application/xml"), cancel);
+		String status = atcRunStatusPath(started.header("location"));
+		if (status != null) {
+			awaitAtcRun(status, cancel);
+		} // else an older release that ran the checks before answering
 		AdtResponse result = send(AdtRequest.get(
 				"/sap/bc/adt/atc/worklists/" + enc(worklist) + "?includeExemptedFindings=false",
 				"application/atc.worklist.v1+xml"), cancel);
 		return parseAtcFindings(result.body());
+	}
+
+	/** How long an ATC run is awaited at most; a large package can take many minutes. */
+	static final long ATC_RUN_MAX_MILLIS = 30 * 60_000L;
+	private static final String ATC_RUNS = "/sap/bc/adt/atc/runs/";
+
+	/**
+	 * The run status path from the {@code Location} of an asynchronous ATC
+	 * run, e.g. {@code /sap/bc/adt/atc/runs/0050…}; {@code null} if there is
+	 * none or it is not a run of this system.
+	 */
+	static String atcRunStatusPath(String location) {
+		if (location == null || location.isBlank()) {
+			return null;
+		}
+		String p = location.trim().replaceFirst("^https?://[^/]+", "");
+		int q = p.indexOf('?');
+		if (q >= 0) {
+			p = p.substring(0, q);
+		}
+		if (!p.startsWith(ATC_RUNS) || p.contains("..")) {
+			return null;
+		}
+		String id = p.substring(ATC_RUNS.length());
+		return id.isEmpty() || id.contains("/") ? null : p;
+	}
+
+	/** Polls an ATC run until SAP reports it completed; throws when it failed, took too long or was cancelled. */
+	private void awaitAtcRun(String statusPath, CancelToken cancel) throws IOException {
+		long end = System.currentTimeMillis() + ATC_RUN_MAX_MILLIS;
+		long wait = 300;
+		while (true) {
+			String body = send(AdtRequest.get(statusPath, "application/vnd.sap.atc.run.v1+xml"), cancel).body();
+			String status = parseAtcRunStatus(body);
+			String s = status.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+			if (s.isEmpty() || s.equals("completed") || s.equals("finished")) {
+				// an answer without a status cannot be awaited; the worklist shows what there is
+				return;
+			}
+			if (List.of("not created", "failed", "cancelled", "canceled", "aborted", "error").contains(s)) {
+				// SAP's texts, e.g. a communication failure of a remote check system
+				String text = AdtXml.text(AdtXml.parse(body).getDocumentElement()).replaceAll("\\s+", " ");
+				throw new AdtException(500, "The ATC run ended with status " + status
+						+ (text.isEmpty() ? "." : ": " + Log.clip(text, 300)));
+			}
+			if (cancel.isCancelled()) {
+				throw new IOException("ATC run cancelled.");
+			}
+			if (System.currentTimeMillis() + wait > end) {
+				throw new AdtException(504, "The ATC run did not finish within " + ATC_RUN_MAX_MILLIS / 60_000
+						+ " minutes" + (status.isEmpty() ? "." : " (status " + status + ")."));
+			}
+			try {
+				Thread.sleep(wait);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new java.io.InterruptedIOException("ATC run interrupted.");
+			}
+			wait = Math.min(2_000, wait * 2);
+		}
+	}
+
+	/** The {@code status} of an ATC run ({@code <atc:run status="Completed"/>}), empty if missing. */
+	static String parseAtcRunStatus(String xml) throws IOException {
+		if (xml == null || xml.isBlank()) {
+			return "";
+		}
+		Element root = AdtXml.parse(xml).getDocumentElement();
+		return "run".equals(root.getLocalName()) ? AdtXml.attr(root, "status").trim() : "";
 	}
 
 	private String atcDefaultVariant(CancelToken cancel) {
@@ -1466,8 +1600,74 @@ public final class AdtClient {
 			throw new AdtException(400, "Only a single SELECT statement can be run.");
 		}
 		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/datapreview/freestyle?rowNumber=" + maxRows,
-				"application/xml, application/vnd.sap.adt.datapreview.table.v1+xml", statement, "text/plain"), cancel);
-		return parseTableData(r.body());
+				"application/xml, application/vnd.sap.adt.datapreview.table.v1+xml", fitSqlLines(statement),
+				"text/plain"), cancel);
+		TableData data = parseTableData(r.body());
+		// SAP sometimes returns one row more than asked for
+		return data.rows().size() <= maxRows ? data
+				: new TableData(data.columns(), data.rows().subList(0, maxRows), Math.max(data.totalRows(), maxRows));
+	}
+
+	/** SAP's freestyle SQL handler cuts every line after this many characters (7.58, 8.16; found by ARC-1). */
+	static final int SQL_LINE_MAX = 255;
+
+	/**
+	 * The statement in lines of at most {@link #SQL_LINE_MAX} characters,
+	 * broken at blanks outside literals, joined with CRLF: older releases do
+	 * not recognize a bare LF (ARC-1 #955).
+	 *
+	 * @throws AdtException if a line cannot be broken safely
+	 */
+	static String fitSqlLines(String sql) throws AdtException {
+		List<String> out = new ArrayList<>();
+		for (String line : sql.split("\\r?\\n", -1)) {
+			if (line.length() > SQL_LINE_MAX && line.startsWith("*")) {
+				throw new AdtException(400, SQL_LINE_REFUSAL);
+			}
+			int start = 0;
+			while (line.length() - start > SQL_LINE_MAX) {
+				int at = sqlLineBreak(line, start);
+				if (at < 0) {
+					throw new AdtException(400, SQL_LINE_REFUSAL);
+				}
+				out.add(line.substring(start, at));
+				start = at + 1;
+			}
+			out.add(line.substring(start));
+		}
+		return String.join("\r\n", out);
+	}
+
+	private static final String SQL_LINE_REFUSAL = "The SQL statement has a line SAP would cut after " + SQL_LINE_MAX
+			+ " characters that cannot be broken safely (a long literal or comment). Add line breaks between the tokens.";
+
+	/** Last blank before the limit that is outside a literal and does not start a comment line; -1 if none. */
+	private static int sqlLineBreak(String line, int start) {
+		int found = -1;
+		char quote = 0;
+		int limit = Math.min(line.length() - 1, start + SQL_LINE_MAX);
+		for (int i = start; i <= limit; i++) {
+			char ch = line.charAt(i);
+			if (quote != 0) {
+				if (ch == quote) {
+					if (i + 1 < line.length() && line.charAt(i + 1) == quote) {
+						i++; // doubled delimiter inside the literal
+					} else {
+						quote = 0;
+					}
+				}
+				continue;
+			}
+			if (ch == '\'' || ch == '`') {
+				quote = ch;
+			} else if (ch == '"' || ch == '|') {
+				break; // a comment or a string template
+			} else if ((ch == ' ' || ch == '\t') && i > start
+					&& !(i + 1 < line.length() && line.charAt(i + 1) == '*')) {
+				found = i;
+			}
+		}
+		return found;
 	}
 
 	/**
@@ -1520,6 +1720,49 @@ public final class AdtClient {
 
 	/** Activates objects; returns the activation messages (empty on success). */
 	public List<Message> activate(List<AdtObjectRef> objects, CancelToken cancel) throws IOException {
+		List<Message> msgs = activateOnce(objects, cancel);
+		if (objects.size() > 1 && onlyEd064(msgs)) {
+			// SAP's batch activation sometimes fails with ED064 alone; one by one the same objects activate
+			List<Message> out = new ArrayList<>();
+			for (AdtObjectRef o : objects) {
+				out.addAll(activateOnce(List.of(o), cancel));
+			}
+			return out;
+		}
+		return msgs;
+	}
+
+	/**
+	 * One activation with SAP's preaudit. When SAP answers with the inactive
+	 * objects it wants to activate as well instead of activating, nothing is
+	 * active yet: if it lists only the given objects the activation is
+	 * confirmed, otherwise the answer becomes an error naming the others, so
+	 * they are activated only when asked for (and pass the package check).
+	 */
+	private List<Message> activateOnce(List<AdtObjectRef> objects, CancelToken cancel) throws IOException {
+		String body = activationBody(objects);
+		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/activation?method=activate&preauditRequested=true",
+				"application/xml", body, "application/xml"), cancel);
+		List<Message> msgs = parseActivationMessages(r.body());
+		List<AdtObjectRef> pending = parsePreaudit(r.body());
+		if (pending.isEmpty() || msgs.stream().anyMatch(m -> m.severity().equals("Error"))) {
+			return msgs;
+		}
+		List<AdtObjectRef> others = pending.stream().filter(p -> objects.stream().noneMatch(o -> sameObject(o, p)))
+				.toList();
+		if (others.isEmpty()) {
+			r = send(AdtRequest.post("/sap/bc/adt/activation?method=activate&preauditRequested=false",
+					"application/xml", body, "application/xml"), cancel);
+			return parseActivationMessages(r.body());
+		}
+		List<Message> out = new ArrayList<>(msgs);
+		out.add(new Message("Error", "Nothing was activated: SAP activates these only together with other inactive "
+				+ "objects: " + String.join(", ", others.stream().map(AdtClient::label).toList())
+				+ ". Activate them all in one call, or ask the developer.", "", 0));
+		return out;
+	}
+
+	private static String activationBody(List<AdtObjectRef> objects) {
 		StringBuilder body = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
 				.append("<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">");
 		for (AdtObjectRef o : objects) {
@@ -1527,10 +1770,55 @@ public final class AdtClient {
 					.append("\" adtcore:name=\"").append(AdtXml.escape(o.name().toUpperCase(Locale.ROOT)))
 					.append("\"/>");
 		}
-		body.append("</adtcore:objectReferences>");
-		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/activation?method=activate&preauditRequested=true",
-				"application/xml", body.toString(), "application/xml"), cancel);
-		return parseActivationMessages(r.body());
+		return body.append("</adtcore:objectReferences>").toString();
+	}
+
+	private static boolean sameObject(AdtObjectRef a, AdtObjectRef b) {
+		String ua = AdtObjectRef.objectUri(a.uri());
+		String ub = AdtObjectRef.objectUri(b.uri());
+		return !ua.isEmpty() && ua.equalsIgnoreCase(ub)
+				|| ua.isEmpty() && a.name().equalsIgnoreCase(b.name());
+	}
+
+	private static String label(AdtObjectRef o) {
+		return o.type() == null || o.type().isBlank() ? o.name() : o.name() + " (" + o.type() + ")";
+	}
+
+	/**
+	 * The objects of a preaudit answer ({@code ioc:inactiveObjects}): SAP did
+	 * not activate and asks to confirm them. Entries without an object
+	 * (transport rows) are skipped. Empty for an ordinary activation result.
+	 */
+	static List<AdtObjectRef> parsePreaudit(String xml) throws IOException {
+		List<AdtObjectRef> out = new ArrayList<>();
+		if (xml == null || xml.isBlank()) {
+			return out;
+		}
+		Document doc = AdtXml.parse(xml);
+		if (!"inactiveObjects".equals(doc.getDocumentElement().getLocalName())) {
+			return out;
+		}
+		for (Element entry : AdtXml.elements(doc, "entry")) {
+			for (Element object : AdtXml.elements(entry, "object")) {
+				for (Element ref : AdtXml.elements(object, "ref")) {
+					AdtObjectRef o = new AdtObjectRef(AdtXml.attr(ref, "uri"), AdtXml.attr(ref, "name").trim(),
+							AdtXml.attr(ref, "type"), "", "");
+					if (!o.name().isEmpty() && !out.contains(o)) {
+						out.add(o);
+					}
+				}
+			}
+		}
+		return out;
+	}
+
+	/** Whether the only errors are ED064 "no next/previous object found", SAP's batch quirk. */
+	static boolean onlyEd064(List<Message> msgs) {
+		List<Message> errors = msgs.stream().filter(m -> m.severity().equals("Error")).toList();
+		return !errors.isEmpty() && errors.stream().allMatch(m -> {
+			String t = String.valueOf(m.text()).toLowerCase(Locale.ROOT);
+			return t.matches("(?s).*\\bed0?64\\b.*") || t.contains("no next") && t.contains("previous object");
+		});
 	}
 
 	static List<Message> parseActivationMessages(String xml) throws IOException {
@@ -1556,8 +1844,8 @@ public final class AdtClient {
 	 */
 	AdtObjectRef create(AdtDdic.CreateRequest r, String name, String packageName, String description,
 			CancelToken cancel) throws IOException {
-		AdtResponse resp = exchange(transport, AdtRequest.post(r.collection() + r.query(), "application/*", r.body(),
-				r.contentType()), cancel);
+		AdtResponse resp = exchangeLegacyAware(transport, AdtRequest.post(r.collection() + r.query(), "application/*",
+				r.body(), r.contentType()), cancel);
 		if (resp.status() == 415 && AdtDdic.DATAELEMENT_TYPE.equals(r.contentType())) {
 			// releases before data element v2
 			resp = exchange(transport, AdtRequest.post(r.collection() + r.query(), "application/*", r.body(),
