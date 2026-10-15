@@ -77,6 +77,8 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 		return URLEncoder.encode(name.toLowerCase(Locale.ROOT), StandardCharsets.UTF_8).replace("%2F", "%2f");
 	}
 
+	private static final String PROGRAM_INCLUDES = "/sap/bc/adt/programs/includes/";
+
 	/** Strips fragments ({@code #start=…}) and source suffixes to get the object URI. */
 	public static String objectUri(String uri) {
 		String u = uri;
@@ -85,7 +87,9 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 			u = u.substring(0, hash);
 		}
 		for (String suffix : new String[] { "/source/main", "/includes/" }) {
-			int i = u.indexOf(suffix);
+			// a program include is an object of its own, not the include of a class or group
+			int from = suffix.equals("/includes/") && u.startsWith(PROGRAM_INCLUDES) ? PROGRAM_INCLUDES.length() : 0;
+			int i = u.indexOf(suffix, from);
 			if (i >= 0) {
 				u = u.substring(0, i);
 			}

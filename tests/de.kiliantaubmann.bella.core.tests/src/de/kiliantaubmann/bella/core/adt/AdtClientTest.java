@@ -21,6 +21,35 @@ class AdtClientTest {
 		assertEquals(null, AdtObjectRef.uriFor("X", "TABL"));
 		assertEquals("/sap/bc/adt/oo/classes/zcl_x", AdtObjectRef.objectUri("/sap/bc/adt/oo/classes/zcl_x/source/main#start=1,0"));
 		assertEquals("/sap/bc/adt/oo/classes/zcl_x/includes/testclasses", AdtObjectRef.sourceUri("/sap/bc/adt/oo/classes/zcl_x", "TestClasses"));
+		// class and group includes belong to their owner; a program include is an object of its own
+		assertEquals("/sap/bc/adt/oo/classes/zcl_x", AdtObjectRef.objectUri("/sap/bc/adt/oo/classes/zcl_x/includes/testclasses"));
+		assertEquals("/sap/bc/adt/functions/groups/zfg", AdtObjectRef.objectUri("/sap/bc/adt/functions/groups/zfg/includes/lzfgtop"));
+		assertEquals("/sap/bc/adt/programs/includes/zincl", AdtObjectRef.objectUri("/sap/bc/adt/programs/includes/zincl/source/main"));
+		assertEquals("/sap/bc/adt/programs/includes/zincl", AdtObjectRef.objectUri("/sap/bc/adt/programs/includes/zincl"));
+	}
+
+	@Test
+	void readsTheMediaTypeA415Offers() {
+		assertEquals("application/vnd.sap.adt.functions.fmodules.v3+xml", AdtClient.supportedMediaType(
+				"<message>Unsupported Media Type. Supported Media Types: application/vnd.sap.adt.functions.fmodules.v3+xml</message>"));
+		assertEquals(null, AdtClient.supportedMediaType("Unsupported Media Type"));
+		assertEquals(null, AdtClient.supportedMediaType(null));
+	}
+
+	@Test
+	void quickfixRecognisesTheServerErrorPage() {
+		assertTrue(AdtQuickfix.isErrorPage("<!DOCTYPE html>\n<html><head><title>Application Server Error</title>"));
+		assertTrue(AdtQuickfix.isErrorPage("  <html>"));
+		assertFalse(AdtQuickfix.isErrorPage("<?xml version=\"1.0\"?><exc:exception/>"));
+		assertFalse(AdtQuickfix.isErrorPage(null));
+	}
+
+	@Test
+	void launchpadCatalogIdAlsoFromItsEntityUrl() {
+		assertEquals("/UI2/CATALOG_ALL", AdtToolProvider.catalogId(
+				"https://host:443/sap/opu/odata/UI2/PAGE_BUILDER_CUST/Catalogs('%2FUI2%2FCATALOG_ALL')"));
+		assertEquals("ZCAT", AdtToolProvider.catalogId(" ZCAT "));
+		assertEquals("X-SAP-UI2-CATALOGPAGE:ZCAT", AdtToolProvider.catalogId("X-SAP-UI2-CATALOGPAGE:ZCAT"));
 	}
 
 	@Test

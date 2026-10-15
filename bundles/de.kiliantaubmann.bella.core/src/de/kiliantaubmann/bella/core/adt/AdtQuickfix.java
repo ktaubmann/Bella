@@ -101,10 +101,22 @@ final class AdtQuickfix {
 				+ (p.userContent() == null ? "" : "\n  <userContent>" + AdtXml.escape(p.userContent()) + "</userContent>")
 				+ "\n</quickfixes:proposalRequest>";
 		AdtResponse r = c.exchange(AdtRequest.post(p.uri(), "application/xml", body, "application/xml"), cancel);
+		if (r.status() >= 500 && isErrorPage(r.body())) {
+			// e.g. some releases dump in CL_ART_QUICKFIX_PROVIDER->APPLY for refactoring quick fixes
+			throw new AdtException(r.status(), "SAP crashed while running the quick fix (HTTP " + r.status()
+					+ ", the server's error page; adt_diagnose 'short_dumps' shows the dump). Nothing was changed; "
+					+ "make the change by hand.");
+		}
 		if (!r.ok()) {
 			throw new AdtException(r.status(), "The quick fix failed: " + AdtErrors.message(r));
 		}
 		return parseDeltas(r.body());
+	}
+
+	/** The ICF's HTML error page instead of an ADT answer. */
+	static boolean isErrorPage(String body) {
+		String b = body == null ? "" : body.stripLeading().toLowerCase(java.util.Locale.ROOT);
+		return b.startsWith("<!doctype html") || b.startsWith("<html");
 	}
 
 	private static final Pattern START = Pattern.compile("[#;&]start=(\\d+),(\\d+)");

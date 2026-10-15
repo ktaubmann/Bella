@@ -2534,6 +2534,19 @@ public final class AdtToolProvider implements ToolProvider {
 
 	private static final String BSP = "/sap/bc/adt/filestore/ui5-bsp/objects";
 
+	private static final Pattern CATALOG_KEY = Pattern.compile("Catalogs\\('([^']*)'\\)");
+
+	/**
+	 * The catalog id, also from the entity URL in a catalog's
+	 * {@code __metadata} (…/Catalogs('%2FUI2%2FCATALOG_ALL')), which models
+	 * take for the id.
+	 */
+	static String catalogId(String catalog) {
+		String c = catalog.trim();
+		Matcher m = CATALOG_KEY.matcher(c);
+		return m.find() ? java.net.URLDecoder.decode(m.group(1), java.nio.charset.StandardCharsets.UTF_8) : c;
+	}
+
 	private ToolResult ui5(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		String app = Json.str(in, "app");
@@ -2578,13 +2591,27 @@ public final class AdtToolProvider implements ToolProvider {
 				if (catalog == null || catalog.isBlank()) {
 					yield null;
 				}
-				String page = "X-SAP-UI2-CATALOGPAGE:" + catalog.trim().replaceFirst("^X-SAP-UI2-CATALOGPAGE:", "");
+				String page = "X-SAP-UI2-CATALOGPAGE:" + catalogId(catalog).replaceFirst("^X-SAP-UI2-CATALOGPAGE:", "");
 				yield "/Pages('" + AdtClient.enc(page) + "')/PageChipInstances?$format=json&$top=500"
 						+ "&$select=pageId,instanceId,chipId,title,configuration";
 			}
 			};
 			if (query == null) {
 				return ToolResult.error("Give 'catalog'.");
+			}
+			if (action(in).equals("flp_tiles")) {
+				AdtResponse page = c.exchange(AdtRequest.get(base + query, "application/json"), cancel);
+				if (page.status() == 404) {
+					// catalogs without a catalog page (e.g. /UI2/CATALOG_ALL): their chips, without tile configuration
+					String chips = "/Catalogs('" + AdtClient.enc(catalogId(Json.str(in, "catalog")))
+							+ "')/Chips?$format=json&$top=500&$select=id,title,description";
+					return ToolResult.ok("This catalog has no catalog page; its chips (no tile configuration):\n"
+							+ AdtDiagnostics.json(AdtDiagnostics.get(c, base + chips, "application/json", cancel)));
+				}
+				if (!page.ok()) {
+					throw new AdtException(page.status(), AdtErrors.message(page));
+				}
+				return ToolResult.ok(AdtDiagnostics.json(page.body() == null ? "" : page.body()));
 			}
 			return ToolResult.ok(AdtDiagnostics.json(AdtDiagnostics.get(c, base + query, "application/json", cancel)));
 		}

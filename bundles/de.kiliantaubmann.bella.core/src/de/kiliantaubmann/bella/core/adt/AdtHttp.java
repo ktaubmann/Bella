@@ -261,11 +261,18 @@ public final class AdtHttp {
 		return h;
 	}
 
+	/** JSON, except for {@code $metadata}, which Gateway serves only as XML (406 for JSON). */
+	static String defaultODataAccept(String url) {
+		String path = url == null ? "" : url.trim();
+		int q = path.indexOf('?');
+		return (q < 0 ? path : path.substring(0, q)).endsWith("/$metadata") ? "application/xml" : "application/json";
+	}
+
 	/** GET of an OData path with {@code sap-statistics}: status, timing, verdict and the answer. */
 	static String odataRequest(AdtClient c, String url, Map<String, String> headers, CancelToken cancel)
 			throws IOException {
 		String withStat = withStatistics(checkUrl(url, true));
-		Map<String, String> h = withDefaults(Map.of("Accept", "application/json"), headers);
+		Map<String, String> h = withDefaults(Map.of("Accept", defaultODataAccept(url)), headers);
 		long start = System.nanoTime();
 		AdtResponse r = c.exchange(new AdtRequest("GET", withStat, h, null, null), cancel);
 		long wall = (System.nanoTime() - start) / 1_000_000;

@@ -1591,10 +1591,24 @@ public final class AdtClient {
 			if (put.status() == 415 && AdtDdic.DATAELEMENT_TYPE.equals(contentType)) {
 				put = exchange(session, putMetadata(path, body, AdtDdic.DATAELEMENT_TYPE_V1), cancel);
 			}
+			// e.g. function modules: some releases take only fmodules.v3+xml and name it in the 415
+			String offered = put.status() == 415 ? supportedMediaType(put.body()) : null;
+			if (offered != null && !offered.equals(contentType)) {
+				put = exchange(session, putMetadata(path, body, offered), cancel);
+			}
 			if (!put.ok()) {
 				throw new AdtException(put.status(), "Could not write the metadata: " + AdtErrors.message(put));
 			}
 		});
+	}
+
+	private static final Pattern SUPPORTED_MEDIA_TYPE = Pattern
+			.compile("Supported Media Types?:\\s*(application/[\\w.+-]+)");
+
+	/** The first media type a 415 answer names as supported, or {@code null}. */
+	static String supportedMediaType(String body) {
+		Matcher m = SUPPORTED_MEDIA_TYPE.matcher(body == null ? "" : body);
+		return m.find() ? m.group(1) : null;
 	}
 
 	/**

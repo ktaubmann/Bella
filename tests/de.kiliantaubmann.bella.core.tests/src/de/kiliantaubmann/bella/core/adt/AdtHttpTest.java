@@ -240,6 +240,15 @@ class AdtHttpTest {
 	}
 
 	@Test
+	void odataMetadataIsAskedForAsXml() {
+		// Gateway serves $metadata only as XML and answers 406 to Accept: application/json
+		assertEquals("application/xml", AdtHttp.defaultODataAccept("/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/$metadata"));
+		assertEquals("application/xml", AdtHttp.defaultODataAccept("/sap/opu/odata/sap/ZSRV/$metadata?sap-language=EN"));
+		assertEquals("application/json", AdtHttp.defaultODataAccept("/sap/opu/odata/sap/ZSRV/Orders?$top=1"));
+		assertEquals("application/json", AdtHttp.defaultODataAccept("/sap/opu/odata/sap/ZSRV/"));
+	}
+
+	@Test
 	void contentTypeHeaderIsTheBodyType() {
 		List<AdtRequest> sent = new ArrayList<>();
 		FakeAdt adt = adt().route("GET /sap/bc/rest/z", r -> new AdtResponse(200, "", "", Map.of("x-csrf-token", "T")))
