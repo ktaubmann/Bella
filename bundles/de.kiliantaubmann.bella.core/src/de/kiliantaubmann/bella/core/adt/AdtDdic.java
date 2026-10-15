@@ -352,6 +352,19 @@ final class AdtDdic {
 		return new ArrayList<>(byNumber.values());
 	}
 
+	/** Numbers of the messages in {@code before} that {@code after} no longer has. */
+	static List<String> removedMessages(List<Message> before, List<Message> after) {
+		Set<String> kept = new java.util.HashSet<>();
+		after.forEach(m -> kept.add(m.number()));
+		List<String> out = new ArrayList<>();
+		for (Message m : before) {
+			if (!kept.contains(m.number())) {
+				out.add(m.number());
+			}
+		}
+		return out;
+	}
+
 	// ---- data elements ---------------------------------------------------------
 
 	/** DTEL fields by the element names of ADT's data element XML. */

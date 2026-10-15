@@ -1587,13 +1587,24 @@ public final class AdtClient {
 			String transport, CancelToken cancel) throws IOException {
 		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
 			String path = objectUri + "?lockHandle=" + enc(handle) + (tr.isBlank() ? "" : "&corrNr=" + enc(tr));
-			AdtResponse put = exchange(session, AdtRequest.put(path, body, contentType), cancel);
+			AdtResponse put = exchange(session, putMetadata(path, body, contentType), cancel);
 			if (put.status() == 415 && AdtDdic.DATAELEMENT_TYPE.equals(contentType)) {
-				put = exchange(session, AdtRequest.put(path, body, AdtDdic.DATAELEMENT_TYPE_V1), cancel);
+				put = exchange(session, putMetadata(path, body, AdtDdic.DATAELEMENT_TYPE_V1), cancel);
 			}
 			if (!put.ok()) {
 				throw new AdtException(put.status(), "Could not write the metadata: " + AdtErrors.message(put));
 			}
 		});
+	}
+
+	/**
+	 * SAP answers 400 "Accept header missing" without an Accept header, and 406
+	 * if it carries parameters such as {@code charset}, so only the media type
+	 * is sent.
+	 */
+	private static AdtRequest putMetadata(String path, String body, String contentType) {
+		int semicolon = contentType.indexOf(';');
+		String accept = (semicolon < 0 ? contentType : contentType.substring(0, semicolon)).trim();
+		return AdtRequest.put(path, body, contentType).withHeader("Accept", accept);
 	}
 }

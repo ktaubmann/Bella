@@ -241,6 +241,64 @@ class AdtDdicTest {
 	}
 
 	@Test
+	void metadataPutSendsTheMediaTypeAsAccept() throws Exception {
+		List<AdtRequest> puts = new ArrayList<>();
+		FakeAdt adt = systems()
+				.route("POST /sap/bc/adt/ddic/domains/zsd_d?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/ddic/domains/zsd_d", r -> {
+					puts.add(r);
+					return FakeAdt.ok("");
+				})
+				.route("POST /sap/bc/adt/ddic/domains/zsd_d?_action=UNLOCK", r -> FakeAdt.ok(""));
+		try (AdtTransport.Session s = adt.stateful("dev")) {
+			AdtClient.writeMetadata(s, "/sap/bc/adt/ddic/domains/zsd_d", "<x/>", AdtDdic.DOMAIN_TYPE, null,
+					CancelToken.NONE);
+		}
+		// SAP answers 400 without Accept and 406 if it carries "; charset=utf-8"
+		assertEquals("application/vnd.sap.adt.domains.v2+xml", puts.get(0).headers().get("Accept"));
+		assertEquals(AdtDdic.DOMAIN_TYPE, puts.get(0).contentType());
+	}
+
+	@Test
+	void toolReportsMessagesTheSystemKept() {
+		String both = AdtDdic.messageClassXml("ZSD", "Deliveries", "ZPKG", "EN",
+				List.of(new AdtDdic.Message("001", "Old"), new AdtDdic.Message("002", "Keep")));
+		String one = AdtDdic.messageClassXml("ZSD", "Deliveries", "ZPKG", "EN",
+				List.of(new AdtDdic.Message("002", "Keep")));
+		String remove = "{\"name\":\"ZSD\",\"type\":\"MSAG\",\"remove_numbers\":[\"1\"]}";
+
+		// the system ignores the missing message: no success claimed
+		ToolResult kept = new AdtToolProvider(messageClass(both, null), () -> "dev").call("adt_write_metadata",
+				Json.parseObject(remove), CancelToken.NONE);
+		assertTrue(kept.isError(), kept.content());
+		assertTrue(kept.content().contains("SAP kept the messages 001"), kept.content());
+		assertTrue(kept.content().contains("SE91"), kept.content());
+
+		// the system deletes it
+		ToolResult gone = new AdtToolProvider(messageClass(both, one), () -> "dev").call("adt_write_metadata",
+				Json.parseObject(remove), CancelToken.NONE);
+		assertFalse(gone.isError(), gone.content());
+		assertEquals("Saved the message class (1 messages) ZSD in S4H_100.", gone.content());
+	}
+
+	/** Message class ZSD that reads {@code before} and, after a PUT, {@code after} (unchanged if null). */
+	private static FakeAdt messageClass(String before, String after) {
+		String[] current = { before };
+		return systems()
+				.route("GET /sap/bc/adt/messageclass/zsd", r -> FakeAdt.ok(current[0]))
+				.route("POST /sap/bc/adt/messageclass/zsd?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/messageclass/zsd", r -> {
+					if (after != null) {
+						current[0] = after;
+					}
+					return FakeAdt.ok("");
+				})
+				.route("POST /sap/bc/adt/messageclass/zsd?_action=UNLOCK", r -> FakeAdt.ok(""));
+	}
+
+	@Test
 	void toolCreatesFunctionModuleInItsGroup() {
 		List<AdtRequest> requests = new ArrayList<>();
 		FakeAdt adt = systems()

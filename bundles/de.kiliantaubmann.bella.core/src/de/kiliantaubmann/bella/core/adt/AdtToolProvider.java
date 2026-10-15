@@ -460,7 +460,8 @@ public final class AdtToolProvider implements ToolProvider {
 		addArrays(metadataSchema);
 		JsonObject remove = new JsonObject();
 		remove.addProperty("type", "array");
-		remove.addProperty("description", "MSAG: numbers of messages to delete.");
+		remove.addProperty("description", "MSAG: numbers of messages to delete. Some systems keep them; Bella "
+				+ "checks and reports messages that are still there.");
 		JsonObject str = new JsonObject();
 		str.addProperty("type", "string");
 		remove.add("items", str);
@@ -1778,6 +1779,11 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		case "variants" -> {
 			AdtResponse r = c.exchange(AdtRequest.get(objectUri + "/variants", "application/*"), cancel);
+			if (r.status() == 404) {
+				// older releases have no ADT resource for variants; the discovery document lists none then
+				return ToolResult.error("This SAP system does not offer program variants through ADT (404); "
+						+ "look them up in SE38 or with adt_table_contents on VARID.");
+			}
 			if (!r.ok()) {
 				return ToolResult.error("Could not read the variants: " + AdtErrors.message(r));
 			}
@@ -3218,6 +3224,7 @@ public final class AdtToolProvider implements ToolProvider {
 		String body;
 		String contentType;
 		String summary;
+		List<String> removed = new ArrayList<>();
 		switch (type) {
 		case "DTEL" -> {
 			body = AdtDdic.dataElementXml(name, description, h.pkg(), lang, null,
@@ -3251,6 +3258,7 @@ public final class AdtToolProvider implements ToolProvider {
 			body = AdtDdic.messageClassXml(name, description, h.pkg(), lang, merged);
 			contentType = AdtDdic.MESSAGECLASS_TYPE;
 			summary = "message class (" + merged.size() + " messages)";
+			removed.addAll(AdtDdic.removedMessages(mc.messages(), merged));
 		}
 		}
 		String tr;
@@ -3261,9 +3269,22 @@ public final class AdtToolProvider implements ToolProvider {
 			c.invalidate(uri);
 			inactive.remove(s.destinationId());
 		}
-		return ToolResult.ok("Saved the " + summary + " " + name + " in " + s.label()
-				+ (tr.isEmpty() ? "" : " (transport " + tr + ")")
-				+ (type.equals("MSAG") ? "." : ". Not activated yet."));
+		String saved = "Saved the " + summary + " " + name + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")");
+		if (!removed.isEmpty()) {
+			// SAP keeps messages missing from the PUT, and ADT offers no working delete for single messages
+			List<String> kept = new ArrayList<>();
+			for (AdtDdic.Message m : AdtDdic.parseMessageClass(c.readMetadata(uri, cancel)).messages()) {
+				if (removed.contains(m.number())) {
+					kept.add(m.number());
+				}
+			}
+			if (!kept.isEmpty()) {
+				return ToolResult.error(saved + ", but SAP kept the messages " + String.join(", ", kept)
+						+ ": ADT cannot delete single messages on this system. Delete them in SE91.");
+			}
+		}
+		return ToolResult.ok(saved + (type.equals("MSAG") ? "." : ". Not activated yet."));
 	}
 
 	/** Syntax check of a saved source that Bella's style check does not understand (CDS, RAP, DDIC sources). */

@@ -64,7 +64,8 @@ final class AdtCodeIntel {
 		// the position travels in the uri fragment, as for navigation; the endpoint is singular
 		String path = "/sap/bc/adt/abapsource/codecompletion/proposal?uri="
 				+ AdtClient.enc(sourceUri + "#start=" + line + "," + column) + "&signalCompleteness=true";
-		AdtResponse r = c.exchange(AdtRequest.post(path, "application/xml", source, "text/plain"), cancel);
+		// the endpoint answers in asx:abap only and refuses Accept: application/xml with 406
+		AdtResponse r = c.exchange(AdtRequest.post(path, "application/vnd.sap.as+xml", source, "text/plain"), cancel);
 		if (!r.ok()) {
 			throw new AdtException(r.status(), AdtErrors.message(r));
 		}
