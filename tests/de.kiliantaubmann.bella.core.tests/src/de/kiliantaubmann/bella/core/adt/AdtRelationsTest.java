@@ -141,6 +141,41 @@ class AdtRelationsTest {
 		assertTrue(notCds.isError(), notCds.content());
 	}
 
+	/** One entry as an on-premise system sends it: isResult false everywhere, canHaveChildren on views too. */
+	private static String node(String uri, String parent, String type, String name, boolean children, String usage) {
+		return "<usageReferences:referencedObject uri=\"" + uri + "\" parentUri=\"" + parent
+				+ "\" isResult=\"false\" canHaveChildren=\"" + children + "\""
+				+ (usage == null ? "" : " usageInformation=\"" + usage + "\"") + "><usageReferences:adtObject adtcore:name=\""
+				+ name + "\"" + (type == null ? "" : " adtcore:type=\"" + type + "\"")
+				+ "/></usageReferences:referencedObject>";
+	}
+
+	@Test
+	void impactKeepsExpandableViewsAndBehaviors() {
+		String pkg = "/sap/bc/adt/packages/ztrv";
+		FakeAdt adt = system()
+				.route("GET /sap/bc/adt/ddic/ddl/sources/zr_travel/source/main",
+						r -> text("define root view entity ZR_TRAVEL as select from ztravel { key id }"))
+				.route("POST /sap/bc/adt/repository/informationsystem/usageReferences", r -> FakeAdt.ok(usages(
+						node(pkg, "", "DEVC/K", "ZTRV", true, null),
+						node("/sap/bc/adt/bo/behaviordefinitions/zr_travel", pkg, "BDEF/BDO", "ZR_TRAVEL", true,
+								"gradeDirect,includeProductive"),
+						node("/sap/bc/adt/ddic/ddl/sources/zc_travel", pkg, "DDLS/DF", "ZC_TRAVEL", true,
+								"gradeDirect,includeProductive"),
+						node("/sap/bc/adt/oo/classes/zbp_r_travel", pkg, "CLAS/OC", "ZBP_R_TRAVEL", false, null),
+						node("/sap/bc/adt/oo/classes/zbp_r_travel/includes/implementations#start=1,0",
+								"/sap/bc/adt/oo/classes/zbp_r_travel", null, "Local Class Implementation", true,
+								"gradeComponent,includeProductive"))));
+		ToolResult r = call(adt, "adt_navigate", "{\"name\":\"ZR_TRAVEL\",\"type\":\"DDLS\",\"action\":\"impact\"}");
+		String c = r.content();
+		assertTrue(c.contains("Used by (where-used list): 3 objects, 3 direct"), c);
+		assertTrue(c.contains("CDS views on top of it:\n- ZC_TRAVEL (DDLS/DF)"), c);
+		assertTrue(c.contains("Behavior definitions:\n- ZR_TRAVEL (BDEF/BDO)"), c);
+		assertTrue(c.contains("- ZBP_R_TRAVEL (CLAS/OC)"), c);
+		assertFalse(c.contains("Local Class Implementation"), c);
+		assertFalse(c.contains("ZTRV"), c);
+	}
+
 	// ---- structure ---------------------------------------------------------------
 
 	@Test

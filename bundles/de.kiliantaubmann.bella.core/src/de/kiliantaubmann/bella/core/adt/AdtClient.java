@@ -1423,8 +1423,10 @@ public final class AdtClient {
 			List<Element> pkg = AdtXml.elements(src, "packageRef");
 			String type = AdtXml.attr(src, "type");
 			String usage = AdtXml.attr(e, "usageInformation");
-			boolean container = "false".equals(AdtXml.attr(e, "isResult"))
-					&& "true".equals(AdtXml.attr(e, "canHaveChildren"));
+			// canHaveChildren only means the entry can be expanded: SAP sets it on using views and behavior
+			// definitions too. Containers are packages and the untyped parts below a class (local
+			// implementation, test classes).
+			boolean container = type.isEmpty() || type.toUpperCase(Locale.ROOT).startsWith("DEVC");
 			out.add(new Usage(new AdtObjectRef(uri.isEmpty() ? AdtXml.attr(src, "uri") : uri, name, type,
 					pkg.isEmpty() ? "" : AdtXml.attr(pkg.get(0), "name"), AdtXml.attr(src, "description")),
 					usage.isEmpty() || usage.contains("gradeDirect"), container));
