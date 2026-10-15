@@ -1729,6 +1729,31 @@ public final class AdtToolProvider implements ToolProvider {
 		return offset;
 	}
 
+	private static final Pattern REPORT_NAME = Pattern.compile("[A-Z0-9_/]{1,40}");
+
+	/**
+	 * Variants of a program from VARID (and their texts from VARIT), for
+	 * systems without the ADT variants resource. The name goes into the SQL,
+	 * so only valid program names are accepted.
+	 */
+	private static ToolResult variantsFromTables(AdtClient c, AdtSystem s, AdtObjectRef ref, CancelToken cancel)
+			throws IOException {
+		String report = ref.name().toUpperCase(Locale.ROOT);
+		if (!REPORT_NAME.matcher(report).matches()) {
+			return ToolResult.error("Not a program name: " + ref.name());
+		}
+		AdtClient.TableData variants = c.tableContents("SELECT variant, protected, ename, edat, aename, aedat FROM varid "
+				+ "WHERE report = '" + report + "' ORDER BY variant", TABLE_MAX_ROWS, cancel);
+		if (variants.rows().isEmpty()) {
+			return ToolResult.ok(ref.name() + " has no variants.");
+		}
+		AdtClient.TableData texts = c.tableContents("SELECT variant, langu, vtext FROM varit WHERE report = '" + report
+				+ "' ORDER BY variant, langu", TABLE_MAX_ROWS, cancel);
+		return ToolResult.ok("Variants of " + ref.name() + " (from table VARID; this system has no ADT resource for "
+				+ "variants): " + formatTable(variants, s.label())
+				+ (texts.rows().isEmpty() ? "" : "\n\nTexts (VARIT): " + formatTable(texts, s.label())));
+	}
+
 	private ToolResult objectInfo(JsonObject in, CancelToken cancel) throws IOException {
 		AdtClient c = client(system(in));
 		AdtObjectRef ref = resolve(c, in, cancel);
@@ -1780,9 +1805,8 @@ public final class AdtToolProvider implements ToolProvider {
 		case "variants" -> {
 			AdtResponse r = c.exchange(AdtRequest.get(objectUri + "/variants", "application/*"), cancel);
 			if (r.status() == 404) {
-				// older releases have no ADT resource for variants; the discovery document lists none then
-				return ToolResult.error("This SAP system does not offer program variants through ADT (404); "
-						+ "look them up in SE38 or with adt_table_contents on VARID.");
+				// some releases have no ADT resource for variants; the variant tables answer the same question
+				return variantsFromTables(c, system(in), ref, cancel);
 			}
 			if (!r.ok()) {
 				return ToolResult.error("Could not read the variants: " + AdtErrors.message(r));
@@ -3282,10 +3306,12 @@ public final class AdtToolProvider implements ToolProvider {
 				arr.forEach(e -> remove.add(e.getAsString().trim()));
 			}
 			List<AdtDdic.Message> merged = AdtDdic.mergeMessages(mc.messages(), AdtDdic.messages(in), remove);
-			body = AdtDdic.messageClassXml(name, description, h.pkg(), lang, merged);
+			List<AdtDdic.Message> deleted = AdtDdic.removedMessages(mc.messages(), merged);
+			body = AdtDdic.messageClassXml(name, description, h.pkg(), lang, merged, deleted);
 			contentType = AdtDdic.MESSAGECLASS_TYPE;
-			summary = "message class (" + merged.size() + " messages)";
-			removed.addAll(AdtDdic.removedMessages(mc.messages(), merged));
+			summary = "message class (" + merged.size() + " messages" + (deleted.isEmpty() ? "" : ", "
+					+ deleted.size() + " deleted") + ")";
+			deleted.forEach(m -> removed.add(m.number()));
 		}
 		}
 		String tr;
@@ -3299,7 +3325,7 @@ public final class AdtToolProvider implements ToolProvider {
 		String saved = "Saved the " + summary + " " + name + " in " + s.label()
 				+ (tr.isEmpty() ? "" : " (transport " + tr + ")");
 		if (!removed.isEmpty()) {
-			// SAP keeps messages missing from the PUT, and ADT offers no working delete for single messages
+			// sent as deletedmessages; checked, so a system that still keeps them is not reported as done
 			List<String> kept = new ArrayList<>();
 			for (AdtDdic.Message m : AdtDdic.parseMessageClass(c.readMetadata(uri, cancel)).messages()) {
 				if (removed.contains(m.number())) {
@@ -3308,7 +3334,7 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			if (!kept.isEmpty()) {
 				return ToolResult.error(saved + ", but SAP kept the messages " + String.join(", ", kept)
-						+ ": ADT cannot delete single messages on this system. Delete them in SE91.");
+						+ " although they were sent as deleted. Delete them in SE91.");
 			}
 		}
 		return ToolResult.ok(saved + (type.equals("MSAG") ? "." : ". Not activated yet."));

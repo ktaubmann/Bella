@@ -279,7 +279,20 @@ class AdtDdicTest {
 		ToolResult gone = new AdtToolProvider(messageClass(both, one), () -> "dev").call("adt_write_metadata",
 				Json.parseObject(remove), CancelToken.NONE);
 		assertFalse(gone.isError(), gone.content());
-		assertEquals("Saved the message class (1 messages) ZSD in S4H_100.", gone.content());
+		assertEquals("Saved the message class (1 messages, 1 deleted) ZSD in S4H_100.", gone.content());
+	}
+
+	@Test
+	void removedMessagesAreSentAsDeleted() {
+		// SAP keeps a message that is only missing from the PUT; the Eclipse editor lists it in deletedmessages
+		String xml = AdtDdic.messageClassXml("ZSD", "Deliveries", "ZPKG", "EN", List.of(new AdtDdic.Message("002", "Keep")),
+				List.of(new AdtDdic.Message("001", "Old & gone")));
+		assertTrue(xml.contains("<mc:messages mc:msgno=\"002\" mc:msgtext=\"Keep\""), xml);
+		assertTrue(xml.contains("<mc:deletedmessages mc:msgno=\"001\" mc:msgtext=\"Old &amp; gone\"/>"), xml);
+		assertTrue(xml.indexOf("deletedmessages") > xml.indexOf("mc:msgno=\"002\""), "messages first, as in the XSD");
+		assertEquals(List.of(new AdtDdic.Message("001", "Old")), AdtDdic.removedMessages(
+				List.of(new AdtDdic.Message("001", "Old"), new AdtDdic.Message("002", "Keep")),
+				List.of(new AdtDdic.Message("002", "Keep"))));
 	}
 
 	/** Message class ZSD that reads {@code before} and, after a PUT, {@code after} (unchanged if null). */

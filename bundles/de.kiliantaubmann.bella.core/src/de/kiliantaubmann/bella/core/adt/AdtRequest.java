@@ -37,6 +37,17 @@ public record AdtRequest(String method, String path, Map<String, String> headers
 		return new AdtRequest(method, path, h, body, contentType);
 	}
 
+	/**
+	 * Whether SAP needs this path exactly as given, so a transport must not add
+	 * query parameters such as {@code sap-client} or {@code sap-language} (send
+	 * them as headers instead). Applying a quick fix looks the proposal up by
+	 * the complete request URI and dumps in
+	 * {@code CL_ART_QUICKFIX_PROVIDER=>APPLY} on any extra parameter.
+	 */
+	public boolean exactPath() {
+		return method.equals("POST") && path.startsWith("/sap/bc/adt/quickfixes/proposals/");
+	}
+
 	private static Map<String, String> accept(String accept) {
 		Map<String, String> h = new LinkedHashMap<>();
 		if (accept != null) {

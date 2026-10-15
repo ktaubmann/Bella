@@ -276,6 +276,16 @@ final class AdtDdic {
 	}
 
 	static String messageClassXml(String name, String description, String pkg, String language, List<Message> messages) {
+		return messageClassXml(name, description, pkg, language, messages, List.of());
+	}
+
+	/**
+	 * The message class XML; {@code deleted} go into {@code deletedmessages},
+	 * because SAP keeps a message that is merely missing from the PUT (as the
+	 * Eclipse editor does it, messageclass.xsd).
+	 */
+	static String messageClassXml(String name, String description, String pkg, String language, List<Message> messages,
+			List<Message> deleted) {
 		StringBuilder sb = new StringBuilder("<mc:messageClass xmlns:mc=\"http://www.sap.com/adt/MessageClass\""
 				+ " xmlns:adtcore=\"http://www.sap.com/adt/core\" adtcore:description=\"" + x(description)
 				+ "\" adtcore:name=\"" + x(name) + "\" adtcore:language=\"" + language + "\" adtcore:masterLanguage=\""
@@ -285,6 +295,10 @@ final class AdtDdic {
 			sb.append("\n  <mc:messages mc:msgno=\"").append(x(m.number())).append("\" mc:msgtext=\"")
 					.append(x(m.text())).append("\" mc:selfexplainatory=\"").append(m.selfExplanatory())
 					.append("\" mc:documented=\"").append(m.documented()).append("\"/>");
+		}
+		for (Message m : deleted) {
+			sb.append("\n  <mc:deletedmessages mc:msgno=\"").append(x(m.number())).append("\" mc:msgtext=\"")
+					.append(x(m.text())).append("\"/>");
 		}
 		return sb.append("\n</mc:messageClass>").toString();
 	}
@@ -352,14 +366,14 @@ final class AdtDdic {
 		return new ArrayList<>(byNumber.values());
 	}
 
-	/** Numbers of the messages in {@code before} that {@code after} no longer has. */
-	static List<String> removedMessages(List<Message> before, List<Message> after) {
+	/** The messages in {@code before} that {@code after} no longer has. */
+	static List<Message> removedMessages(List<Message> before, List<Message> after) {
 		Set<String> kept = new java.util.HashSet<>();
 		after.forEach(m -> kept.add(m.number()));
-		List<String> out = new ArrayList<>();
+		List<Message> out = new ArrayList<>();
 		for (Message m : before) {
 			if (!kept.contains(m.number())) {
-				out.add(m.number());
+				out.add(m);
 			}
 		}
 		return out;

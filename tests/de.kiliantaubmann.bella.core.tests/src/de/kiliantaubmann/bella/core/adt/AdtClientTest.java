@@ -37,6 +37,15 @@ class AdtClientTest {
 	}
 
 	@Test
+	void applyingAQuickfixNeedsTheExactPath() {
+		String proposal = "/sap/bc/adt/quickfixes/proposals/providers/refactoring/quickfixes/declare_local_variable";
+		assertTrue(AdtRequest.post(proposal, "application/xml", "<x/>", "application/xml").exactPath());
+		assertFalse(AdtRequest.post("/sap/bc/adt/quickfixes/evaluation?uri=u", "application/*", "s", "application/*")
+				.exactPath());
+		assertFalse(AdtRequest.get(proposal, "application/xml").exactPath());
+	}
+
+	@Test
 	void quickfixRecognisesTheServerErrorPage() {
 		assertTrue(AdtQuickfix.isErrorPage("<!DOCTYPE html>\n<html><head><title>Application Server Error</title>"));
 		assertTrue(AdtQuickfix.isErrorPage("  <html>"));

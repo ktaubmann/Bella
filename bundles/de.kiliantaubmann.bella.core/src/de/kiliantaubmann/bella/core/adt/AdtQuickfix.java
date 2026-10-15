@@ -102,10 +102,12 @@ final class AdtQuickfix {
 				+ "\n</quickfixes:proposalRequest>";
 		AdtResponse r = c.exchange(AdtRequest.post(p.uri(), "application/xml", body, "application/xml"), cancel);
 		if (r.status() >= 500 && isErrorPage(r.body())) {
-			// e.g. some releases dump in CL_ART_QUICKFIX_PROVIDER->APPLY for refactoring quick fixes
+			// CL_ART_QUICKFIX_PROVIDER=>APPLY looks the proposal up by the complete request URI and dumps when a
+			// transport adds query parameters (sap-client, sap-language) or the object is gone (ARC-1 #993)
 			throw new AdtException(r.status(), "SAP crashed while running the quick fix (HTTP " + r.status()
-					+ ", the server's error page; adt_diagnose 'short_dumps' shows the dump). Nothing was changed; "
-					+ "make the change by hand.");
+					+ ", the server's error page; adt_diagnose 'short_dumps' shows the dump). Known causes: the "
+					+ "connection adds parameters such as sap-client to the proposal URL, or the object no longer "
+					+ "exists. Nothing was changed; make the change by hand.");
 		}
 		if (!r.ok()) {
 			throw new AdtException(r.status(), "The quick fix failed: " + AdtErrors.message(r));

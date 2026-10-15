@@ -12,6 +12,11 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
  */
 public interface AdtTransport {
 
+	/**
+	 * Sends the request. A transport that adds query parameters (client,
+	 * language) must leave {@link AdtRequest#exactPath()} requests unchanged
+	 * and send those values as headers.
+	 */
 	AdtResponse send(AdtRequest request, CancelToken cancel) throws IOException;
 
 	/** Whether requests share one ABAP session (needed for lock, write, unlock). */

@@ -516,6 +516,32 @@ class AdtToolProviderTest {
 	}
 
 	@Test
+	void variantsComeFromVaridWithoutTheAdtResource() {
+		List<String> bodies = new ArrayList<>();
+		FakeAdt adt = twoSystems()
+				.route("GET /sap/bc/adt/programs/programs/zrep/variants", r -> new AdtResponse(404, "text/plain", "none"))
+				.route("POST /sap/bc/adt/datapreview/freestyle", r -> {
+					bodies.add(r.body());
+					return FakeAdt.ok(AdtClientTest.TABLE_XML);
+				});
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").call("adt_object_info",
+				Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\",\"action\":\"variants\"}"), CancelToken.NONE);
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Variants of ZREP (from table VARID"), r.content());
+		assertTrue(bodies.get(0).startsWith("SELECT variant, protected, ename, edat, aename, aedat FROM varid "
+				+ "WHERE report = 'ZREP'"), bodies.get(0));
+		assertTrue(bodies.get(1).contains("FROM varit WHERE report = 'ZREP'"), bodies.get(1));
+
+		ToolResult none = new AdtToolProvider(twoSystems()
+				.route("GET /sap/bc/adt/programs/programs/zrep/variants", q -> new AdtResponse(404, "text/plain", ""))
+				.route("POST /sap/bc/adt/datapreview/freestyle", q -> FakeAdt.ok(
+						"<dataPreview:tableData xmlns:dataPreview=\"http://www.sap.com/adt/dataPreview\"/>")),
+				() -> "dev").call("adt_object_info",
+						Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\",\"action\":\"variants\"}"), CancelToken.NONE);
+		assertEquals("ZREP has no variants.", none.content());
+	}
+
+	@Test
 	void tableContentsNeedATableName() {
 		ToolResult r = new AdtToolProvider(twoSystems(), () -> "dev").call("adt_table_contents",
 				Json.parseObject("{\"table\":\"t000 WHERE 1 = 1\"}"), CancelToken.NONE);
