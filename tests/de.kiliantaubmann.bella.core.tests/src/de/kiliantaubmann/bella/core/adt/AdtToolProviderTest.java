@@ -539,6 +539,12 @@ class AdtToolProviderTest {
 				() -> "dev").call("adt_object_info",
 						Json.parseObject("{\"name\":\"ZREP\",\"type\":\"PROG\",\"action\":\"variants\"}"), CancelToken.NONE);
 		assertEquals("ZREP has no variants.", none.content());
+
+		// only programs have variants; no request, no VARID query
+		ToolResult clas = new AdtToolProvider(twoSystems(), () -> "dev").call("adt_object_info",
+				Json.parseObject("{\"name\":\"ZCL_X\",\"type\":\"CLAS\",\"action\":\"variants\"}"), CancelToken.NONE);
+		assertTrue(clas.isError(), clas.content());
+		assertTrue(clas.content().startsWith("Only programs have variants"), clas.content());
 	}
 
 	@Test

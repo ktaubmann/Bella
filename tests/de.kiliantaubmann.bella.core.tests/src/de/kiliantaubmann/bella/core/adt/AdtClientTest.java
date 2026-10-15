@@ -40,6 +40,9 @@ class AdtClientTest {
 	void applyingAQuickfixNeedsTheExactPath() {
 		String proposal = "/sap/bc/adt/quickfixes/proposals/providers/refactoring/quickfixes/declare_local_variable";
 		assertTrue(AdtRequest.post(proposal, "application/xml", "<x/>", "application/xml").exactPath());
+		// every proposal apply() accepts, not only those below proposals/
+		assertTrue(AdtRequest.post("/sap/bc/adt/quickfixes/abap/declare_local", "application/xml", "<x/>",
+				"application/xml").exactPath());
 		assertFalse(AdtRequest.post("/sap/bc/adt/quickfixes/evaluation?uri=u", "application/*", "s", "application/*")
 				.exactPath());
 		assertFalse(AdtRequest.get(proposal, "application/xml").exactPath());

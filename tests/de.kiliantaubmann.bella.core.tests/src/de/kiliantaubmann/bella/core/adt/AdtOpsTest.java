@@ -510,7 +510,9 @@ class AdtOpsTest {
 				.route("GET /sap/bc/adt/filestore/ui5-bsp/objects?maxResults=200&name=Z*", r -> FakeAdt.ok(feed(
 						"<atom:entry><atom:title>ZAPP</atom:title><atom:summary>Travel app</atom:summary></atom:entry>")))
 				.route("GET /sap/bc/adt/filestore/ui5-bsp/objects/ZAPP%2Fwebapp%2Fmanifest.json/content",
-						r -> new AdtResponse(200, "application/json", "{\"sap.app\":{}}"));
+						r -> new AdtResponse(200, "application/json", "{\"sap.app\":{}}"))
+				.route("GET /sap/opu/odata/UI2/PAGE_BUILDER_CUST/Catalogs('%2FUI2%2FCATALOG_ALL')/Chips?",
+						r -> new AdtResponse(200, "application/json", "{\"d\":{\"results\":[]}}"));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
 		assertEquals("- ZAPP | Travel app\n", call(p, "adt_ui5", "{\"action\":\"apps\",\"filter\":\"Z*\"}").content());
 		assertEquals("{\"sap.app\":{}}", call(p, "adt_ui5",
@@ -518,5 +520,9 @@ class AdtOpsTest {
 		assertTrue(call(p, "adt_ui5", "{\"action\":\"file\",\"app\":\"zapp\",\"path\":\"../x\"}").isError());
 		assertTrue(call(p, "adt_ui5", "{\"action\":\"files\"}").isError());
 		assertTrue(call(p, "adt_ui5", "{\"action\":\"flp_tiles\"}").isError());
+		// no catalog page (404): the chips of the catalog, also when given as page id
+		ToolResult chips = call(p, "adt_ui5",
+				"{\"action\":\"flp_tiles\",\"catalog\":\"X-SAP-UI2-CATALOGPAGE:/UI2/CATALOG_ALL\"}");
+		assertTrue(chips.content().startsWith("This catalog has no catalog page"), chips.content());
 	}
 }

@@ -315,9 +315,9 @@ public final class ClassSurgery {
 		if (header == null) {
 			return insertInSection(addSection(src, cls, visibility), cls, visibility, decl);
 		}
-		int at = lineStart(src, next == null ? def.footerStart() : next.start());
+		int at = insertionPoint(src, next == null ? def.footerStart() : next.start());
 		String indent = AbapEdit.indentationOfLine(src, header.start()) + "  ";
-		StringBuilder lines = new StringBuilder();
+		StringBuilder lines = new StringBuilder(at > 0 && src.charAt(at - 1) != '\n' ? "\n" : "");
 		for (String l : decl.split("\n")) {
 			lines.append(indent).append(l.strip()).append('\n');
 		}
@@ -348,16 +348,22 @@ public final class ClassSurgery {
 				break;
 			}
 		}
-		int at = lineStart(src, later == null ? def.footerStart() : later.start());
-		if (at < def.headerEnd()) {
-			// header and ENDCLASS on one line
-			at = later == null ? def.footerStart() : later.start();
-		}
+		int at = insertionPoint(src, later == null ? def.footerStart() : later.start());
 		String indent = any != null ? AbapEdit.indentationOfLine(src, any.start())
 				: AbapEdit.indentationOfLine(src, def.start()) + "  ";
 		String before = src.substring(0, at);
 		String gap = before.endsWith("\n") || before.isEmpty() ? "" : "\n";
 		return before + gap + indent + visibility.toUpperCase(Locale.ROOT) + " SECTION.\n" + src.substring(at);
+	}
+
+	/**
+	 * Where to insert before the statement at {@code target}: the start of its
+	 * line, or the statement itself when code precedes it on that line (compact
+	 * definitions such as {@code PUBLIC SECTION. DATA a TYPE i. ENDCLASS.}).
+	 */
+	private static int insertionPoint(String src, int target) {
+		int line = lineStart(src, target);
+		return src.substring(line, target).isBlank() ? line : target;
 	}
 
 	/** Adds an empty METHOD … ENDMETHOD before the ENDCLASS of the implementation. */

@@ -19,7 +19,8 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
  */
 final class AdtQuickfix {
 
-	private static final String PROPOSAL_PREFIX = "/sap/bc/adt/quickfixes/";
+	/** The same prefix {@link AdtRequest#exactPath()} sends unchanged. */
+	private static final String PROPOSAL_PREFIX = AdtRequest.QUICKFIXES;
 
 	private AdtQuickfix() {
 	}

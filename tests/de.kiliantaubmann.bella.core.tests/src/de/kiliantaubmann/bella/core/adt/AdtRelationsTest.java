@@ -165,10 +165,17 @@ class AdtRelationsTest {
 						node("/sap/bc/adt/oo/classes/zbp_r_travel", pkg, "CLAS/OC", "ZBP_R_TRAVEL", false, null),
 						node("/sap/bc/adt/oo/classes/zbp_r_travel/includes/implementations#start=1,0",
 								"/sap/bc/adt/oo/classes/zbp_r_travel", null, "Local Class Implementation", true,
-								"gradeComponent,includeProductive"))));
+								"gradeComponent,includeProductive"),
+						// a function group only holds the function module that uses the view
+						node("/sap/bc/adt/functions/groups/zfg_trv", pkg, "FUGR/F", "ZFG_TRV", true, null),
+						node("/sap/bc/adt/functions/groups/zfg_trv/fmodules/z_trv_read",
+								"/sap/bc/adt/functions/groups/zfg_trv", "FUGR/FF", "Z_TRV_READ", false,
+								"gradeDirect,includeProductive"))));
 		ToolResult r = call(adt, "adt_navigate", "{\"name\":\"ZR_TRAVEL\",\"type\":\"DDLS\",\"action\":\"impact\"}");
 		String c = r.content();
-		assertTrue(c.contains("Used by (where-used list): 3 objects, 3 direct"), c);
+		assertTrue(c.contains("Used by (where-used list): 4 objects, 4 direct"), c);
+		assertTrue(c.contains("Z_TRV_READ (FUGR/FF)"), c);
+		assertFalse(c.contains("ZFG_TRV"), c);
 		assertTrue(c.contains("CDS views on top of it:\n- ZC_TRAVEL (DDLS/DF)"), c);
 		assertTrue(c.contains("Behavior definitions:\n- ZR_TRAVEL (BDEF/BDO)"), c);
 		assertTrue(c.contains("- ZBP_R_TRAVEL (CLAS/OC)"), c);

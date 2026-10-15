@@ -7,10 +7,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -400,7 +402,8 @@ public final class AdtClient {
 		case "macros" -> "the class has no macros";
 		default -> "the object has no such include";
 		};
-		return "Include " + inc + " not found: " + reason + ", or the class itself does not exist";
+		return "Include " + inc + " not found: " + reason + ", or the " + (reason.startsWith("the class") ? "class"
+				: "object") + " itself does not exist";
 	}
 
 	/** Drops cached sources of an object after it was written or activated. */
@@ -1412,7 +1415,16 @@ public final class AdtClient {
 
 	static List<Usage> parseUsages(String xml) throws IOException {
 		List<Usage> out = new ArrayList<>();
-		for (Element e : AdtXml.elements(AdtXml.parse(xml), "referencedObject")) {
+		List<Element> entries = AdtXml.elements(AdtXml.parse(xml), "referencedObject");
+		// entries holding typed objects, e.g. a function group above its function module, a program above its include
+		Set<String> parents = new HashSet<>();
+		for (Element e : entries) {
+			List<Element> adt = AdtXml.elements(e, "adtObject");
+			if (!AdtXml.attr(adt.isEmpty() ? e : adt.get(0), "type").isEmpty()) {
+				parents.add(AdtXml.attr(e, "parentUri"));
+			}
+		}
+		for (Element e : entries) {
 			String uri = AdtXml.attr(e, "uri");
 			List<Element> adt = AdtXml.elements(e, "adtObject");
 			Element src = adt.isEmpty() ? e : adt.get(0);
@@ -1424,9 +1436,10 @@ public final class AdtClient {
 			String type = AdtXml.attr(src, "type");
 			String usage = AdtXml.attr(e, "usageInformation");
 			// canHaveChildren only means the entry can be expanded: SAP sets it on using views and behavior
-			// definitions too. Containers are packages and the untyped parts below a class (local
-			// implementation, test classes).
-			boolean container = type.isEmpty() || type.toUpperCase(Locale.ROOT).startsWith("DEVC");
+			// definitions too. Containers are packages, the untyped parts below a class (local
+			// implementation, test classes) and entries with typed objects below them.
+			boolean container = type.isEmpty() || type.toUpperCase(Locale.ROOT).startsWith("DEVC")
+					|| !uri.isEmpty() && parents.contains(uri);
 			out.add(new Usage(new AdtObjectRef(uri.isEmpty() ? AdtXml.attr(src, "uri") : uri, name, type,
 					pkg.isEmpty() ? "" : AdtXml.attr(pkg.get(0), "name"), AdtXml.attr(src, "description")),
 					usage.isEmpty() || usage.contains("gradeDirect"), container));
@@ -1590,13 +1603,15 @@ public final class AdtClient {
 		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
 			String path = objectUri + "?lockHandle=" + enc(handle) + (tr.isBlank() ? "" : "&corrNr=" + enc(tr));
 			AdtResponse put = exchange(session, putMetadata(path, body, contentType), cancel);
-			if (put.status() == 415 && AdtDdic.DATAELEMENT_TYPE.equals(contentType)) {
-				put = exchange(session, putMetadata(path, body, AdtDdic.DATAELEMENT_TYPE_V1), cancel);
-			}
-			// e.g. function modules: some releases take only fmodules.v3+xml and name it in the 415
-			String offered = put.status() == 415 ? supportedMediaType(put.body()) : null;
-			if (offered != null && !offered.equals(contentType)) {
-				put = exchange(session, putMetadata(path, body, offered), cancel);
+			if (put.status() == 415) {
+				// one more try: the type SAP names (e.g. fmodules.v3+xml for function modules on some
+				// releases), else for data elements the older v1
+				String offered = supportedMediaType(put.body());
+				String retry = offered != null ? offered
+						: AdtDdic.DATAELEMENT_TYPE.equals(contentType) ? AdtDdic.DATAELEMENT_TYPE_V1 : null;
+				if (retry != null && !retry.equals(contentType)) {
+					put = exchange(session, putMetadata(path, body, retry), cancel);
+				}
 			}
 			if (!put.ok()) {
 				throw new AdtException(put.status(), "Could not write the metadata: " + AdtErrors.message(put));

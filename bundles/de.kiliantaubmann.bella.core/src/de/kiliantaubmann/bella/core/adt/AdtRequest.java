@@ -45,8 +45,11 @@ public record AdtRequest(String method, String path, Map<String, String> headers
 	 * {@code CL_ART_QUICKFIX_PROVIDER=>APPLY} on any extra parameter.
 	 */
 	public boolean exactPath() {
-		return method.equals("POST") && path.startsWith("/sap/bc/adt/quickfixes/proposals/");
+		return method.equals("POST") && path.startsWith(QUICKFIXES) && !path.startsWith(QUICKFIXES + "evaluation");
 	}
+
+	/** Quick fix resources; every proposal SAP offers lies below it. */
+	static final String QUICKFIXES = "/sap/bc/adt/quickfixes/";
 
 	private static Map<String, String> accept(String accept) {
 		Map<String, String> h = new LinkedHashMap<>();

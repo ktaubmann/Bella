@@ -39,9 +39,18 @@ final class AdtDiagnostics {
 	}
 
 	static String get(AdtClient c, String path, String accept, CancelToken cancel) throws IOException {
+		String body = getOrNull(c, path, accept, cancel);
+		if (body == null) {
+			throw new AdtException(404, "Not available on this system (" + path.replaceFirst("\\?.*", "") + ").");
+		}
+		return body;
+	}
+
+	/** Like {@link #get}, but {@code null} on 404, for callers with a fallback. */
+	static String getOrNull(AdtClient c, String path, String accept, CancelToken cancel) throws IOException {
 		AdtResponse r = c.exchange(AdtRequest.get(path, accept), cancel);
 		if (r.status() == 404) {
-			throw new AdtException(404, "Not available on this system (" + path.replaceFirst("\\?.*", "") + ").");
+			return null;
 		}
 		if (!r.ok()) {
 			throw new AdtException(r.status(), AdtErrors.message(r));

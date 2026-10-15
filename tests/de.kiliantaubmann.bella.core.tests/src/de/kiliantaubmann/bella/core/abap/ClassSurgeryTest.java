@@ -87,6 +87,15 @@ public class ClassSurgeryTest {
 		assertTrue(priv.contains("  PUBLIC SECTION.\n  PRIVATE SECTION.\n    METHODS helper.\nENDCLASS."), priv);
 		assertTrue(priv.contains("CLASS zcl_b IMPLEMENTATION.\n  METHOD helper.\n  ENDMETHOD.\nENDCLASS."), priv);
 
+		// compact definition: the new section goes after the public one, not before its line
+		String compact = "CLASS zcl_c DEFINITION.\n  PUBLIC SECTION. DATA a TYPE i. ENDCLASS.\n"
+				+ "CLASS zcl_c IMPLEMENTATION.\nENDCLASS.\n";
+		String compactPriv = ClassSurgery.addMethod(compact, "zcl_c", "METHODS helper.", "private");
+		assertTrue(compactPriv.contains("  PUBLIC SECTION. DATA a TYPE i. \n  PRIVATE SECTION.\n    METHODS helper.\n"
+				+ "ENDCLASS."), compactPriv);
+		String compactPub = ClassSurgery.addMethod(compact, "zcl_c", "METHODS run.", "public");
+		assertTrue(compactPub.contains("  PUBLIC SECTION. DATA a TYPE i. \n    METHODS run.\nENDCLASS."), compactPub);
+
 		String moved = ClassSurgery.changeVisibility(onlyPublic.replace("PUBLIC SECTION.\n",
 				"PUBLIC SECTION.\n    METHODS run.\n"), "zcl_b", "run", "protected");
 		assertTrue(moved.contains("  PUBLIC SECTION.\n  PROTECTED SECTION.\n    METHODS run.\nENDCLASS."), moved);

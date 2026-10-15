@@ -296,6 +296,47 @@ class AdtDdicTest {
 	}
 
 	/** Message class ZSD that reads {@code before} and, after a PUT, {@code after} (unchanged if null). */
+	@Test
+	void savedMessageClassStaysSavedWhenTheCheckFails() {
+		String both = AdtDdic.messageClassXml("ZSD", "Deliveries", "ZPKG", "EN",
+				List.of(new AdtDdic.Message("001", "Old"), new AdtDdic.Message("002", "Keep")));
+		boolean[] saved = { false };
+		FakeAdt adt = systems()
+				.route("GET /sap/bc/adt/messageclass/zsd", r -> saved[0] ? new AdtResponse(503, "text/plain", "down")
+						: FakeAdt.ok(both))
+				.route("POST /sap/bc/adt/messageclass/zsd?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/messageclass/zsd", r -> {
+					saved[0] = true;
+					return FakeAdt.ok("");
+				})
+				.route("POST /sap/bc/adt/messageclass/zsd?_action=UNLOCK", r -> FakeAdt.ok(""));
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").call("adt_write_metadata",
+				Json.parseObject("{\"name\":\"ZSD\",\"type\":\"MSAG\",\"remove_numbers\":[\"1\"]}"), CancelToken.NONE);
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Saved the message class"), r.content());
+		assertTrue(r.content().contains("Could not check whether SAP deleted the messages 001"), r.content());
+	}
+
+	@Test
+	void metadataPutRetriesOnceWithTheOfferedType() throws Exception {
+		List<String> types = new ArrayList<>();
+		FakeAdt adt = systems()
+				.route("POST /sap/bc/adt/ddic/dataelements/zsd_e?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("PUT /sap/bc/adt/ddic/dataelements/zsd_e", r -> {
+					types.add(r.contentType());
+					return new AdtResponse(415, "text/plain",
+							"Supported Media Types: application/vnd.sap.adt.dataelements.v1+xml");
+				})
+				.route("POST /sap/bc/adt/ddic/dataelements/zsd_e?_action=UNLOCK", r -> FakeAdt.ok(""));
+		try (AdtTransport.Session s = adt.stateful("dev")) {
+			assertThrows(AdtException.class, () -> AdtClient.writeMetadata(s, "/sap/bc/adt/ddic/dataelements/zsd_e",
+					"<x/>", AdtDdic.DATAELEMENT_TYPE, null, CancelToken.NONE));
+		}
+		assertEquals(List.of(AdtDdic.DATAELEMENT_TYPE, "application/vnd.sap.adt.dataelements.v1+xml"), types);
+	}
+
 	private static FakeAdt messageClass(String before, String after) {
 		String[] current = { before };
 		return systems()
