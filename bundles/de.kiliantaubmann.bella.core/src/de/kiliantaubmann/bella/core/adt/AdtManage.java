@@ -153,10 +153,7 @@ final class AdtManage {
 					String taskId = AdtXml.attr(task, "number");
 					String body = "<?xml version=\"1.0\" encoding=\"ASCII\"?>\n<tm:root xmlns:tm=\"" + TM + "\" tm:number=\""
 							+ AdtXml.escape(taskId) + "\" tm:useraction=\"removeobject\">\n  <tm:request>\n"
-							+ "    <tm:abap_object tm:pgmid=\"" + AdtXml.escape(AdtXml.attr(o, "pgmid")) + "\" tm:type=\""
-							+ AdtXml.escape(AdtXml.attr(o, "type")) + "\" tm:name=\"" + AdtXml.escape(AdtXml.attr(o, "name"))
-							+ "\" tm:position=\"" + AdtXml.escape(AdtXml.attr(o, "position")) + "\" tm:obj_desc=\""
-							+ AdtXml.escape(AdtXml.attr(o, "obj_desc")) + "\"/>\n  </tm:request>\n</tm:root>";
+							+ "    " + entryAsSent(o) + "\n  </tm:request>\n</tm:root>";
 					AdtResponse put = c.exchange(AdtRequest.put("/sap/bc/adt/cts/transportrequests/"
 							+ AdtClient.enc(taskId), body, ORGANIZER).withHeader("Accept", ORGANIZER), cancel);
 					if (!put.ok()) {
@@ -168,6 +165,25 @@ final class AdtManage {
 		}
 		throw new AdtException(404, pgmid.toUpperCase(Locale.ROOT) + " " + type.toUpperCase(Locale.ROOT) + " "
 				+ name.toUpperCase(Locale.ROOT) + " is not in a task of " + id + ".");
+	}
+
+	/**
+	 * The object entry with every attribute SAP sent for it. An entry rebuilt
+	 * from a few attributes is refused with "Check of condition failed" when
+	 * the object no longer exists (a deletion entry has no description, so an
+	 * empty {@code obj_desc} does not match it).
+	 */
+	static String entryAsSent(Element o) {
+		StringBuilder sb = new StringBuilder("<tm:abap_object");
+		org.w3c.dom.NamedNodeMap attrs = o.getAttributes();
+		for (int i = 0; i < attrs.getLength(); i++) {
+			org.w3c.dom.Node a = attrs.item(i);
+			if (TM.equals(a.getNamespaceURI())) {
+				sb.append(" tm:").append(a.getLocalName()).append("=\"").append(AdtXml.escape(a.getNodeValue()))
+						.append('"');
+			}
+		}
+		return sb.append("/>").toString();
 	}
 
 	// ---- packages ----------------------------------------------------------------

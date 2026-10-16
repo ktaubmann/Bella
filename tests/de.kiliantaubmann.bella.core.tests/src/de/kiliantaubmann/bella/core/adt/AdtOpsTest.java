@@ -214,6 +214,22 @@ class AdtOpsTest {
 	}
 
 	@Test
+	void removedEntryIsSentAsSapSentIt() throws Exception {
+		// a deleted object's entry has no description; SAP refuses it rebuilt with an empty obj_desc
+		org.w3c.dom.Element o = (org.w3c.dom.Element) AdtXml.elements(AdtXml.parse(
+				"<tm:root xmlns:tm=\"http://www.sap.com/cts/adt/tm\"><tm:abap_object tm:pgmid=\"R3TR\" tm:type=\"CLAS\" "
+						+ "tm:name=\"ZCL_GONE\" tm:wbtype=\"CLAS/OC\" tm:obj_info=\"Class &amp; more\" tm:position=\"000006\" "
+						+ "tm:lock_status=\"X\" tm:img_activity=\"\"/></tm:root>"), "abap_object").get(0);
+		String e = AdtManage.entryAsSent(o);
+		assertTrue(e.startsWith("<tm:abap_object ") && e.endsWith("/>"), e);
+		for (String a : List.of("tm:pgmid=\"R3TR\"", "tm:name=\"ZCL_GONE\"", "tm:wbtype=\"CLAS/OC\"",
+				"tm:obj_info=\"Class &amp; more\"", "tm:position=\"000006\"", "tm:lock_status=\"X\"", "tm:img_activity=\"\"")) {
+			assertTrue(e.contains(a), a + " missing in " + e);
+		}
+		assertFalse(e.contains("obj_desc"), e);
+	}
+
+	@Test
 	void transportValues() {
 		FakeAdt adt = adt().route("GET /sap/bc/adt/packages/valuehelps/transportlayers", r -> FakeAdt.ok(
 				"<nameditem:namedItemList xmlns:nameditem=\"http://www.sap.com/adt/nameditem\"><nameditem:namedItem>"
