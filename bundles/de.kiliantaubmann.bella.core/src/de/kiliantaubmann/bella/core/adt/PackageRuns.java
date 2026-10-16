@@ -95,6 +95,11 @@ final class PackageRuns {
 			}
 			for (AdtObjectRef r : found) {
 				String own = r.packageName().trim().toUpperCase(Locale.ROOT);
+				// the search lists objects of subpackages, too, and releases without the packageName filter
+				// objects of any package (ARC-1 #999); subpackages are searched on their own
+				if (!own.isEmpty() && !own.equals(current)) {
+					continue;
+				}
 				String main = mainType(r.type());
 				if (main.equals("DEVC")) {
 					String sub = r.name().trim().toUpperCase(Locale.ROOT);
@@ -106,10 +111,6 @@ final class PackageRuns {
 									+ " packages)");
 						}
 					}
-					continue;
-				}
-				// the search may list objects of subpackages, too
-				if (!subpackages && !own.isEmpty() && !own.equals(root)) {
 					continue;
 				}
 				if (!runnable(r.type(), types) || !seen.add(r.uri())) {
