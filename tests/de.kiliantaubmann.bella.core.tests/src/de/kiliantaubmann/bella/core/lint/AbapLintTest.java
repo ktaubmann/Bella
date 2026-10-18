@@ -134,7 +134,126 @@ class AbapLintTest {
 		assertEquals(List.of("message_abort"), rules("MESSAGE 'Stop'(001) TYPE 'A'."));
 		assertEquals(List.of("message_abort"), rules("MESSAGE x001(zmsg)."));
 		assertEquals(List.of(), rules("MESSAGE TEXT-002 TYPE 'I'."));
-		assertEquals(List.of("read_table"), rules("READ TABLE lt INTO ls WITH KEY matnr = lv."));
+		assertEquals(List.of("read_table"), rules("READ TABLE lt INTO ls WITH KEY matnr = lv.\nIF sy-subrc = 0.\nENDIF."));
+	}
+
+	@Test
+	void subrcAfterStatementsThatCanFail() {
+		assertEquals(List.of("check_subrc"), rules("READ TABLE lt INTO ls INDEX 1.\nx = ls-a."));
+		assertEquals(List.of(), rules("READ TABLE lt INTO ls INDEX 1.\nIF sy-subrc <> 0.\n RETURN.\nENDIF."));
+		assertEquals(List.of(), rules("READ TABLE lt ASSIGNING <ls> INDEX 1.\nIF <ls> IS NOT ASSIGNED.\n RETURN.\nENDIF."));
+		assertEquals(List.of(), rules("READ TABLE lt INTO ls INDEX 1. \"#EC CI_SUBRC\nx = ls-a."));
+		assertEquals(List.of("check_subrc"), rules("ASSIGN (lv_name) TO <lv>.\n<lv> = 1."));
+		assertEquals(List.of("check_subrc"), rules("ASSIGN COMPONENT 'A' OF STRUCTURE ls TO <lv>.\n<lv> = 1."));
+		// a variable is always assigned
+		assertEquals(List.of(), rules("ASSIGN ls-a TO <lv>.\n<lv> = 1."));
+		assertEquals(List.of("check_subrc"), rules("AUTHORITY-CHECK OBJECT 'S_TCODE' ID 'TCD' FIELD 'SE38'.\nx = 1."));
+		assertEquals(List.of("check_subrc"),
+				rules("CALL FUNCTION 'Z_X'\n  EXCEPTIONS\n    not_found = 1\n    OTHERS    = 2.\nx = 1."));
+		assertEquals(List.of(), rules("CALL FUNCTION 'Z_X'\n  EXPORTING\n    iv = 1.\nx = 1."));
+		assertEquals(List.of(), rules("CALL FUNCTION 'Z_X' EXCEPTIONS OTHERS = 1.\nCASE sy-subrc.\nENDCASE."));
+		assertEquals(List.of(), rules("FIND 'A' IN lv MATCH COUNT lv_n."));
+	}
+
+	@Test
+	void databaseRules() {
+		String loop = "LOOP AT lt INTO ls.\n%s\nENDLOOP.";
+		assertEquals(List.of("db_operation_in_loop"), rules(String.format(loop, "UPDATE zt SET a = @ls-a WHERE k = @ls-k.")));
+		assertEquals(List.of("db_operation_in_loop"), rules(String.format(loop, "INSERT zt FROM ls.")));
+		assertEquals(List.of("db_operation_in_loop"), rules(String.format(loop, "DELETE FROM zt WHERE k = ls-k.")));
+		assertEquals(List.of("db_operation_in_loop"), rules(String.format(loop, "MODIFY zt FROM @ls.")));
+		// internal tables
+		assertEquals(List.of(), rules(String.format(loop, "INSERT ls INTO TABLE lt2.")));
+		assertEquals(List.of(), rules(String.format(loop, "MODIFY lt2 FROM ls INDEX 1.")));
+		assertEquals(List.of(), rules(String.format(loop, "DELETE lt2 WHERE a = ls-a.")));
+		assertEquals(List.of(), rules("UPDATE zt SET a = @lv WHERE k = @lv_k."));
+
+		assertEquals(List.of("delete_index_in_loop"), rules(String.format(loop, "DELETE lt INDEX sy-tabix.")));
+		assertEquals(List.of(), rules(String.format(loop, "DELETE lt2 INDEX sy-tabix.")));
+
+		assertEquals(List.of("no_mandt_in_database_operations"),
+				rules("SELECT a FROM zt WHERE mandt = @sy-mandt INTO TABLE @DATA(lt)."));
+		assertEquals(List.of(), rules("SELECT a FROM zt USING CLIENT @lv WHERE mandt = @lv INTO TABLE @DATA(lt)."));
+		assertEquals(List.of(), rules("SELECT a FROM zt WHERE b = @sy-mandt INTO TABLE @DATA(lt)."));
+
+		assertEquals(List.of("strict_sql"), rules("SELECT a FROM zt INTO TABLE @DATA(lt) WHERE b = @lv."));
+		assertEquals(List.of(), rules("SELECT a FROM zt WHERE b = @lv ORDER BY a INTO TABLE @DATA(lt) UP TO 5 ROWS."));
+		// without @ the old syntax allows INTO anywhere
+		assertEquals(List.of(), rules("SELECT a FROM zt INTO TABLE lt WHERE b = lv."));
+		assertEquals(List.of(), AbapLint.check("SELECT a FROM zt INTO TABLE @DATA(lt) WHERE b = @lv.",
+				de.kiliantaubmann.bella.core.conventions.NamingRules.NONE, AbapLint.Target.of("740", false)).stream()
+				.filter(f -> f.rule().equals("strict_sql")).toList());
+	}
+
+	@Test
+	void flowAndCasts() {
+		assertEquals(List.of("exit_or_check"), rules("METHOD m.\n CHECK iv = 1.\n x = 1.\nENDMETHOD."));
+		assertEquals(List.of("exit_or_check"), rules("METHOD m.\n EXIT.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n LOOP AT lt INTO DATA(ls).\n  CHECK ls-a = 1.\n  x( ls ).\n ENDLOOP.\nENDMETHOD."));
+		// event blocks of reports
+		assertEquals(List.of(), rules("START-OF-SELECTION.\n CHECK p_test = abap_false."));
+
+		assertEquals(List.of("try_cast_empty_catch"),
+				rules("TRY.\n lo_b ?= lo_a.\nCATCH cx_sy_move_cast_error.\nENDTRY."));
+	}
+
+	@Test
+	void declarationsThatAreNotUsed() {
+		assertEquals(List.of("prefer_returning_to_exporting"),
+				rules("METHODS get IMPORTING iv TYPE i EXPORTING ev TYPE string."));
+		assertEquals(List.of(), rules("METHODS get EXPORTING ev TYPE string ev2 TYPE i."));
+		assertEquals(List.of(), rules("METHODS get EXPORTING ev TYPE any."));
+		assertEquals(List.of(), rules("METHODS get EXPORTING ev TYPE STANDARD TABLE."));
+		assertEquals(List.of(), rules("METHODS on_click FOR EVENT clicked OF zcl_b EXPORTING ev TYPE i."));
+		assertEquals(List.of(), rules("METHODS get EXPORTING ev TYPE i CHANGING cv TYPE i."));
+
+		assertEquals(List.of("unused_types"), rules("METHOD m.\n TYPES ty_a TYPE i.\n x = 1.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n TYPES ty_a TYPE i.\n DATA lv TYPE ty_a.\n x = lv.\nENDMETHOD."));
+		assertEquals(List.of("unused_types"),
+				rules("METHOD m.\n TYPES: BEGIN OF ty_s,\n a TYPE i,\n END OF ty_s.\n x = 1.\nENDMETHOD."));
+		assertEquals(List.of(), rules("METHOD m.\n TYPES: BEGIN OF ty_s,\n a TYPE i,\n END OF ty_s,\n"
+				+ " ty_t TYPE HASHED TABLE OF ty_s WITH UNIQUE KEY a.\n DATA lt TYPE ty_t.\n x = lines( lt ).\nENDMETHOD."));
+
+		String cls = """
+				CLASS zcl_a DEFINITION PUBLIC.
+				  PUBLIC SECTION.
+				    METHODS run.
+				  PRIVATE SECTION.
+				    METHODS used.
+				    METHODS: unused, handler FOR EVENT e OF zcl_b.
+				ENDCLASS.
+				CLASS zcl_a IMPLEMENTATION.
+				  METHOD run.
+				    used( ).
+				    SET HANDLER handler FOR ALL INSTANCES.
+				  ENDMETHOD.
+				  METHOD used.
+				  ENDMETHOD.
+				  METHOD unused.
+				    unused( ).
+				  ENDMETHOD.
+				  METHOD handler.
+				  ENDMETHOD.
+				ENDCLASS.
+				""";
+		List<Finding> f = AbapLint.check(cls).stream().filter(x -> x.rule().equals("unused_methods")).toList();
+		assertEquals(1, f.size(), f.toString());
+		assertTrue(f.get(0).message().contains("unused"), f.get(0).message());
+		assertEquals(6, f.get(0).line());
+		// without the implementation, or with friends, nothing can be told
+		assertEquals(List.of(), rules(cls.substring(0, cls.indexOf("CLASS zcl_a IMPLEMENTATION"))));
+		assertEquals(List.of(), AbapLint.check(cls.replace("DEFINITION PUBLIC.", "DEFINITION PUBLIC GLOBAL FRIENDS zcl_c."))
+				.stream().filter(x -> x.rule().equals("unused_methods")).toList());
+	}
+
+	@Test
+	void commentedOutCode() {
+		assertEquals(List.of("commented_code"), rules("* lv_count = lines( lt ).\n* ENDIF.\nx = 1."));
+		assertEquals(List.of("commented_code"), rules("x = 1.\n  \" CALL METHOD lo->run( ).\n"));
+		// prose and documentation
+		assertEquals(List.of(), rules("* Check the input and read the table.\nx = 1."));
+		assertEquals(List.of(), rules("\"! Reads the order.\n\"#EC NEEDED\nx = 1."));
+		assertEquals(List.of(), rules("*\"  IMPORTING\n*\"     VALUE(IV_ID) TYPE I\nx = 1."));
 	}
 
 	@Test
