@@ -775,6 +775,9 @@ public final class AdtToolProvider implements ToolProvider {
 		try {
 			AdtSystem s = system(in);
 			AdtClient c = client(s);
+			if (!write && scope.readsEveryPackage(s.destinationId())) {
+				objects = List.of(); // after a transport review, reading is not limited to the package
+			}
 			String dev = scopePackage(s, c, cancel);
 			if (write || !objects.isEmpty()) {
 				if (dev == null) {
@@ -988,7 +991,8 @@ public final class AdtToolProvider implements ToolProvider {
 
 	/** Objects may be used: SAP's always, customer objects only from the development package. */
 	private Predicate<AdtObjectRef> scopeFilter(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
-		return scope == null ? r -> true : AdtContext.inPackage(c, scopePackage(s, c, cancel), cancel);
+		return scope == null || scope.readsEveryPackage(s.destinationId()) ? r -> true
+				: AdtContext.inPackage(c, scopePackage(s, c, cancel), cancel);
 	}
 
 	/**
@@ -1066,7 +1070,9 @@ public final class AdtToolProvider implements ToolProvider {
 		} else {
 			sb.append("Development package ").append(dev)
 					.append(fromEditor ? " (of " + editor.name() + " in the editor)" : " (named by the developer)")
-					.append(". Customer objects of other packages are ignored.\n");
+					.append(scope.readsEveryPackage(s.destinationId())
+							? ". Customer objects of other packages may be read (transport review), not changed.\n"
+							: ". Customer objects of other packages are ignored.\n");
 			String tr = scope.transport(s.destinationId());
 			if (DevScope.local(dev)) {
 				sb.append("Local package: no transport request needed.");
@@ -1272,7 +1278,7 @@ public final class AdtToolProvider implements ToolProvider {
 		int max = Math.max(1, Math.min(200, Json.integer(in, "max_results", 50)));
 		String searchIn = Json.str(in, "search_in");
 		if (searchIn != null && searchIn.trim().equalsIgnoreCase("source")) {
-			return searchSource(c, in, max, scope == null ? Optional.empty()
+			return searchSource(c, in, max, scope == null || scope.readsEveryPackage(sys.destinationId()) ? Optional.empty()
 					: Optional.ofNullable(scopePackage(sys, c, cancel)).or(() -> Optional.of("")), cancel);
 		}
 		if (searchIn != null && !searchIn.isBlank() && !searchIn.trim().equalsIgnoreCase("names")) {
@@ -1295,7 +1301,7 @@ public final class AdtToolProvider implements ToolProvider {
 			refs = refs.subList(0, max);
 		}
 		List<String> hidden = new ArrayList<>();
-		if (scope != null) {
+		if (scope != null && !scope.readsEveryPackage(sys.destinationId())) {
 			String dev = scopePackage(sys, c, cancel);
 			// only the package the hit names: asking each hit's package would cost a request per hit
 			hidden = refs.stream().filter(r -> DevScope.customer(r.name()) && !r.name().equalsIgnoreCase(dev)
@@ -2964,7 +2970,8 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private ToolResult transportReview(JsonObject in, CancelToken cancel) throws IOException {
-		AdtClient c = client(system(in));
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
 		String id = Json.str(in, "request");
 		if (id == null || id.isBlank()) {
 			return ToolResult.error("Give 'request', the transport request number.");
@@ -2977,8 +2984,14 @@ public final class AdtToolProvider implements ToolProvider {
 		boolean single = object != null && !object.isBlank();
 		boolean checks = !in.has("checks") || !in.get("checks").isJsonPrimitive() || in.get("checks").getAsBoolean();
 		try {
-			return ToolResult.ok(TransportReview.build(c, tr.get(), object, checks && !single,
-					single ? TransportReview.Limits.SINGLE : TransportReview.Limits.DEFAULT, cancel));
+			String review = TransportReview.build(c, tr.get(), object, checks && !single,
+					single ? TransportReview.Limits.SINGLE : TransportReview.Limits.DEFAULT, cancel);
+			if (scope != null) {
+				scope.transportReviewed(s.destinationId());
+				review += "\n\nFor this review, customer objects of every package may be read (not changed) in this "
+						+ "chat; no development package is needed for that.";
+			}
+			return ToolResult.ok(review);
 		} catch (CancelToken.CancelledException e) {
 			return ToolResult.error("Cancelled.");
 		}

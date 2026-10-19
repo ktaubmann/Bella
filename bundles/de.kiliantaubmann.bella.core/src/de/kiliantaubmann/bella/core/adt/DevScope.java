@@ -9,7 +9,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * chose for it. Customer objects (Z*, Y*) of other packages are ignored, and
  * every write needs the package and, outside local packages, the request.
  * With an object from the editor in the chat, its package is the development
- * package and cannot be changed.
+ * package and cannot be changed. Once a transport request was reviewed on a
+ * system, the chat reads customer objects of every package there; writes stay
+ * in the development package.
  * <p>
  * Thread safe; one instance belongs to the chat and is reset with it.
  * Listeners hear of every change, e.g. to show package and request in the
@@ -23,6 +25,7 @@ public final class DevScope {
 	private String destination;
 	private String pkg;
 	private String transport;
+	private String reviewed;
 
 	/** {@code listener} runs after each change of package, request or editor object. */
 	public void addListener(Runnable listener) {
@@ -45,6 +48,7 @@ public final class DevScope {
 			destination = null;
 			pkg = null;
 			transport = null;
+			reviewed = null;
 		}
 		changed();
 	}
@@ -126,6 +130,19 @@ public final class DevScope {
 	/** The request the developer chose for this system, {@code null} if none. */
 	public synchronized String transport(String destinationId) {
 		return destinationId.equals(destination) ? transport : null;
+	}
+
+	/**
+	 * A transport request of this system was reviewed: its objects come from
+	 * any package, so reading is no longer limited to the development package.
+	 */
+	public synchronized void transportReviewed(String destinationId) {
+		reviewed = destinationId;
+	}
+
+	/** Customer objects of every package may be read on this system (after a transport review). */
+	public synchronized boolean readsEveryPackage(String destinationId) {
+		return destinationId.equals(reviewed);
 	}
 
 	/** Customer objects by SAP's naming: Z* and Y*. */

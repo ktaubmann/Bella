@@ -5,8 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+
+import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.util.CancelToken;
@@ -141,6 +144,29 @@ class TransportReviewTest {
 		assertTrue(d.contains("### ABAP Unit\nNo test methods were executed."), d);
 		assertTrue(d.contains("- Not activated (the request would transport the active version only): ZREP\n"), d);
 		assertTrue(d.contains("- ZCL_HELPER (CLAS/OC) is used and has unreleased changes in request DEVK900777"), d);
+	}
+
+	@Test
+	void reviewReadsCustomerObjectsOfEveryPackage() {
+		DevScope scope = new DevScope();
+		AdtToolProvider p = new AdtToolProvider(system(), () -> "dev", () -> "", d -> "",
+				() -> de.kiliantaubmann.bella.core.conventions.NamingRules.NONE, scope);
+		JsonObject read = Json.parseObject("{\"name\":\"ZCL_HELPER\",\"type\":\"CLAS\"}");
+		assertTrue(p.refuse("adt_read_source", read, CancelToken.NONE).isPresent(), "no package, no review yet");
+
+		ToolResult r = p.call("adt_transport_review", Json.parseObject("{\"request\":\"devk900100\"}"), CancelToken.NONE);
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().endsWith("customer objects of every package may be read (not changed) in this chat; "
+				+ "no development package is needed for that."), r.content());
+		assertTrue(scope.readsEveryPackage("dev"));
+		assertFalse(scope.readsEveryPackage("other"), "only on the reviewed system");
+		assertEquals(Optional.empty(), p.refuse("adt_read_source", read, CancelToken.NONE));
+		Optional<String> write = p.refuse("adt_write_source",
+				Json.parseObject("{\"name\":\"ZCL_HELPER\",\"type\":\"CLAS\",\"source\":\"x\"}"), CancelToken.NONE);
+		assertTrue(write.isPresent() && write.get().startsWith("No development package is set"), write.toString());
+
+		scope.reset();
+		assertFalse(scope.readsEveryPackage("dev"), "a new chat starts limited again");
 	}
 
 	@Test
