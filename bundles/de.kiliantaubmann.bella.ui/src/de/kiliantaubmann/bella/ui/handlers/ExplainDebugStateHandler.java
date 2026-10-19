@@ -54,7 +54,11 @@ public class ExplainDebugStateHandler extends AbstractHandler {
 	/** Asks the chat about a snapshot; UI thread. */
 	public static void ask(DebugSnapshot snapshot) {
 		String where = snapshot.object() + (snapshot.line() > 0 ? " (" + snapshot.line() + ")" : "");
-		ChatView.open().ifPresent(v -> v.ask(Messages.fmt("chat.display.debugState", where),
-				BellaPlugin.getDefault().prompts().explainDebugState(snapshot.format(), null).user()));
+		ChatView.open().ifPresent(v -> {
+			// the debugger shows the stopped code in the active editor
+			ChatView.bindActiveEditor();
+			v.ask(Messages.fmt("chat.display.debugState", where),
+					BellaPlugin.getDefault().prompts().explainDebugState(snapshot.format(), null).user());
+		});
 	}
 }

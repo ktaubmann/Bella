@@ -19,7 +19,10 @@ public class AnalyzeDumpHandler extends AbstractHandler {
 		String object = editor == null ? "" : EditorBridge.objectName(editor);
 		String display = object == null || object.isBlank() ? Messages.get("chat.display.analyzeDump")
 				: Messages.fmt("chat.display.analyzeDumpFor", object);
-		ChatView.open().ifPresent(v -> v.ask(display, BellaPlugin.getDefault().prompts().analyzeDump(object).user()));
+		ChatView.open().ifPresent(v -> {
+			ChatView.bindEditor(editor);
+			v.ask(display, BellaPlugin.getDefault().prompts().analyzeDump(object).user());
+		});
 		return null;
 	}
 }

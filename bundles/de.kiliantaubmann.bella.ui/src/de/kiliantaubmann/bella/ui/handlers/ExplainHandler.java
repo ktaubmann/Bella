@@ -8,7 +8,6 @@ import de.kiliantaubmann.bella.core.prompt.EditorContext;
 import de.kiliantaubmann.bella.core.prompt.Prompt;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
-import de.kiliantaubmann.bella.ui.editor.EditorBridge;
 import de.kiliantaubmann.bella.ui.views.ChatView;
 
 /** "What happens here?": explains the selection (or the method at the cursor) in the chat. */
@@ -36,8 +35,7 @@ public class ExplainHandler extends EditorHandler {
 		String what = firstLine(c.selection());
 		String display = Messages.fmt("chat.display." + kind().name().toLowerCase(), c.objectName(), what);
 		ChatView.open().ifPresent(v -> {
-			// as with a question about the editor: the object's package becomes the chat's
-			EditorBridge.adtObject(part).ifPresent(BellaPlugin.getDefault().devScope()::editorObject);
+			ChatView.bindEditor(part);
 			v.ask(display, prompt.user());
 		});
 	}

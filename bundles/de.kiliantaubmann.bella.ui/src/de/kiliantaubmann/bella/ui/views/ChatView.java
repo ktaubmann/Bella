@@ -38,6 +38,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.dialogs.PreferencesUtil;
@@ -513,6 +514,23 @@ public class ChatView extends ViewPart {
 		return PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().getActiveEditor();
 	}
 
+	/**
+	 * Working on an ABAP object in an editor binds the chat to its package
+	 * (see {@code DevScope}), so its customer objects can be read. Editor
+	 * actions call this before {@link #ask(String, String)}; {@code null} or
+	 * a non-ABAP editor binds nothing.
+	 */
+	public static void bindEditor(IEditorPart part) {
+		EditorBridge.adtObject(part).ifPresent(BellaPlugin.getDefault().devScope()::editorObject);
+	}
+
+	/** {@link #bindEditor} for the active editor. UI thread. */
+	public static void bindActiveEditor() {
+		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+		IWorkbenchPage page = window == null ? null : window.getActivePage();
+		bindEditor(page == null ? null : page.getActiveEditor());
+	}
+
 	@Override
 	public void setFocus() {
 		input.setFocus();
@@ -842,8 +860,7 @@ public class ChatView extends ViewPart {
 			Optional<ITextEditor> editor = EditorBridge.textEditor(part);
 			if (editor.isPresent()) {
 				prompt = withEditorContext(text, EditorBridge.context(part, editor.get()));
-				// working on an editor object binds the chat to its package
-				EditorBridge.adtObject(part).ifPresent(BellaPlugin.getDefault().devScope()::editorObject);
+				bindEditor(part);
 			}
 		}
 		ask(text.startsWith(REVISE_PLAN) ? text.substring(REVISE_PLAN.length()) : text, prompt, planning);
