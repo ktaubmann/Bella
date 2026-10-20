@@ -115,6 +115,54 @@ class ChatSessionTest {
 	}
 
 	@Test
+	void continuesASavedChatWithItsHistoryCutToTheLastCompleteTurn() throws Exception {
+		Deque<ChatResult> script = new ArrayDeque<>(List.of(text("It reads orders."),
+				toolUse(StopReason.TOOL_USE, call("t1", "adt_read_source"))));
+		// stops the chat as soon as the model asks for a tool: the history ends with an unanswered tool_use
+		LlmProvider stopping = new LlmProvider() {
+			@Override
+			public String id() {
+				return "fake";
+			}
+
+			@Override
+			public ChatResult chat(ChatRequest request, StreamListener listener, CancelToken cancel) {
+				ChatResult r = script.poll();
+				if (!r.toolCalls().isEmpty()) {
+					cancel.cancel();
+				}
+				return r;
+			}
+		};
+		ToolRegistry registry = new ToolRegistry();
+		registry.addProvider(new Tools());
+		registry.refresh(e -> {
+		});
+		ChatSession earlier = new ChatSession(() -> stopping, () -> new ChatSession.Settings("m", 1000, null), "sys",
+				registry, ToolPolicy::defaults, (tool, input) -> true, null);
+		earlier.send("explain", new ChatSession.Listener() {
+		}, CancelToken.NONE);
+		try {
+			earlier.send("and now?", new ChatSession.Listener() {
+			}, new CancelToken());
+		} catch (CancelToken.CancelledException expected) {
+			// expected
+		}
+		assertEquals(4, earlier.history().size());
+
+		ScriptedLlm llm = new ScriptedLlm();
+		llm.results.add(text("Sure."));
+		ChatSession continued = session(llm, new Tools(), true, new ArrayList<>(), null);
+		continued.restore(earlier.history());
+		continued.send("go on", new ChatSession.Listener() {
+		}, CancelToken.NONE);
+		List<JsonObject> sent = llm.requests.get(0).messages();
+		assertEquals(List.of("user", "assistant", "user"), sent.stream().map(m -> Json.str(m, "role")).toList());
+		assertEquals("explain", Json.arr(sent.get(0), "content").get(0).getAsJsonObject().get("text").getAsString());
+		assertEquals("go on", Json.arr(sent.get(2), "content").get(0).getAsJsonObject().get("text").getAsString());
+	}
+
+	@Test
 	void runsReadToolsAutomaticallyAndLoopsUntilDone() throws Exception {
 		ScriptedLlm llm = new ScriptedLlm();
 		llm.results.add(toolUse(StopReason.TOOL_USE, call("t1", "adt_read_source")));

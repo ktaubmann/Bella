@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -47,6 +48,9 @@ import org.eclipse.ui.texteditor.ITextEditor;
 
 import com.google.gson.JsonObject;
 
+import de.kiliantaubmann.bella.core.agent.ChatRecord;
+import de.kiliantaubmann.bella.core.agent.ChatSession;
+import de.kiliantaubmann.bella.core.agent.ChatStore;
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
 import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
@@ -54,6 +58,7 @@ import de.kiliantaubmann.bella.core.adt.AdtTransportRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.prompt.EditorContext;
+import de.kiliantaubmann.bella.core.tools.AskUserToolProvider;
 import de.kiliantaubmann.bella.core.tools.ChatMode;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
@@ -139,6 +144,23 @@ public class ChatView extends ViewPart {
 	private volatile long requestsAt;
 	/** The drop-down choice waiting for {@link #CHOICE_DELAY_MILLIS}, {@code null} if none. */
 	private Runnable pendingChoice;
+	/** The chat as the chat history keeps it. */
+	private ChatRecord record = new ChatRecord();
+	/**
+	 * The conversation so far for a model that did not see it (a chat opened from the history, or the provider
+	 * changed); goes with the next message. {@code null} if the model knows the chat.
+	 */
+	private String earlierChat;
+	/** The session's model history is the whole chat, so the history may keep it for an exact restore. */
+	private boolean exactHistory = true;
+	/** The renderer of the running answer, {@code null} between answers. */
+	private volatile Renderer renderer;
+	/** The open question menu ("messageId_segment"), its questions and the answer the tool waits for. */
+	private String askKey;
+	private int askMessage;
+	private int askSegment;
+	private List<AskUserToolProvider.Question> askQuestions;
+	private CompletableFuture<Optional<List<AskUserToolProvider.Answer>>> askAnswer;
 	/** Counts the chats of this view; a turn of an earlier chat must not leave its package in the new one. */
 	private int chatGeneration;
 
@@ -217,6 +239,13 @@ public class ChatView extends ViewPart {
 				return null;
 			}
 		};
+		new BrowserFunction(browser, "bellaAnswer") {
+			@Override
+			public Object function(Object[] args) {
+				onAnswer(String.valueOf(args[0]), String.valueOf(args[1]));
+				return null;
+			}
+		};
 		new BrowserFunction(browser, "bellaOpen") {
 			@Override
 			public Object function(Object[] args) {
@@ -281,7 +310,7 @@ public class ChatView extends ViewPart {
 		// context, mode and status in one row below, so the button columns stay narrow
 		Composite options = new Composite(bottom, SWT.NONE);
 		GridDataFactory.fillDefaults().span(3, 1).grab(true, false).applyTo(options);
-		GridLayoutFactory.fillDefaults().numColumns(3).spacing(12, 0).applyTo(options);
+		GridLayoutFactory.fillDefaults().numColumns(4).spacing(12, 0).applyTo(options);
 		withContext = new Button(options, SWT.CHECK);
 		withContext.setText(Messages.get("chat.withContext"));
 		withContext.setToolTipText(Messages.get("chat.withContextTip"));
@@ -302,6 +331,11 @@ public class ChatView extends ViewPart {
 		});
 		status = new Label(options, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).align(SWT.FILL, SWT.CENTER).applyTo(status);
+		Button chats = new Button(options, SWT.PUSH);
+		chats.setImage(BellaPlugin.image("history"));
+		chats.setText(Messages.get("chat.history") + " \u25BE");
+		chats.setToolTipText(Messages.get("chat.historyTip"));
+		chats.addListener(SWT.Selection, e -> showHistoryMenu(chats));
 
 		IToolBarManager tb = getViewSite().getActionBars().getToolBarManager();
 		Action newChat = new Action(Messages.get("chat.new"), BellaPlugin.descriptor("new_chat")) {
@@ -319,7 +353,15 @@ public class ChatView extends ViewPart {
 				updateStatus();
 			}
 		};
+		Action history = new Action(Messages.get("chat.history"), BellaPlugin.descriptor("history")) {
+			@Override
+			public void run() {
+				openHistoryDialog();
+			}
+		};
+		history.setToolTipText(Messages.get("chat.historyTip"));
 		tb.add(newChat);
+		tb.add(history);
 		tb.add(settings);
 		Action openLog = new Action(Messages.get("chat.openLog")) {
 			@Override
@@ -423,8 +465,10 @@ public class ChatView extends ViewPart {
 		boolean hadPlan = isPlanPending() || revisingPlan;
 		setPlanning(false);
 		if (hadPlan) {
+			record.notice(lastAnswerId, "warn", Markdown.escape(Messages.get("chat.plan.cancelled")));
 			js("notice(" + lastAnswerId + ",\"warn\"," + str(Markdown.escape(Messages.get("chat.plan.cancelled")))
 					+ ")");
+			saveChat();
 		}
 	}
 
@@ -461,7 +505,8 @@ public class ChatView extends ViewPart {
 		Map<String, String> t = new HashMap<>();
 		for (String k : List.of("welcomeTitle", "welcomeText", "tip1", "tip2", "tip3", "youInitial", "working",
 				"thinking", "insert", "insertTip", "replace", "replaceTip", "copyTip", "insertAtCursor",
-				"replaceSelection", "replaceMethod", "copy")) {
+				"replaceSelection", "replaceMethod", "copy", "askOther", "askHint", "askHintMulti", "askNext",
+				"askSubmit", "askDismiss", "askDismissed")) {
 			t.put(k, Markdown.escape(Messages.get("chat.js." + k)));
 		}
 		t.put("tip3", Markdown.escape(Messages.fmt("chat.js.tip3", Shortcuts.completion())));
@@ -481,15 +526,272 @@ public class ChatView extends ViewPart {
 	}
 
 	private void newChat() {
+		resetChat();
+		js("showEmpty()");
+		updateStatus();
+	}
+
+	/** Stops and saves the chat and starts an empty one. UI thread. */
+	private void resetChat() {
 		chatGeneration++;
 		cancel();
 		setPlanning(false);
+		saveChat();
 		newSession();
 		codeBlocks.clear();
 		announcedScope = "";
 		scopeChosen = false;
-		js("showEmpty()");
+		record = new ChatRecord();
+		earlierChat = null;
+		exactHistory = true;
+	}
+
+	// ---- chat history ----------------------------------------------------------------------
+
+	/** Longest part of an earlier chat handed to a model that did not see it. */
+	static final int EARLIER_CHAT_CHARS = 60_000;
+	/** Chats in the menu of the Chats button; the rest are in the dialog. */
+	static final int MENU_CHATS = 15;
+
+	/** Conversation type and model; a saved model history is only taken over by the same. */
+	private static String providerKey() {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		return plugin.conversationType().getSimpleName() + ":" + plugin.chatModel();
+	}
+
+	/** The message with the chat so far for a model that did not see it. */
+	static String withEarlierChat(String prompt, String earlier) {
+		if (earlier == null || earlier.isBlank()) {
+			return prompt;
+		}
+		return "<earlier_chat>\nThe developer continues an earlier chat. The conversation so far, for context "
+				+ "(tool results are not included; read again what you need):\n" + earlier + "\n</earlier_chat>\n\n"
+				+ prompt;
+	}
+
+	/** Saves the chat in the background, unless the history is off or the chat is empty. UI thread. */
+	private void saveChat() {
+		saveChat(false);
+	}
+
+	/** @param now write before returning, e.g. when Eclipse closes and background jobs may not run any more */
+	private void saveChat(boolean now) {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		ChatRecord chat = record;
+		if (!plugin.keepsChatHistory() || chat.isEmpty()) {
+			return;
+		}
+		AdtToolProvider.Scope scope = shownScope;
+		chat.context(providerKey(), scope == null ? null : scope.pkg(), scope == null ? null : scope.transport(),
+				mode.name());
+		Conversation c = session == null ? null : session.unwrap();
+		chat.modelHistory(exactHistory && c instanceof ChatSession cs ? cs.history() : List.of());
+		ChatStore store = plugin.chatStore();
+		int keep = plugin.prefs().getInt(Prefs.CHAT_HISTORY_MAX);
+		Runnable save = () -> {
+			try {
+				store.save(chat);
+				store.prune(keep);
+			} catch (IOException | RuntimeException e) {
+				BellaPlugin.log("Cannot save the chat", e);
+			}
+		};
+		if (now) {
+			save.run();
+			return;
+		}
+		Job job = Job.create(Messages.get("chat.history.saving"), monitor -> {
+			save.run();
+			return Status.OK_STATUS;
+		});
+		job.setSystem(true);
+		job.schedule();
+	}
+
+	/** Shows a saved chat and continues it. UI thread. */
+	public void openChat(String id) {
+		if (id.equals(record.id()) && running == null) {
+			return;
+		}
+		Optional<ChatRecord> loaded = BellaPlugin.getDefault().chatStore().load(id);
+		if (loaded.isEmpty()) {
+			MessageDialog.openError(getSite().getShell(), Messages.get("chat.history.title"),
+					Messages.get("chat.history.unreadable"));
+			return;
+		}
+		resetChat();
+		ChatRecord chat = loaded.get();
+		record = chat;
+		// fresh message ids: a turn of the chat before, still stopping, must not write into the shown one
+		int offset = nextMessageId;
+		nextMessageId = offset + chat.lastMessageId() + 1;
+		replay(chat, offset);
+		Conversation c = session.unwrap();
+		if (c instanceof ChatSession cs && !chat.modelHistory().isEmpty() && chat.provider().equals(providerKey())) {
+			cs.restore(chat.modelHistory());
+			exactHistory = true;
+		} else {
+			earlierChat = chat.transcript(EARLIER_CHAT_CHARS);
+			exactHistory = false;
+		}
+		String when = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+				.format(new java.util.Date(chat.updated()));
+		js("notice(0,\"info\"," + str(Markdown.escape(Messages.fmt("chat.history.continued", when))) + ")");
+		restoreMode(chat.mode());
+		restoreScope(chat.devPackage(), chat.transport());
 		updateStatus();
+		input.setFocus();
+	}
+
+	/**
+	 * Shows the entries of a saved chat with the page's own functions; {@code offset} is added to the saved
+	 * message ids. UI thread.
+	 */
+	private void replay(ChatRecord chat, int offset) {
+		js("showEmpty()");
+		List<Integer> answers = new ArrayList<>();
+		for (JsonObject e : chat.entries()) {
+			int id = Json.integer(e, "id", 0) + offset;
+			int seg = Json.integer(e, "seg", 0);
+			String type = String.valueOf(Json.str(e, "t"));
+			switch (type) {
+			case "user" -> js("addUser(" + id + "," + str(nz(Json.str(e, "text"))) + ")");
+			case "bella" -> {
+				js("startAssistant(" + id + ")");
+				answers.add(id);
+				lastAnswerId = id;
+			}
+			case "text" -> showText(id, seg, renderText(nz(Json.str(e, "md"))));
+			case "thinking" -> js("setThinking(" + id + "," + seg + "," + str(nz(Json.str(e, "text"))) + ")");
+			case "tool" -> {
+				String state = Json.str(e, "state");
+				js("addTool(" + id + "," + seg + "," + str(nz(Json.str(e, "name"))) + ","
+						+ str(nz(Json.str(e, "input"))) + ")");
+				String shown = state == null ? "denied" : state;
+				String label = Messages.get(state == null ? "chat.tool.stopped" : "chat.tool." + state);
+				js("finishTool(" + id + "," + seg + "," + str(shown) + "," + str(label) + ","
+						+ str(nz(Json.str(e, "output"))) + ")");
+			}
+			case "ask" -> {
+				JsonObject questions = Json.obj(e, "questions");
+				var answered = e.get("answers");
+				js("askDone(" + str(id + "_" + seg) + "," + Json.GSON.toJson(questions == null ? new JsonObject()
+						: questions) + "," + (answered == null ? "null" : Json.GSON.toJson(answered)) + ")");
+			}
+			case "notice" -> js("notice(" + id + "," + str(nz(Json.str(e, "kind"))) + ","
+					+ str(nz(Json.str(e, "html"))) + ")");
+			default -> {
+				// an entry of a newer Bella
+			}
+			}
+		}
+		answers.forEach(id -> js("endAssistant(" + id + ")"));
+	}
+
+	private static String nz(String s) {
+		return s == null ? "" : s;
+	}
+
+	/** The saved chat's mode; modes that write without asking are not taken over unasked. */
+	private void restoreMode(String name) {
+		ChatMode saved;
+		try {
+			saved = ChatMode.valueOf(name);
+		} catch (IllegalArgumentException | NullPointerException e) {
+			return;
+		}
+		if (MODES.contains(saved) && !saved.writesWithoutAsking()) {
+			setMode(saved);
+		}
+	}
+
+	/** Sets the saved chat's package and request again, with the checks of adt_dev_package. UI thread. */
+	private void restoreScope(String pkg, String transport) {
+		Optional<AdtToolProvider> tools = BellaPlugin.getDefault().adtTools();
+		if (pkg == null || pkg.isBlank() || tools.isEmpty()) {
+			return;
+		}
+		String request = transport == null || transport.isBlank() ? null : transport;
+		int generation = chatGeneration;
+		Job job = Job.create(Messages.get("chat.scope.jobName"), monitor -> {
+			Optional<String> refused = tools.get().choose(pkg, request, CancelToken.NONE);
+			String problem = null;
+			boolean chosen = refused.isEmpty();
+			if (refused.isPresent() && request != null) {
+				// e.g. the request was released in the meantime: keep at least the package
+				Optional<String> packageOnly = tools.get().choose(pkg, null, CancelToken.NONE);
+				chosen = packageOnly.isEmpty();
+				problem = chosen ? Messages.fmt("chat.history.requestLost", request, refused.get())
+						: Messages.fmt("chat.history.scopeLost", pkg, packageOnly.get());
+			} else if (refused.isPresent()) {
+				problem = Messages.fmt("chat.history.scopeLost", pkg, refused.get());
+			}
+			showScopeProblem(generation, problem, chosen);
+			return Status.OK_STATUS;
+		});
+		job.setSystem(true);
+		job.schedule();
+	}
+
+	/** Job thread: after restoring package and request, a problem goes into the chat. */
+	private void showScopeProblem(int generation, String problem, boolean chosen) {
+		Display.getDefault().asyncExec(() -> {
+			if (generation != chatGeneration || browser == null || browser.isDisposed()) {
+				return;
+			}
+			if (chosen) {
+				scopeChosen = true;
+			}
+			if (problem != null) {
+				js("notice(0,\"warn\"," + str(Markdown.escape(problem)) + ")");
+			}
+			if (scopeJob != null) {
+				scopeJob.schedule();
+			}
+		});
+	}
+
+	/** The last chats and "All chats…" below {@code control}. UI thread. */
+	private void showHistoryMenu(org.eclipse.swt.widgets.Control control) {
+		org.eclipse.swt.widgets.Menu menu = new org.eclipse.swt.widgets.Menu(control.getShell(), SWT.POP_UP);
+		List<ChatStore.Summary> chats = BellaPlugin.getDefault().chatStore().list();
+		if (chats.isEmpty()) {
+			org.eclipse.swt.widgets.MenuItem none = new org.eclipse.swt.widgets.MenuItem(menu, SWT.PUSH);
+			none.setText(Messages.get("chat.history.empty"));
+			none.setEnabled(false);
+		}
+		for (ChatStore.Summary c : chats.subList(0, Math.min(MENU_CHATS, chats.size()))) {
+			org.eclipse.swt.widgets.MenuItem item = new org.eclipse.swt.widgets.MenuItem(menu, SWT.CHECK);
+			item.setText(menuText(c));
+			item.setSelection(c.id().equals(record.id()));
+			item.addListener(SWT.Selection, e -> openChat(c.id()));
+		}
+		new org.eclipse.swt.widgets.MenuItem(menu, SWT.SEPARATOR);
+		org.eclipse.swt.widgets.MenuItem all = new org.eclipse.swt.widgets.MenuItem(menu, SWT.PUSH);
+		all.setText(Messages.get("chat.history.all"));
+		all.addListener(SWT.Selection, e -> openHistoryDialog());
+		if (!BellaPlugin.getDefault().keepsChatHistory()) {
+			org.eclipse.swt.widgets.MenuItem off = new org.eclipse.swt.widgets.MenuItem(menu, SWT.PUSH);
+			off.setText(Messages.get("chat.history.off"));
+			off.setEnabled(false);
+		}
+		org.eclipse.swt.graphics.Rectangle b = control.getBounds();
+		menu.setLocation(control.getParent().toDisplay(b.x, b.y + b.height));
+		menu.setVisible(true);
+	}
+
+	/** Title and age; {@code &} would be taken for a mnemonic. */
+	static String menuText(ChatStore.Summary c) {
+		String title = c.title().isBlank() ? Messages.get("chat.history.untitled") : c.title();
+		return title.replace("&", "&&") + "\t" + ChatHistoryDialog.age(c.updated(), System.currentTimeMillis());
+	}
+
+	private void openHistoryDialog() {
+		ChatHistoryDialog d = new ChatHistoryDialog(getSite().getShell(), BellaPlugin.getDefault().chatStore(),
+				record.id());
+		if (d.open() == ChatHistoryDialog.OK && d.result() != null) {
+			openChat(d.result());
+		}
 	}
 
 	private void updateStatus() {
@@ -501,6 +803,9 @@ public class ChatView extends ViewPart {
 				? Optional.ofNullable(EditorBridge.systemLabel(activeEditor())).orElse("")
 				: "";
 		String text = Messages.fmt("chat.status", plugin.chatModelLabel(), system.isEmpty() ? "–" : system);
+		if (!record.title().isEmpty()) {
+			text = ChatHistoryDialog.clip(record.title(), 32) + " · " + text;
+		}
 		if (planActive || turnOverride == ChatMode.PLAN) {
 			text += " · " + Messages.get("chat.plan.button");
 		} else if (mode != ChatMode.NORMAL) {
@@ -903,13 +1208,21 @@ public class ChatView extends ViewPart {
 			setPlanning(false);
 		}
 		if (!BellaPlugin.getDefault().conversationType().isInstance(session.unwrap())) {
-			newSession(); // provider switched in the preferences: the old chat cannot continue
+			// provider switched in the preferences: a new session, which reads the chat so far with the next message
+			newSession();
+			if (!record.isEmpty()) {
+				earlierChat = record.transcript(EARLIER_CHAT_CHARS);
+				exactHistory = false;
+			}
 			updateStatus();
 		}
 		int userId = nextMessageId++;
 		int botId = nextMessageId++;
 		js("addUser(" + userId + "," + str(display) + ")");
 		js("startAssistant(" + botId + ")");
+		ChatRecord chat = record;
+		chat.user(userId, display);
+		chat.answer(botId);
 		CancelToken cancel = new CancelToken();
 		ChatMode turnMode = planning ? ChatMode.PLAN : mode;
 		turnOverride = planning ? ChatMode.PLAN : null;
@@ -918,8 +1231,10 @@ public class ChatView extends ViewPart {
 		running = cancel;
 		setBusy(true);
 		updateStatus();
-		Renderer renderer = new Renderer(botId);
-		String sent = withScopeNote(prompt);
+		Renderer renderer = new Renderer(botId, chat);
+		this.renderer = renderer;
+		String earlier = earlierChat;
+		String sent = withEarlierChat(withScopeNote(prompt), earlier);
 		int generation = chatGeneration;
 		Job job = Job.create(Messages.get("chat.jobName"), (IProgressMonitor monitor) -> {
 			try {
@@ -939,6 +1254,10 @@ public class ChatView extends ViewPart {
 				renderer.flush();
 				Display.getDefault().asyncExec(() -> {
 					js("endAssistant(" + botId + ")");
+					if (this.renderer == renderer) {
+						this.renderer = null;
+					}
+					closeQuestions();
 					running = null;
 					turnOverride = null;
 					if (generation != chatGeneration) {
@@ -951,6 +1270,12 @@ public class ChatView extends ViewPart {
 					refreshScope();
 					if (planning && answered.get()) {
 						showPlanBar(true);
+					}
+					if (answered.get() && earlier != null && earlierChat == earlier) {
+						earlierChat = null; // the model knows the chat now
+					}
+					if (generation == chatGeneration) {
+						saveChat();
 					}
 				});
 			}
@@ -975,10 +1300,77 @@ public class ChatView extends ViewPart {
 		if (c != null) {
 			c.cancel();
 		}
+		closeQuestions();
+	}
+
+	// ---- questions with options (ask_user) -------------------------------------------------
+
+	/**
+	 * Shows the questions of {@code ask_user} as a menu in the running answer; {@code answer} completes when the
+	 * developer answers or dismisses them. UI thread.
+	 *
+	 * @return {@code false} if there is no running answer or a menu is already open
+	 */
+	boolean showQuestions(List<AskUserToolProvider.Question> questions,
+			CompletableFuture<Optional<List<AskUserToolProvider.Answer>>> answer) {
+		Renderer r = renderer;
+		if (r == null || browser == null || browser.isDisposed() || askAnswer != null) {
+			return false;
+		}
+		int seg = r.questionSegment();
+		askKey = r.id + "_" + seg;
+		askMessage = r.id;
+		askSegment = seg;
+		askQuestions = questions;
+		askAnswer = answer;
+		js("askUser(" + r.id + "," + seg + "," + Json.GSON.toJson(AskUserToolProvider.toJson(questions)) + ")");
+		browser.setFocus();
+		return true;
+	}
+
+	/** Closes an open question menu as not answered, e.g. on Stop. UI thread. */
+	void closeQuestions() {
+		CompletableFuture<Optional<List<AskUserToolProvider.Answer>>> f = askAnswer;
+		if (f == null) {
+			return;
+		}
+		recordQuestions(Optional.empty());
+		askAnswer = null;
+		askKey = null;
+		askQuestions = null;
+		f.complete(Optional.empty());
+		js("closeAsks()");
+	}
+
+	private void onAnswer(String key, String json) {
+		CompletableFuture<Optional<List<AskUserToolProvider.Answer>>> f = askAnswer;
+		if (f == null || !key.equals(askKey)) {
+			return;
+		}
+		Optional<List<AskUserToolProvider.Answer>> answers;
+		try {
+			answers = AskUserToolProvider.answersFromJson(Json.parseStrict(json));
+		} catch (RuntimeException e) {
+			answers = Optional.empty();
+		}
+		recordQuestions(answers);
+		askAnswer = null;
+		askKey = null;
+		askQuestions = null;
+		f.complete(answers);
+		input.setFocus();
+	}
+
+	private void recordQuestions(Optional<List<AskUserToolProvider.Answer>> answers) {
+		if (askQuestions != null) {
+			record.questions(askMessage, askSegment, AskUserToolProvider.toJson(askQuestions),
+					AskUserToolProvider.answersToJson(answers));
+		}
 	}
 
 	@Override
 	public void dispose() {
+		saveChat(true);
 		BellaPlugin.getDefault().devScope().removeListener(scopeListener);
 		scopeJob = null;
 		cancel();
@@ -1035,9 +1427,12 @@ public class ChatView extends ViewPart {
 		private final StringBuilder buffer = new StringBuilder();
 		private boolean scheduled;
 		private final List<Runnable> pending = new ArrayList<>();
+		/** The chat this answer belongs to, for the chat history. */
+		private final ChatRecord chat;
 
-		Renderer(int id) {
+		Renderer(int id, ChatRecord chat) {
 			this.id = id;
+			this.chat = chat;
 		}
 
 		private synchronized void segmentOf(String k) {
@@ -1080,7 +1475,11 @@ public class ChatView extends ViewPart {
 				segmentOf("tool:" + call.id());
 				seg = segment;
 			}
+			if (AskUserToolProvider.TOOL.equals(tool.name())) {
+				return; // the questions show as a menu in this segment, see showQuestions
+			}
 			String in = abbreviate(Json.PRETTY.toJson(call.input()), 4000);
+			chat.tool(id, seg, tool.name(), in, null, null);
 			ui(() -> js("addTool(" + id + "," + seg + "," + str(tool.name()) + "," + str(in) + ")"));
 		}
 
@@ -1090,11 +1489,25 @@ public class ChatView extends ViewPart {
 			synchronized (this) {
 				seg = segment;
 			}
+			if (AskUserToolProvider.TOOL.equals(tool.name()) && !result.isError()) {
+				return; // the answered menu stays in its place
+			}
+			if (AskUserToolProvider.TOOL.equals(tool.name())) {
+				String err = abbreviate(result.content() == null ? "" : result.content(), 6000);
+				chat.tool(id, seg, tool.name(), "", "error", err);
+				ui(() -> {
+					js("addTool(" + id + "," + seg + "," + str(tool.name()) + ",\"\")");
+					js("finishTool(" + id + "," + seg + ",\"error\"," + str(Messages.get("chat.tool.error")) + ","
+							+ str(err) + ")");
+				});
+				return;
+			}
 			String out = abbreviate(result.content() == null ? "" : result.content(), 6000);
 			boolean denied = result.isError() && result.content() != null
 					&& (result.content().contains("declined") || result.content().contains("Refused"));
 			String state = !result.isError() ? "ok" : denied ? "denied" : "error";
 			String label = Messages.get("chat.tool." + state);
+			chat.tool(id, seg, tool.name(), abbreviate(Json.PRETTY.toJson(call.input()), 4000), state, out);
 			ui(() -> js("finishTool(" + id + "," + seg + "," + str(state) + "," + str(label) + "," + str(out) + ")"));
 		}
 
@@ -1118,7 +1531,13 @@ public class ChatView extends ViewPart {
 
 		void notice(String kind, String html) {
 			flush();
+			chat.notice(id, kind, html);
 			ui(() -> js("notice(" + id + "," + str(kind) + "," + str(html) + ")"));
+		}
+
+		/** The segment of the running {@code ask_user} call, where its menu goes. */
+		synchronized int questionSegment() {
+			return segment;
 		}
 
 		private void schedule() {
@@ -1145,14 +1564,12 @@ public class ChatView extends ViewPart {
 			String content = buffer.toString();
 			int seg = segment;
 			if (kind.equals("thinking")) {
+				chat.thinking(id, seg, content);
 				ui(() -> js("setThinking(" + id + "," + seg + "," + str(content) + ")"));
 			} else if (kind.equals("text")) {
-				Markdown.Rendered r = Markdown.render(content,
-						(i, lang) -> "<div class=\"code-bar\" data-lang=\"" + Markdown.escape(lang) + "\"></div>");
-				ui(() -> {
-					codeBlocks.put(id + "_" + seg, r.codeBlocks());
-					js("setText(" + id + "," + seg + "," + str(r.html()) + ")");
-				});
+				chat.text(id, seg, content);
+				Markdown.Rendered r = renderText(content);
+				ui(() -> showText(id, seg, r));
 			}
 		}
 
@@ -1164,6 +1581,17 @@ public class ChatView extends ViewPart {
 				d.asyncExec(r);
 			}
 		}
+	}
+
+	private static Markdown.Rendered renderText(String markdown) {
+		return Markdown.render(markdown,
+				(i, lang) -> "<div class=\"code-bar\" data-lang=\"" + Markdown.escape(lang) + "\"></div>");
+	}
+
+	/** A text segment of an answer, with the code blocks its buttons insert. UI thread. */
+	private void showText(int id, int seg, Markdown.Rendered r) {
+		codeBlocks.put(id + "_" + seg, r.codeBlocks());
+		js("setText(" + id + "," + seg + "," + str(r.html()) + ")");
 	}
 
 	private static String abbreviate(String s, int max) {

@@ -70,6 +70,30 @@ details.tool pre { margin: 0; padding: 6px 8px; border-top: 1px solid var(--bord
 #menu { position: fixed; display: none; background: var(--menu-bg); border: 1px solid var(--border);
   border-radius: 6px; box-shadow: 0 4px 16px var(--shadow); padding: 4px; z-index: 10; min-width: 220px; }
 #menu button { display: flex; width: 100%; text-align: left; padding: 5px 8px; font-size: 12px; }
+.ask { border: 1px solid var(--accent); border-radius: 8px; margin: 6px 0 10px; padding: 8px 10px; outline: none; }
+.ask:focus-within, .ask:focus { box-shadow: 0 0 0 2px var(--accent-soft); }
+.ask-head { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.chip { font-size: 11px; padding: 0 7px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); cursor: default; }
+.chip[data-tab] { cursor: pointer; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.done:not(.on) { border-color: var(--accent); color: var(--accent); }
+.ask-q { font-weight: 600; margin: 2px 0 6px; }
+.opt { display: flex; gap: 8px; align-items: flex-start; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.opt .num { flex: 0 0 18px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.opt .lbl { display: flex; flex-direction: column; min-width: 0; }
+.opt .desc { color: var(--muted); font-size: 12px; }
+.opt.focus { background: var(--accent-soft); }
+.opt.focus .num, .opt.sel .num { color: var(--accent); font-weight: 700; }
+.opt.sel .lbl b { color: var(--accent); }
+.opt.other input { flex: 1; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 6px; }
+.ask-foot { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.ask-foot .hint { flex: 1; color: var(--muted); font-size: 11px; }
+button.icon.primary { border-color: var(--accent); color: var(--accent); }
+.ask.done { border-color: var(--border); cursor: default; }
+.ask-sum { margin: 2px 0; }
+.ask-sum .a { font-weight: 600; color: var(--accent); }
+.ask-sum .none { color: var(--muted); font-style: italic; }
 </style>
 </head>
 <body>
@@ -207,6 +231,144 @@ document.addEventListener('contextmenu', function (e) {
   menu.style.left = x + 'px'; menu.style.top = y + 'px';
 });
 function hideMenu() { menu.style.display = 'none'; }
+
+// ---- questions with options (ask_user) ----------------------------------------------
+var asks = {};
+function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+function askKey(id, seg) { return id + '_' + seg; }
+function askUser(id, seg, data) {
+  var el = segment(id, seg);
+  var a = { key: askKey(id, seg), qs: data.questions, cur: 0, focus: 0,
+    answers: data.questions.map(function () { return { chosen: [], other: '' }; }) };
+  asks[a.key] = a;
+  el.innerHTML = '<div class="ask" tabindex="0"></div>';
+  a.el = el.querySelector('.ask');
+  a.el.addEventListener('keydown', function (e) { askKeyDown(a, e); });
+  a.el.addEventListener('click', function (e) { askClick(a, e); });
+  renderAsk(a);
+  a.el.focus();
+  scrollDown();
+}
+function hasAnswer(ans) { return ans.chosen.length > 0 || ans.other.trim() !== ''; }
+function renderAsk(a) {
+  var q = a.qs[a.cur], ans = a.answers[a.cur], last = a.cur === a.qs.length - 1;
+  var h = '<div class="ask-head">';
+  if (a.qs.length > 1) {
+    a.qs.forEach(function (x, i) {
+      h += '<span class="chip' + (i === a.cur ? ' on' : '') + (hasAnswer(a.answers[i]) ? ' done' : '') +
+        '" data-tab="' + i + '">' + esc(x.header || String(i + 1)) + '</span>';
+    });
+  } else if (q.header) {
+    h += '<span class="chip on">' + esc(q.header) + '</span>';
+  }
+  h += '</div><div class="ask-q">' + esc(q.question) + '</div><div class="ask-opts">';
+  q.options.forEach(function (o, i) {
+    var sel = ans.chosen.indexOf(o.label) >= 0;
+    h += '<div class="opt' + (i === a.focus ? ' focus' : '') + (sel ? ' sel' : '') + '" data-i="' + i + '">' +
+      '<span class="num">' + (q.multiSelect ? (sel ? '&#9745;' : '&#9744;') : (i + 1) + '.') + '</span>' +
+      '<span class="lbl"><b>' + esc(o.label) + '</b>' + (o.description ? '<span class="desc">' + esc(o.description) +
+      '</span>' : '') + '</span></div>';
+  });
+  var oi = q.options.length;
+  h += '<div class="opt other' + (a.focus === oi ? ' focus' : '') + '" data-i="' + oi + '"><span class="num">' +
+    (q.multiSelect ? '&#9998;' : (oi + 1) + '.') + '</span><input type="text" placeholder="' + T.askOther + '"></div>';
+  h += '</div><div class="ask-foot"><span class="hint">' + (q.multiSelect ? T.askHintMulti : T.askHint) + '</span>';
+  if (q.multiSelect || a.qs.length > 1) {
+    h += '<button class="icon primary" data-ask="next">' + (last ? T.askSubmit : T.askNext) + '</button>';
+  }
+  h += '<button class="icon" data-ask="dismiss">' + T.askDismiss + '</button></div>';
+  a.el.innerHTML = h;
+  var input = a.el.querySelector('input');
+  input.value = ans.other;
+  input.addEventListener('input', function () { ans.other = input.value; });
+  input.addEventListener('focus', function () { a.focus = oi; markFocus(a); });
+  if (a.focus === oi) input.focus();
+}
+function markFocus(a) {
+  a.el.querySelectorAll('.opt').forEach(function (o) {
+    o.classList.toggle('focus', parseInt(o.getAttribute('data-i'), 10) === a.focus);
+  });
+}
+function moveFocus(a, delta) {
+  var n = a.qs[a.cur].options.length + 1;
+  a.focus = (a.focus + delta + n) % n;
+  markFocus(a);
+  var input = a.el.querySelector('input');
+  if (a.focus === n - 1) input.focus(); else { input.blur(); a.el.focus(); }
+}
+function pick(a, i) {
+  var q = a.qs[a.cur], ans = a.answers[a.cur];
+  a.focus = i;
+  if (i >= q.options.length) { a.el.querySelector('input').focus(); return; }
+  var label = q.options[i].label;
+  if (q.multiSelect) {
+    var at = ans.chosen.indexOf(label);
+    if (at >= 0) ans.chosen.splice(at, 1); else ans.chosen.push(label);
+    // keep the order of the options
+    ans.chosen = q.options.map(function (o) { return o.label; }).filter(function (l) { return ans.chosen.indexOf(l) >= 0; });
+    renderAsk(a); a.el.focus();
+  } else {
+    ans.chosen = [label]; ans.other = '';
+    next(a);
+  }
+}
+function next(a) {
+  if (a.cur < a.qs.length - 1) { a.cur++; a.focus = 0; renderAsk(a); a.el.focus(); return; }
+  var open = a.answers.findIndex(function (x) { return !hasAnswer(x); });
+  if (open >= 0 && open !== a.cur) { a.cur = open; a.focus = 0; renderAsk(a); a.el.focus(); return; }
+  if (!hasAnswer(a.answers[a.cur])) return;
+  var answers = a.answers.map(function (x) { return { chosen: x.chosen, other: x.other.trim() }; });
+  bellaAnswer(a.key, JSON.stringify(answers));
+  askDone(a.key, { questions: a.qs }, answers);
+}
+function dismiss(a) {
+  bellaAnswer(a.key, 'null');
+  askDone(a.key, { questions: a.qs }, null);
+}
+function askClick(a, e) {
+  if (!asks[a.key]) return;
+  var b = e.target.closest('button[data-ask]');
+  if (b) { if (b.getAttribute('data-ask') === 'next') next(a); else dismiss(a); e.preventDefault(); return; }
+  var tab = e.target.closest('[data-tab]');
+  if (tab) { a.cur = parseInt(tab.getAttribute('data-tab'), 10); a.focus = 0; renderAsk(a); a.el.focus(); return; }
+  var o = e.target.closest('.opt');
+  if (o && e.target.tagName !== 'INPUT') pick(a, parseInt(o.getAttribute('data-i'), 10));
+}
+function askKeyDown(a, e) {
+  if (!asks[a.key]) return;
+  var q = a.qs[a.cur], typing = e.target.tagName === 'INPUT';
+  if (e.key === 'Escape') { dismiss(a); }
+  else if (e.key === 'ArrowDown') { moveFocus(a, 1); }
+  else if (e.key === 'ArrowUp') { moveFocus(a, -1); }
+  else if (e.key === 'Tab' && a.qs.length > 1) { a.cur = (a.cur + (e.shiftKey ? a.qs.length - 1 : 1)) % a.qs.length; a.focus = 0; renderAsk(a); a.el.focus(); }
+  else if (e.key === 'Enter' && typing) {
+    if (!q.multiSelect) a.answers[a.cur].chosen = [];
+    if (hasAnswer(a.answers[a.cur])) next(a);
+  }
+  else if (e.key === 'Enter') { if (q.multiSelect) next(a); else pick(a, a.focus); }
+  else if (e.key === ' ' && !typing && q.multiSelect) { pick(a, a.focus); }
+  else if (!typing && /^[1-9]$/.test(e.key) && parseInt(e.key, 10) <= q.options.length + 1) { pick(a, parseInt(e.key, 10) - 1); }
+  else return;
+  e.preventDefault();
+}
+/** The questions answered (answers: [{chosen, other}]) or dismissed (null); also used to show a saved chat. */
+function askDone(key, data, answers) {
+  var a = asks[key]; delete asks[key];
+  var parts = key.split('_');
+  var el = a ? a.el.parentNode : segment(parseInt(parts[0], 10), parseInt(parts[1], 10));
+  var h = '<div class="ask done">';
+  data.questions.forEach(function (q, i) {
+    var ans = answers && answers[i];
+    var text = ans ? ans.chosen.concat(ans.other ? [ans.other] : []).join(', ') : '';
+    h += '<div class="ask-sum">' + (q.header ? '<span class="chip">' + esc(q.header) + '</span> ' : '') + esc(q.question) +
+      ' &rarr; ' + (text ? '<span class="a">' + esc(text) + '</span>' : '<span class="none">' + T.askDismissed + '</span>') + '</div>';
+  });
+  el.innerHTML = h + '</div>';
+}
+/** Stop while a question is open: show it as not answered. */
+function closeAsks() {
+  Object.keys(asks).forEach(function (k) { askDone(k, { questions: asks[k].qs }, null); });
+}
 window.addEventListener('blur', hideMenu);
 </script>
 </body>

@@ -56,6 +56,9 @@ public final class AbapPrompts {
 				Tools:
 				- Tools starting with adt_ act on the SAP system through the developer's own ADT logon.
 				- Tools starting with mcp_ come from connected MCP servers such as ARC-1.
+				- When a decision is the developer's to make (which approach, object or package, what a requirement
+				  means) and you cannot settle it from the code or the system, ask with ask_user and offer options
+				  instead of guessing; otherwise go on without asking.
 				- Read the current source before you change an object, and check syntax after a change.
 				- Look up real definitions (adt_context, adt_read_source) instead of guessing table fields, data types or
 				  method and function module signatures.

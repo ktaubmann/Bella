@@ -121,6 +121,8 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 		form.choice(general, Messages.get("prefs.uiLanguage"), Prefs.UI_LANGUAGE, ui);
 		form.choice(general, Messages.get("prefs.answerLanguage"), Prefs.ANSWER_LANGUAGE, answer);
 		form.choice(general, Messages.get("prefs.commentLanguage"), Prefs.COMMENT_LANGUAGE, comments);
+		form.check(general, Messages.get("prefs.chatHistory"), Prefs.CHAT_HISTORY);
+		form.number(general, Messages.get("prefs.chatHistoryMax"), Prefs.CHAT_HISTORY_MAX, 1, 500, 10);
 
 		Group editor = Form.group(c, Messages.get("prefs.editor"));
 		form.check(editor, Messages.get("prefs.diffPreview"), Prefs.DIFF_PREVIEW);

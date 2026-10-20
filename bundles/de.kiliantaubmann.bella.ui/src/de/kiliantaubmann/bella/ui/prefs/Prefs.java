@@ -37,6 +37,10 @@ public final class Prefs {
 
 	/** Packages last chosen in the chat window, most recent first, comma separated. */
 	public static final String PACKAGE_HISTORY = "chat.packageHistory";
+	/** Chats are saved in the workspace and can be opened and continued later. */
+	public static final String CHAT_HISTORY = "chat.history";
+	/** How many saved chats are kept; older ones are deleted. */
+	public static final String CHAT_HISTORY_MAX = "chat.historyMax";
 
 	public static final String DIFF_PREVIEW = "editor.diffPreview";
 	/** Editor actions load the definitions of the SAP objects the code uses. */

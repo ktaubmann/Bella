@@ -25,7 +25,9 @@ import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
 import de.kiliantaubmann.bella.core.adt.DevScope;
 import de.kiliantaubmann.bella.core.debug.DebugToolProvider;
 import de.kiliantaubmann.bella.core.lint.LintToolProvider;
+import de.kiliantaubmann.bella.core.tools.AskUserToolProvider;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
+import de.kiliantaubmann.bella.core.agent.ChatStore;
 import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.agent.LoggingConversation;
 import de.kiliantaubmann.bella.core.mask.Masker;
@@ -58,6 +60,7 @@ import de.kiliantaubmann.bella.ui.debug.EclipseDebugBackend;
 import de.kiliantaubmann.bella.ui.prefs.McpServerConfig;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
 import de.kiliantaubmann.bella.ui.prefs.SecureStore;
+import de.kiliantaubmann.bella.ui.views.ChatAsker;
 
 /** Activator and central access point of the Bella UI bundle. */
 public class BellaPlugin extends AbstractUIPlugin {
@@ -113,6 +116,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 		adtTracker.open();
 		tools.addProvider(new LintToolProvider(() -> conventions(activeDestination).naming()));
 		tools.addProvider(new DebugToolProvider(new EclipseDebugBackend()));
+		tools.addProvider(new AskUserToolProvider(new ChatAsker()));
 		Log.mask(masker::mask);
 		configureLog();
 		getPreferenceStore().addPropertyChangeListener(e -> {
@@ -166,7 +170,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 	public static final String IMG_BELLA = "bella";
 
 	private static final String[] IMAGES = { IMG_BELLA, "explain", "generate", "rewrite", "method", "insert",
-			"replace", "copy", "send", "stop", "new_chat", "tool", "activate", "refactor", "test", "settings", "plan" };
+			"replace", "copy", "send", "stop", "new_chat", "tool", "activate", "refactor", "test", "settings", "plan",
+			"history" };
 
 	@Override
 	protected void initializeImageRegistry(ImageRegistry reg) {
@@ -504,6 +509,16 @@ public class BellaPlugin extends AbstractUIPlugin {
 
 	public ToolPolicy policy() {
 		return new ToolPolicy(ToolPolicy.parseRules(prefs().getString(Prefs.POLICY_RULES)));
+	}
+
+	/** Saved chats, in the workspace's metadata. */
+	public ChatStore chatStore() {
+		return new ChatStore(getStateLocation().append("chats").toPath());
+	}
+
+	/** Whether chats are saved for the chat history. */
+	public boolean keepsChatHistory() {
+		return prefs().getBoolean(Prefs.CHAT_HISTORY);
 	}
 
 	public ToolRegistry tools() {

@@ -72,6 +72,34 @@ public final class ChatSession implements Conversation {
 		send(userText, listener, cancel);
 	}
 
+	/**
+	 * Continues a saved chat: takes its model history over. A history that
+	 * ends in the middle of a turn (stopped before the answer or before the
+	 * tool results) is cut back to the last complete turn.
+	 */
+	public synchronized void restore(List<JsonObject> saved) {
+		history.clear();
+		history.addAll(saved);
+		while (!history.isEmpty() && !completesTurn(history.get(history.size() - 1))) {
+			history.remove(history.size() - 1);
+		}
+	}
+
+	private static boolean completesTurn(JsonObject message) {
+		if (!"assistant".equals(Json.str(message, "role"))) {
+			return false;
+		}
+		JsonArray content = Json.arr(message, "content");
+		if (content != null) {
+			for (var e : content) {
+				if (e.isJsonObject() && "tool_use".equals(Json.str(e.getAsJsonObject(), "type"))) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 	@Override
 	public String describe() {
 		return settings.get().model();

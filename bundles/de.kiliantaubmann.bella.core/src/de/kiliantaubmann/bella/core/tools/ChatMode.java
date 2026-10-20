@@ -56,8 +56,9 @@ public enum ChatMode {
 				editor (Bella refuses these tools in this mode). Read what you need with the read tools, then answer \
 				with a concrete, numbered plan: which objects you would create or change, what changes in each \
 				(short code sketches where useful), in which order, how you would activate and test it, and the \
-				risks or open questions. Do not ask how to continue: the developer accepts, changes or cancels the \
-				plan with buttons below the chat.</chat_mode>""";
+				risks or open questions. If a decision only the developer can make blocks the plan, ask it with \
+				ask_user first. Do not ask how to continue: the developer accepts, changes or cancels the plan with \
+				buttons below the chat.</chat_mode>""";
 		case SUGGEST -> """
 				<chat_mode>Suggest mode. Nothing may be saved, created or activated in the SAP system (Bella refuses \
 				it). Propose changes instead: for an object open in the editor use adt_write_source, which shows the \

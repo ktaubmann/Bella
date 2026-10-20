@@ -39,6 +39,8 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
 		s.setDefault(Prefs.AUTO_COMPLETION, false);
 		s.setDefault(Prefs.AUTO_COMPLETION_DELAY, 500);
 		s.setDefault(Prefs.DEBUG_OFFER_ANALYSIS, true);
+		s.setDefault(Prefs.CHAT_HISTORY, true);
+		s.setDefault(Prefs.CHAT_HISTORY_MAX, 50);
 		s.setDefault(Prefs.PREFERRED_TOOLS, "adt");
 		s.setDefault(Prefs.POLICY_RULES, "");
 		s.setDefault(Prefs.WRITE_PACKAGES, "$TMP, Z*, Y*");
