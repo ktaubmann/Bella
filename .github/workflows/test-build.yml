@@ -6,7 +6,8 @@ name: Test build
 # The tag must not be called "test" like the branch: GitHub then leaves the
 # release an unpublished draft (shown as "untagged-…") without a download.
 # It is never marked as latest release and never reaches the update site on
-# GitHub Pages (pages.yml only takes regular releases).
+# GitHub Pages (pages.yml only takes regular releases). A commit that passed
+# here may go to "main", where release.yml releases it.
 on:
   push:
     branches: [ test ]

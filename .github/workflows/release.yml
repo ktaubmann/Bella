@@ -1,10 +1,15 @@
 name: Release
 
-# Publishes the update site as a GitHub Release, either by pushing a tag like
-# v0.1.0 or via "Run workflow" (Actions tab) with the version number; the
-# latter creates the tag itself.
+# Publishes the update site as a GitHub Release. Every push to "main" releases
+# the version in pom.xml once: if its tag v<version> exists already, nothing is
+# released. A release also starts by pushing a tag like v0.1.0, or via "Run
+# workflow" (Actions tab, branch main) with the version number. Except for a
+# pushed tag, the workflow creates the tag itself.
+# A commit is only released after it passed the test build (test-build.yml,
+# branch "test"): push to "test" first, then to "main".
 on:
   push:
+    branches: [ main ]
     tags: [ 'v*' ]
   workflow_dispatch:
     inputs:
@@ -14,6 +19,11 @@ on:
 
 permissions:
   contents: write
+  actions: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -31,14 +41,39 @@ jobs:
       - name: Determine tag
         id: tag
         run: |
+          # read from pom.xml: "mvn help:evaluate" can fail inside Tycho on a runner with an empty Maven cache
+          version=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml | sed 's/-SNAPSHOT$//')
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::Releases are made from the branch main, not $GITHUB_REF_NAME"
+              exit 1
+            fi
             tag="v${{ inputs.version }}"
+          elif [ "$GITHUB_REF_TYPE" = "branch" ]; then
+            tag="v$version"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              echo "Version $version is released already ($tag); nothing to do."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           else
             tag="${GITHUB_REF_NAME}"
           fi
           echo "TAG=$tag" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Check that this commit passed the test build
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test-build.yml/runs?head_sha=$GITHUB_SHA&status=success" \
+            --jq .total_count)
+          if [ "$passed" = "0" ]; then
+            echo "::error::Commit $GITHUB_SHA has no successful test build. Push it to the branch test first, wait for the test build, then push it to main."
+            exit 1
+          fi
       - name: Check that the tag matches the project version
+        if: steps.tag.outputs.skip != 'true'
         run: |
           tag="${TAG#v}"
           # read from pom.xml: "mvn help:evaluate" can fail inside Tycho on a runner with an empty Maven cache
@@ -48,6 +83,7 @@ jobs:
             exit 1
           fi
       - name: Build, test and package the update site (incl. ADT integration)
+        if: steps.tag.outputs.skip != 'true'
         # Signs with PGP when the secret BELLA_GPG_KEY is set (fingerprint in the
         # variable BELLA_GPG_KEYNAME, optional passphrase in the secret
         # BELLA_GPG_PASSPHRASE); without it the release stays unsigned.
@@ -57,6 +93,7 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.BELLA_GPG_PASSPHRASE }}
         run: releng/build-update-site.sh "bella-update-site-${TAG}.zip"
       - name: Publish release
+        if: steps.tag.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
@@ -78,7 +115,7 @@ jobs:
   pages:
     name: Publish update site on GitHub Pages
     needs: release
-    if: vars.PAGES_ENABLED == 'true'
+    if: vars.PAGES_ENABLED == 'true' && needs.release.outputs.tag != ''
     permissions:
       contents: read
       pages: write
