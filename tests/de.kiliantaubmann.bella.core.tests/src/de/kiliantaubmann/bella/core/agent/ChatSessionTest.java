@@ -163,6 +163,43 @@ class ChatSessionTest {
 	}
 
 	@Test
+	void usageSumsAllRequestsOfATurnAndMeasuresTheContextByTheLast() throws Exception {
+		ScriptedLlm llm = new ScriptedLlm();
+		ChatResult tool = toolUse(StopReason.TOOL_USE, call("t1", "adt_read_source"));
+		llm.results.add(new ChatResult(tool.assistantMessage(), "", tool.toolCalls(), StopReason.TOOL_USE, null,
+				"claude-opus-5", new Usage(5000, 100, 0, 4000)));
+		ChatResult answer = text("It reads orders.");
+		llm.results.add(new ChatResult(answer.assistantMessage(), answer.text(), List.of(), StopReason.END_TURN, null,
+				"claude-opus-5", new Usage(1200, 300, 9000, 0)));
+		List<TurnUsage> seen = new ArrayList<>();
+		session(llm, new Tools(), true, new ArrayList<>(), null).send("explain", new ChatSession.Listener() {
+			@Override
+			public void onUsage(TurnUsage usage) {
+				seen.add(usage);
+			}
+		}, CancelToken.NONE);
+		assertEquals(1, seen.size());
+		assertEquals(new Usage(6200, 400, 9000, 4000), seen.get(0).total());
+		assertEquals(10_500, seen.get(0).contextTokens());
+		assertEquals(1_000_000, seen.get(0).contextWindow());
+		assertEquals(1, seen.get(0).contextPercent());
+	}
+
+	@Test
+	void noUsageWhenTheBackendReportsNone() throws Exception {
+		ScriptedLlm llm = new ScriptedLlm();
+		llm.results.add(text("ok"));
+		List<TurnUsage> seen = new ArrayList<>();
+		session(llm, new Tools(), true, new ArrayList<>(), null).send("x", new ChatSession.Listener() {
+			@Override
+			public void onUsage(TurnUsage usage) {
+				seen.add(usage);
+			}
+		}, CancelToken.NONE);
+		assertTrue(seen.isEmpty());
+	}
+
+	@Test
 	void runsReadToolsAutomaticallyAndLoopsUntilDone() throws Exception {
 		ScriptedLlm llm = new ScriptedLlm();
 		llm.results.add(toolUse(StopReason.TOOL_USE, call("t1", "adt_read_source")));

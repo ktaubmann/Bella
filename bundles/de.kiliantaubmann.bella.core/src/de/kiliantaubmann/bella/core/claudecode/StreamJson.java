@@ -8,7 +8,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
+import de.kiliantaubmann.bella.core.agent.TurnUsage;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
+import de.kiliantaubmann.bella.core.llm.ModelCaps;
 import de.kiliantaubmann.bella.core.llm.StopReason;
 import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.util.Json;
@@ -35,6 +37,10 @@ final class StreamJson {
 	private String subtype;
 	private String resultText;
 	private Usage usage = Usage.NONE;
+	/** Usage of the turn's last API request, for the context fill. */
+	private Usage lastRequest = Usage.NONE;
+	private boolean streamedUsage;
+	private int contextWindow;
 	private JsonObject controlRequest;
 
 	StreamJson(ConversationListener listener) {
@@ -126,6 +132,17 @@ final class StreamJson {
 			if (m != null) {
 				model = m;
 			}
+			JsonObject u = Json.obj(Json.obj(event, "message"), "usage");
+			if (u != null) {
+				lastRequest = usage(u);
+				streamedUsage = true;
+			}
+		} else if ("message_delta".equals(type)) {
+			JsonObject u = Json.obj(event, "usage");
+			if (u != null && u.has("output_tokens")) {
+				lastRequest = new Usage(lastRequest.inputTokens(), Json.integer(u, "output_tokens", 0),
+						lastRequest.cacheReadTokens(), lastRequest.cacheWriteTokens());
+			}
 		}
 	}
 
@@ -140,6 +157,10 @@ final class StreamJson {
 		}
 		if (Json.str(message, "model") != null && !"<synthetic>".equals(Json.str(message, "model"))) {
 			model = Json.str(message, "model");
+			JsonObject u = Json.obj(message, "usage");
+			if (u != null && !streamedUsage) {
+				lastRequest = usage(u); // without stream events (older CLIs)
+			}
 		}
 		if (deltasSinceMessage == 0) {
 			JsonArray content = Json.arr(message, "content");
@@ -172,13 +193,32 @@ final class StreamJson {
 				|| (subtype != null && subtype.startsWith("error"));
 		JsonObject u = Json.obj(msg, "usage");
 		if (u != null) {
-			usage = new Usage(Json.integer(u, "input_tokens", 0), Json.integer(u, "output_tokens", 0),
-					Json.integer(u, "cache_read_input_tokens", 0), Json.integer(u, "cache_creation_input_tokens", 0));
+			usage = usage(u); // the sum over the turn's requests
+		}
+		JsonObject models = Json.obj(msg, "modelUsage");
+		if (models != null) {
+			// per model, e.g. also a small model the CLI used for titles
+			JsonObject m = model == null ? null : Json.obj(models, model);
+			contextWindow = m == null ? 0 : Json.integer(m, "contextWindow", 0);
 		}
 		if (!error && text.length() == 0 && resultText != null && !resultText.isEmpty()) {
 			text.append(resultText);
 			listener.onText(resultText);
 		}
+	}
+
+	private static Usage usage(JsonObject u) {
+		return new Usage(Json.integer(u, "input_tokens", 0), Json.integer(u, "output_tokens", 0),
+				Json.integer(u, "cache_read_input_tokens", 0), Json.integer(u, "cache_creation_input_tokens", 0));
+	}
+
+	/** Tokens of the turn, {@code null} when the CLI reported none. */
+	TurnUsage turnUsage() {
+		if (usage.isEmpty() && lastRequest.isEmpty()) {
+			return null;
+		}
+		int window = contextWindow > 0 ? contextWindow : ModelCaps.contextWindow(model);
+		return new TurnUsage(usage, lastRequest.promptTokens() + lastRequest.outputTokens(), window);
 	}
 
 	static String toolName(String name) {

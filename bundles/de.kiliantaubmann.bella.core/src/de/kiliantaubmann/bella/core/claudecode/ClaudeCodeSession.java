@@ -128,6 +128,9 @@ public final class ClaudeCodeSession implements Conversation {
 			}
 			throw new LlmException(0, "Claude Code ended unexpectedly" + (err.isEmpty() ? "." : ": " + tail(err)));
 		}
+		if (turn.turnUsage() != null) {
+			listener.onUsage(turn.turnUsage());
+		}
 		if (cancel.isCancelled()) {
 			listener.onTurnEnd(turn.toResult(processModel));
 			throw new CancelledException();

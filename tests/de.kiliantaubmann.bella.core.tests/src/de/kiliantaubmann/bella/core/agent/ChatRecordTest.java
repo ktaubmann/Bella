@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
+import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.util.Json;
 
 class ChatRecordTest {
@@ -75,6 +76,21 @@ class ChatRecordTest {
 		assertEquals(ChatRecord.NOT_STORED, Json.str(kept.get(0).getAsJsonObject(), "content"));
 		assertEquals("REPORT z.", Json.str(kept.get(1).getAsJsonObject(), "content"));
 		assertEquals("4711 Müller", Json.str(Json.arr(results, "content").get(0).getAsJsonObject(), "content"));
+	}
+
+	@Test
+	void keepsTheTokensOfEachAnswer() {
+		ChatRecord r = sample();
+		r.usage(2, new TurnUsage(new Usage(100, 20, 0, 0), 120, 0));
+		r.usage(2, new TurnUsage(new Usage(5000, 300, 4000, 1000), 5300, 1_000_000));
+		ChatRecord loaded = ChatRecord.fromJson(r.toJson());
+		List<JsonObject> usages = loaded.entries().stream().filter(e -> "usage".equals(Json.str(e, "t"))).toList();
+		assertEquals(1, usages.size(), "the last state of an answer replaces the earlier one");
+		TurnUsage u = ChatRecord.usageOf(usages.get(0));
+		assertEquals(new Usage(5000, 300, 4000, 1000), u.total());
+		assertEquals(5300, u.contextTokens());
+		assertEquals(1_000_000, u.contextWindow());
+		assertFalse(loaded.transcript(10_000).contains("5300"));
 	}
 
 	@Test

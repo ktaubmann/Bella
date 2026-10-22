@@ -11,6 +11,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
+import de.kiliantaubmann.bella.core.agent.TurnUsage;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.StopReason;
 
@@ -57,6 +58,27 @@ class StreamJsonTest {
 		assertEquals(StopReason.END_TURN, result.stopReason());
 		assertEquals(12, result.usage().inputTokens());
 		assertEquals(3, result.usage().cacheReadTokens());
+	}
+
+	@Test
+	void turnUsageSumsTheTurnAndTakesTheContextFromTheLastRequest() {
+		StreamJson s = new StreamJson(new Recorder());
+		s.accept(FakeCli.init());
+		s.accept("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{"
+				+ "\"model\":\"claude-opus-5\",\"usage\":{\"input_tokens\":10,\"cache_read_input_tokens\":30000,"
+				+ "\"cache_creation_input_tokens\":2000,\"output_tokens\":1}}}}");
+		s.accept(FakeCli.delta("ok"));
+		s.accept("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":490}}}");
+		s.accept(FakeCli.assistantText("ok"));
+		s.accept("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\","
+				+ "\"usage\":{\"input_tokens\":25,\"output_tokens\":900,\"cache_read_input_tokens\":50000},"
+				+ "\"modelUsage\":{\"claude-opus-5\":{\"contextWindow\":200000}}}");
+		TurnUsage u = s.turnUsage();
+		assertEquals(50_025, u.total().promptTokens());
+		assertEquals(900, u.total().outputTokens());
+		assertEquals(32_500, u.contextTokens());
+		assertEquals(200_000, u.contextWindow());
+		assertEquals(16, u.contextPercent());
 	}
 
 	@Test

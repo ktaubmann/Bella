@@ -94,6 +94,15 @@ public final class LoggingConversation implements Conversation {
 			}
 
 			@Override
+			public void onUsage(TurnUsage usage) {
+				Usage u = usage.total();
+				Log.info(AREA, "turn tokens: in=" + u.inputTokens() + " out=" + u.outputTokens() + " cacheRead="
+						+ u.cacheReadTokens() + " cacheWrite=" + u.cacheWriteTokens() + ", context="
+						+ usage.contextTokens() + "/" + usage.contextWindow());
+				listener.onUsage(usage);
+			}
+
+			@Override
 			public void onTurnEnd(ChatResult last) {
 				if (last != null) {
 					Usage u = last.usage() == null ? Usage.NONE : last.usage();

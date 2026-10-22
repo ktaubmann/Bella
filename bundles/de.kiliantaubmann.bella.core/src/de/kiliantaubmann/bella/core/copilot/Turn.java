@@ -11,6 +11,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
+import de.kiliantaubmann.bella.core.agent.TurnUsage;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.StopReason;
 import de.kiliantaubmann.bella.core.llm.Usage;
@@ -32,6 +33,9 @@ final class Turn {
 	private final ConversationListener listener;
 	private final StringBuilder text = new StringBuilder();
 	private volatile boolean finished;
+	/** Context fill and window size from an ACP {@code usage_update}, {@code 0} if not reported. */
+	private volatile int contextUsed;
+	private volatile int contextSize;
 
 	Turn(ConversationListener listener) {
 		this.listener = listener;
@@ -73,6 +77,10 @@ final class Turn {
 			}
 		}
 		case "tool_call" -> listener.onToolUseStart(Json.str(update, "toolCallId"), Json.str(update, "title"));
+		case "usage_update" -> {
+			contextUsed = Json.integer(update, "used", contextUsed);
+			contextSize = Json.integer(update, "size", contextSize);
+		}
 		default -> {
 			// tool_call_update, plan, available_commands_update, … – tool results come from Bella's MCP server
 		}
@@ -210,6 +218,12 @@ final class Turn {
 		}
 		return new Usage(Json.integer(u, "inputTokens", 0), Json.integer(u, "outputTokens", 0),
 				Json.integer(u, "cachedReadTokens", 0), Json.integer(u, "cachedWriteTokens", 0));
+	}
+
+	/** Tokens of the turn, {@code null} when the CLI reported none. */
+	TurnUsage turnUsage(JsonObject promptResult) {
+		TurnUsage u = new TurnUsage(usage(promptResult), contextUsed, contextSize);
+		return u.isEmpty() ? null : u;
 	}
 
 	ChatResult result(JsonObject promptResult, String model) {

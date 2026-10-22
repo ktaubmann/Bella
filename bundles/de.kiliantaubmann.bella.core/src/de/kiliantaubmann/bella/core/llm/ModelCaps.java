@@ -12,7 +12,27 @@ public final class ModelCaps {
 	/** Families that accept server-side refusal fallbacks ({@code fallbacks: "default"}). */
 	private static final List<String> FALLBACK = List.of("claude-opus-5", "claude-fable-5", "claude-mythos-5");
 
+	/**
+	 * Families with a context window of 200,000 tokens; newer Claude models have 1,000,000.
+	 * {@code claude-sonnet-4-2} and {@code claude-opus-4-2} match the dated IDs of Claude 4.0.
+	 */
+	private static final List<String> WINDOW_200K = List.of("claude-haiku-4", "claude-sonnet-4-5", "claude-sonnet-4-0",
+			"claude-sonnet-4-2", "claude-opus-4-5", "claude-opus-4-1", "claude-opus-4-0", "claude-opus-4-2",
+			"claude-3");
+
 	private ModelCaps() {
+	}
+
+	/**
+	 * Context window of a Claude model in tokens, {@code 0} for models Bella
+	 * does not know. A prefix such as {@code us.anthropic.} is ignored.
+	 */
+	public static int contextWindow(String model) {
+		int at = model == null ? -1 : model.indexOf("claude-");
+		if (at < 0) {
+			return 0;
+		}
+		return startsWithAny(model.substring(at), WINDOW_200K) ? 200_000 : 1_000_000;
 	}
 
 	public static boolean adaptiveThinking(String model) {

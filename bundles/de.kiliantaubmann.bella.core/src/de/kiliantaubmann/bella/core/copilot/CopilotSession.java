@@ -127,6 +127,9 @@ public final class CopilotSession implements Conversation {
 			throw new LlmException(0, e.getMessage());
 		}
 		finish(t);
+		if (t.turnUsage(result) != null) {
+			listener.onUsage(t.turnUsage(result));
+		}
 		String stop = Json.str(result, "stopReason");
 		if (cancel.isCancelled() || "cancelled".equals(stop)) {
 			listener.onTurnEnd(t.result(result, processModel));

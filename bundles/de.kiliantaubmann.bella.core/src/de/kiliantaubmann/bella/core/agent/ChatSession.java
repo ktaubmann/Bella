@@ -11,8 +11,10 @@ import de.kiliantaubmann.bella.core.llm.ChatRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.llm.LlmProvider;
+import de.kiliantaubmann.bella.core.llm.ModelCaps;
 import de.kiliantaubmann.bella.core.llm.StopReason;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
+import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.tools.ToolPolicy;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -123,67 +125,83 @@ public final class ChatSession implements Conversation {
 		}
 		listener.onTurnStart();
 		ChatResult result = null;
-		for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
-			cancel.throwIfCancelled();
-			Settings s = settings.get();
-			List<ToolSpec> available = tools == null ? List.of() : tools.tools();
-			ChatRequest request;
-			synchronized (this) {
-				request = new ChatRequest(s.model(), system, history, available, s.maxTokens(),
-						ChatRequest.Purpose.CHAT, s.effort());
-			}
-			try {
-				result = provider.get().chat(request, listener, cancel);
-			} catch (CancelledException | LlmException e) {
-				rollbackDanglingUser();
-				throw e;
-			}
-			synchronized (this) {
-				history.add(result.assistantMessage());
-			}
-			if (result.stopReason() == StopReason.REFUSAL) {
-				listener.onNotice("refusal:" + (result.stopDetail() == null ? "" : result.stopDetail()));
-				break;
-			}
-			if (result.stopReason() == StopReason.MAX_TOKENS && !result.toolCalls().isEmpty()) {
-				// A tool input cut off at max_tokens may still parse; never run it.
-				listener.onNotice("max_tokens_tool");
-				answerSkippedTools(result, "Output was cut off at max_tokens; this tool call was not executed.");
-				break;
-			}
-			if (result.stopReason() == StopReason.MAX_TOKENS) {
-				listener.onNotice("max_tokens");
-				break;
-			}
-			if (result.toolCalls().isEmpty()) {
-				if (result.stopReason() == StopReason.PAUSE_TURN) {
-					continue;
-				}
-				break;
-			}
-			JsonArray results = new JsonArray();
-			for (ToolCall call : result.toolCalls()) {
+		Usage total = Usage.NONE;
+		try {
+			for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
 				cancel.throwIfCancelled();
-				ToolResult r = runTool(call, listener, cancel);
-				JsonObject block = new JsonObject();
-				block.addProperty("type", "tool_result");
-				block.addProperty("tool_use_id", call.id());
-				block.addProperty("content", r.content() == null || r.content().isEmpty() ? "(empty)" : r.content());
-				if (r.isError()) {
-					block.addProperty("is_error", true);
+				Settings s = settings.get();
+				List<ToolSpec> available = tools == null ? List.of() : tools.tools();
+				ChatRequest request;
+				synchronized (this) {
+					request = new ChatRequest(s.model(), system, history, available, s.maxTokens(),
+							ChatRequest.Purpose.CHAT, s.effort());
 				}
-				results.add(block);
+				try {
+					result = provider.get().chat(request, listener, cancel);
+					total = total.plus(result.usage());
+				} catch (CancelledException | LlmException e) {
+					rollbackDanglingUser();
+					throw e;
+				}
+				synchronized (this) {
+					history.add(result.assistantMessage());
+				}
+				if (result.stopReason() == StopReason.REFUSAL) {
+					listener.onNotice("refusal:" + (result.stopDetail() == null ? "" : result.stopDetail()));
+					break;
+				}
+				if (result.stopReason() == StopReason.MAX_TOKENS && !result.toolCalls().isEmpty()) {
+					// A tool input cut off at max_tokens may still parse; never run it.
+					listener.onNotice("max_tokens_tool");
+					answerSkippedTools(result, "Output was cut off at max_tokens; this tool call was not executed.");
+					break;
+				}
+				if (result.stopReason() == StopReason.MAX_TOKENS) {
+					listener.onNotice("max_tokens");
+					break;
+				}
+				if (result.toolCalls().isEmpty()) {
+					if (result.stopReason() == StopReason.PAUSE_TURN) {
+						continue;
+					}
+					break;
+				}
+				JsonArray results = new JsonArray();
+				for (ToolCall call : result.toolCalls()) {
+					cancel.throwIfCancelled();
+					ToolResult r = runTool(call, listener, cancel);
+					JsonObject block = new JsonObject();
+					block.addProperty("type", "tool_result");
+					block.addProperty("tool_use_id", call.id());
+					block.addProperty("content", r.content() == null || r.content().isEmpty() ? "(empty)" : r.content());
+					if (r.isError()) {
+						block.addProperty("is_error", true);
+					}
+					results.add(block);
+				}
+				// All results of one turn go back in a single user message.
+				synchronized (this) {
+					history.add(Json.message("user", results));
+				}
+				if (round == MAX_TOOL_ROUNDS - 1) {
+					listener.onNotice("max_rounds");
+				}
 			}
-			// All results of one turn go back in a single user message.
-			synchronized (this) {
-				history.add(Json.message("user", results));
-			}
-			if (round == MAX_TOOL_ROUNDS - 1) {
-				listener.onNotice("max_rounds");
-			}
+		} finally {
+			reportUsage(total, result, listener);
 		}
 		listener.onTurnEnd(result);
 		return result;
+	}
+
+	/** Tokens of the turn, also of one that was stopped or failed after some requests. */
+	private static void reportUsage(Usage total, ChatResult last, ConversationListener listener) {
+		if (total.isEmpty()) {
+			return;
+		}
+		Usage u = last == null || last.usage() == null ? Usage.NONE : last.usage();
+		listener.onUsage(new TurnUsage(total, u.promptTokens() + u.outputTokens(),
+				ModelCaps.contextWindow(last == null ? null : last.model())));
 	}
 
 	/**

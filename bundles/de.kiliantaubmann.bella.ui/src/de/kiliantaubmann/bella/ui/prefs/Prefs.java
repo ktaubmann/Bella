@@ -41,6 +41,8 @@ public final class Prefs {
 	public static final String CHAT_HISTORY = "chat.history";
 	/** How many saved chats are kept; older ones are deleted. */
 	public static final String CHAT_HISTORY_MAX = "chat.historyMax";
+	/** Tokens below every answer and for the chat in the status line. */
+	public static final String SHOW_USAGE = "chat.showUsage";
 
 	public static final String DIFF_PREVIEW = "editor.diffPreview";
 	/** Editor actions load the definitions of the SAP objects the code uses. */

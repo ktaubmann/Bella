@@ -56,6 +56,8 @@ details.tool.ok .state { color: var(--ok); } details.tool.error .state { color: 
 details.tool pre { margin: 0; padding: 6px 8px; border-top: 1px solid var(--border); background: var(--code-bg);
   max-height: 220px; overflow: auto; white-space: pre-wrap; font-size: 11px; }
 .status-icon svg { width: 14px; height: 14px; vertical-align: -2px; }
+.usage { color: var(--muted); font-size: 11px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+body.nousage .usage { display: none; }
 .notice { margin: 8px 0 8px 30px; padding: 6px 10px; border-radius: 6px; border-left: 3px solid var(--warn);
   background: var(--code-bg); font-size: 12px; }
 .notice.error { border-left-color: var(--err); }
@@ -183,6 +185,14 @@ function finishTool(id, seg, status, label, output) {
 function endAssistant(id) {
   var p = document.querySelector('#m' + id + ' .pending'); if (p) p.remove();
 }
+/** Tokens of an answer, below it; hidden while the preference is off. */
+function usage(id, text) {
+  var b = document.querySelector('#m' + id + ' .bubble'); if (!b) return;
+  var u = b.querySelector('.usage');
+  if (!u) { u = document.createElement('div'); u.className = 'usage'; b.appendChild(u); }
+  u.textContent = text;
+}
+function showUsage(on) { document.body.classList.toggle('nousage', !on); }
 function notice(id, kind, html) {
   var n = document.createElement('div'); n.className = 'notice ' + kind; n.innerHTML = html;
   var m = document.getElementById('m' + id);

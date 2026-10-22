@@ -127,6 +127,9 @@ public class BellaPlugin extends AbstractUIPlugin {
 			} else if (Prefs.UI_LANGUAGE.equals(e.getProperty())) {
 				Messages.reload();
 				refreshLabels();
+			} else if (Prefs.SHOW_USAGE.equals(e.getProperty()) && org.eclipse.ui.PlatformUI.isWorkbenchRunning()) {
+				org.eclipse.ui.PlatformUI.getWorkbench().getDisplay()
+						.asyncExec(() -> de.kiliantaubmann.bella.ui.views.ChatView.find().ifPresent(v -> v.refresh()));
 			}
 		});
 		reconnectMcpServers();

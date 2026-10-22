@@ -24,6 +24,7 @@ import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
+import de.kiliantaubmann.bella.core.agent.TurnUsage;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.llm.LlmException;
@@ -86,6 +87,7 @@ class CopilotSessionTest {
 		final List<String> notices = new CopyOnWriteArrayList<>();
 		final List<String> tools = new CopyOnWriteArrayList<>();
 		volatile ChatResult last;
+		volatile TurnUsage usage;
 		volatile boolean sawText;
 		volatile boolean ended;
 
@@ -108,6 +110,11 @@ class CopilotSessionTest {
 		@Override
 		public void onToolResult(ToolSpec tool, ToolCall call, ToolResult result) {
 			tools.add("result:" + result.content());
+		}
+
+		@Override
+		public void onUsage(TurnUsage usage) {
+			this.usage = usage;
 		}
 
 		@Override
@@ -270,6 +277,28 @@ class CopilotSessionTest {
 		Recorder r = new Recorder();
 		session.ask("x", r, CancelToken.NONE);
 		assertEquals(new Usage(12296, 4274, 0, 0), r.last.usage());
+		assertEquals(new Usage(12296, 4274, 0, 0), r.usage.total());
+		assertEquals(-1, r.usage.contextPercent(), "no usage_update: the context fill is unknown");
+	}
+
+	@Test
+	void contextFillComesFromUsageUpdates() throws Exception {
+		fake.script = (p, id, sid, text) -> {
+			p.update(sid, "agent_message_chunk", "ok");
+			JsonObject u = Json.parseObject("{\"sessionUpdate\":\"usage_update\",\"used\":50000,\"size\":200000}");
+			JsonObject params = new JsonObject();
+			params.addProperty("sessionId", sid);
+			params.add("update", u);
+			JsonObject m = new JsonObject();
+			m.addProperty("method", "session/update");
+			m.add("params", params);
+			p.send(m);
+			p.reply(id, FakeAcp.stopReason("end_turn"));
+		};
+		Recorder r = new Recorder();
+		session.ask("x", r, CancelToken.NONE);
+		assertEquals(50_000, r.usage.contextTokens());
+		assertEquals(25, r.usage.contextPercent());
 	}
 
 	private static String optionOf(FakeAcp.Proc p, int id) {

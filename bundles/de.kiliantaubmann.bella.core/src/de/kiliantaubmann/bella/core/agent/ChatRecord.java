@@ -9,6 +9,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.util.Json;
 
 /**
@@ -169,6 +170,26 @@ public final class ChatRecord {
 		e.addProperty("html", html);
 		entries.add(e);
 		updated = System.currentTimeMillis();
+	}
+
+	/** Tokens of the answer {@code messageId}. */
+	public synchronized void usage(int messageId, TurnUsage usage) {
+		JsonObject e = entry("usage", "x" + messageId, messageId);
+		Usage u = usage.total();
+		e.addProperty("in", u.inputTokens());
+		e.addProperty("out", u.outputTokens());
+		e.addProperty("cacheRead", u.cacheReadTokens());
+		e.addProperty("cacheWrite", u.cacheWriteTokens());
+		e.addProperty("context", usage.contextTokens());
+		e.addProperty("window", usage.contextWindow());
+		put(e);
+	}
+
+	/** The tokens of a {@code usage} entry from {@link #entries()}. */
+	public static TurnUsage usageOf(JsonObject entry) {
+		return new TurnUsage(new Usage(Json.integer(entry, "in", 0), Json.integer(entry, "out", 0),
+				Json.integer(entry, "cacheRead", 0), Json.integer(entry, "cacheWrite", 0)),
+				Json.integer(entry, "context", 0), Json.integer(entry, "window", 0));
 	}
 
 	public synchronized void context(String provider, String devPackage, String transport, String mode) {

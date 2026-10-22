@@ -3,6 +3,7 @@ package de.kiliantaubmann.bella.ui.views;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -53,10 +54,12 @@ import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.ChatStore;
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
 import de.kiliantaubmann.bella.core.agent.Conversation;
+import de.kiliantaubmann.bella.core.agent.TurnUsage;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
 import de.kiliantaubmann.bella.core.adt.AdtTransportRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
+import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.prompt.EditorContext;
 import de.kiliantaubmann.bella.core.tools.AskUserToolProvider;
 import de.kiliantaubmann.bella.core.tools.ChatMode;
@@ -101,6 +104,10 @@ public class ChatView extends ViewPart {
 	/** Read on the job thread at every tool call, so unticking takes effect at once. */
 	private volatile ChatMode mode = ChatMode.NORMAL;
 	private Label status;
+	/** Tokens of the shown chat so far, for the status line. */
+	private Usage chatTokens = Usage.NONE;
+	/** Tokens of the chat's last answer, {@code null} before the first. */
+	private TurnUsage lastUsage;
 	private Conversation session;
 	private volatile CancelToken running;
 	private int nextMessageId = 1;
@@ -220,6 +227,7 @@ public class ChatView extends ViewPart {
 			}
 			pageLoaded = true;
 			browser.execute("init(" + Json.GSON.toJson(texts()) + "," + isDark(parent) + ")");
+			browser.execute("showUsage(" + BellaPlugin.getDefault().prefs().getBoolean(Prefs.SHOW_USAGE) + ")");
 			pendingScripts.forEach(browser::execute);
 			pendingScripts.clear();
 		}));
@@ -542,6 +550,8 @@ public class ChatView extends ViewPart {
 		announcedScope = "";
 		scopeChosen = false;
 		record = new ChatRecord();
+		chatTokens = Usage.NONE;
+		lastUsage = null;
 		earlierChat = null;
 		exactHistory = true;
 	}
@@ -680,6 +690,7 @@ public class ChatView extends ViewPart {
 			}
 			case "notice" -> js("notice(" + id + "," + str(nz(Json.str(e, "kind"))) + ","
 					+ str(nz(Json.str(e, "html"))) + ")");
+			case "usage" -> countUsage(id, ChatRecord.usageOf(e));
 			default -> {
 				// an entry of a newer Bella
 			}
@@ -811,8 +822,63 @@ public class ChatView extends ViewPart {
 		} else if (mode != ChatMode.NORMAL) {
 			text += " · " + Messages.get(modeKey(mode));
 		}
+		boolean showUsage = plugin.prefs().getBoolean(Prefs.SHOW_USAGE);
+		js("showUsage(" + showUsage + ")");
+		String tip = null;
+		if (showUsage && !chatTokens.isEmpty()) {
+			text += " · " + Messages.fmt("chat.usage.status", compact(chatTokens.promptTokens()
+					+ chatTokens.outputTokens()));
+			tip = Messages.fmt("chat.usage.chat", chatTokens.promptTokens(), chatTokens.cacheReadTokens(),
+					chatTokens.outputTokens());
+			if (lastUsage != null && lastUsage.contextPercent() >= 0) {
+				text += " · " + Messages.fmt("chat.usage.statusContext", lastUsage.contextPercent());
+			}
+			if (lastUsage != null && lastUsage.contextTokens() > 0) {
+				tip += "\n" + contextText(lastUsage);
+			}
+		}
 		status.setText(text);
+		status.setToolTipText(tip);
 		status.getParent().layout();
+	}
+
+	/** Adds the tokens of an answer of the shown chat and shows them below it. UI thread. */
+	private void countUsage(int id, TurnUsage u) {
+		chatTokens = chatTokens.plus(u.total());
+		if (u.contextTokens() > 0) {
+			lastUsage = u;
+		}
+		showUsage(id, u);
+	}
+
+	private void showUsage(int id, TurnUsage u) {
+		js("usage(" + id + "," + str(usageText(u)) + ")");
+	}
+
+	/** The line below an answer: tokens in and out, and how full the context window is. */
+	static String usageText(TurnUsage u) {
+		Usage t = u.total();
+		String text = Messages.fmt("chat.usage.turn", t.promptTokens(), t.outputTokens());
+		if (t.cacheReadTokens() > 0) {
+			text += " " + Messages.fmt("chat.usage.cached", t.cacheReadTokens());
+		}
+		if (u.contextTokens() > 0) {
+			text += " · " + contextText(u);
+		}
+		return text;
+	}
+
+	private static String contextText(TurnUsage u) {
+		return u.contextPercent() >= 0
+				? Messages.fmt("chat.usage.context", u.contextTokens(), u.contextWindow(), u.contextPercent())
+				: Messages.fmt("chat.usage.contextNoWindow", u.contextTokens());
+	}
+
+	/** A token count for the status line, e.g. 1.2M. */
+	static String compact(int tokens) {
+		NumberFormat f = NumberFormat.getCompactNumberInstance(Messages.locale(), NumberFormat.Style.SHORT);
+		f.setMaximumFractionDigits(1);
+		return f.format(tokens);
 	}
 
 	private static IEditorPart activeEditor() {
@@ -1522,6 +1588,17 @@ public class ChatView extends ViewPart {
 			String key = "chat.notice." + bare;
 			String detail = colon < 0 ? "" : message.substring(colon + 1);
 			notice("warn", Markdown.escape(Messages.fmt(key, detail)));
+		}
+
+		@Override
+		public void onUsage(TurnUsage usage) {
+			chat.usage(id, usage);
+			ui(() -> {
+				if (chat == record) {
+					countUsage(id, usage);
+					updateStatus();
+				}
+			});
 		}
 
 		@Override
