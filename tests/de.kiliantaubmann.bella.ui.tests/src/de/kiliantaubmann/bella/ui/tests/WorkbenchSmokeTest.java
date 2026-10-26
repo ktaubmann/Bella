@@ -2,6 +2,7 @@ package de.kiliantaubmann.bella.ui.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,12 +48,14 @@ import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
+import de.kiliantaubmann.bella.core.agent.TurnUsage;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeProvider;
 import de.kiliantaubmann.bella.core.claudecode.ClaudeCodeSession;
 import de.kiliantaubmann.bella.core.copilot.CopilotProvider;
 import de.kiliantaubmann.bella.core.copilot.CopilotSession;
 import de.kiliantaubmann.bella.core.lint.AbapLint;
 import de.kiliantaubmann.bella.core.llm.AnthropicProvider;
+import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ChatMode;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
@@ -72,6 +75,7 @@ import de.kiliantaubmann.bella.ui.prefs.LogPreferencePage;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
 import de.kiliantaubmann.bella.ui.prefs.ToolsPreferencePage;
 import de.kiliantaubmann.bella.ui.views.ChatView;
+import de.kiliantaubmann.bella.ui.views.ContextGauge;
 
 /** Starts a real workbench and exercises Bella's UI without a model or SAP system. */
 class WorkbenchSmokeTest {
@@ -167,6 +171,26 @@ class WorkbenchSmokeTest {
 		ChatView view = ChatView.open().orElseThrow();
 		pump();
 		assertNotNull(view);
+		page().hideView(view);
+	}
+
+	@Test
+	void contextCircleShowsTheTokensOfTheChat() {
+		ChatView view = ChatView.open().orElseThrow();
+		pump();
+		ContextGauge gauge = view.contextGauge();
+		assertEquals(-1, gauge.percent(), "a new chat has no context yet");
+		assertEquals(Messages.get("chat.usage.none"), gauge.details());
+		gauge.set(new Usage(2_025, 900, 50_000, 0), new TurnUsage(new Usage(1_000, 400, 30_000, 2_000), 34_000,
+				200_000));
+		assertEquals(17, gauge.percent());
+		assertTrue(gauge.details().contains(Messages.fmt("chat.usage.context", 34_000, 200_000, 17)), gauge.details());
+		assertTrue(gauge.details().contains(Messages.fmt("chat.usage.chat", 52_025, 50_000, 900)), gauge.details());
+		assertEquals(0, ContextGauge.sweep(0));
+		assertEquals(180, ContextGauge.sweep(50));
+		assertEquals(360, ContextGauge.sweep(120));
+		assertNotEquals(ContextGauge.color(50, false), ContextGauge.color(85, false));
+		assertNotEquals(ContextGauge.color(85, false), ContextGauge.color(97, false));
 		page().hideView(view);
 	}
 
