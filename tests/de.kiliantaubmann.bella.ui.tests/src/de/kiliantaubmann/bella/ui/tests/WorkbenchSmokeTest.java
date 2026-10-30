@@ -21,6 +21,7 @@ import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.preference.PreferencePage;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.browser.Browser;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
@@ -172,6 +173,43 @@ class WorkbenchSmokeTest {
 		pump();
 		assertNotNull(view);
 		page().hideView(view);
+	}
+
+	@Test
+	void chatBrowserIsReplacedWhenTheViewIsMoved() {
+		ChatView view = ChatView.open().orElseThrow();
+		pump();
+		List<Browser> before = find(view.getSite().getShell(), Browser.class);
+		if (before.isEmpty()) {
+			page().hideView(view); // no browser engine on this machine
+			return;
+		}
+		Browser old = before.get(0);
+		Composite top = old.getParent();
+		Composite home = top.getParent();
+		int index = List.of(top.getChildren()).indexOf(old);
+		// what the workbench does when the view is dragged to another side
+		Shell elsewhere = new Shell(home.getShell());
+		try {
+			top.setParent(elsewhere);
+			top.setBounds(0, 0, 300, 500);
+			pump();
+			assertTrue(old.isDisposed(), "the moved browser is replaced");
+			Browser replaced = find(top, Browser.class).get(0);
+			assertEquals(index, List.of(top.getChildren()).indexOf(replaced), "in the place of the old one");
+			top.setParent(home);
+			home.layout(true, true);
+			top.setBounds(0, 0, 320, 520);
+			pump();
+			assertTrue(replaced.isDisposed(), "moved back, replaced again");
+			assertEquals(1, find(top, Browser.class).size());
+		} finally {
+			if (top.getParent() != home) {
+				top.setParent(home);
+			}
+			elsewhere.dispose();
+			page().hideView(view);
+		}
 	}
 
 	@Test

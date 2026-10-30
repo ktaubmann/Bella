@@ -38,7 +38,9 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.IWorkbenchPartReference;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.PlatformUI;
@@ -118,6 +120,24 @@ public class ChatView extends ViewPart {
 	/** Scripts issued before the page finished loading. */
 	private final List<String> pendingScripts = new ArrayList<>();
 	private boolean pageLoaded;
+	/**
+	 * Scripts that built the shown chat since the last {@code showEmpty()}, to show it again in a new browser. A
+	 * text or thinking segment keeps only its last script, in the place of its first.
+	 */
+	private final Map<String, String> shownScripts = new java.util.LinkedHashMap<>();
+	private int shownScriptCount;
+	/** The composites above the browser when it was created; another chain means the view was moved. */
+	private List<Composite> browserAncestors = List.of();
+	private boolean browserCheckScheduled;
+	/** Checks the browser when the view becomes visible again, e.g. after it was dragged elsewhere. */
+	private final IPartListener2 partListener = new IPartListener2() {
+		@Override
+		public void partVisible(IWorkbenchPartReference ref) {
+			if (ref.getPart(false) == ChatView.this) {
+				checkBrowserLater();
+			}
+		}
+	};
 	/** Development package and transport request above the chat. */
 	private Composite scopeBar;
 	private Combo packageChoice;
@@ -215,10 +235,13 @@ public class ChatView extends ViewPart {
 			createBrowser(parent);
 		}
 		createInput(parent);
+		getSite().getPage().addPartListener(partListener);
 	}
 
 	private void createBrowser(Composite parent) {
 		GridDataFactory.fillDefaults().grab(true, true).applyTo(browser);
+		browserAncestors = ancestors(browser);
+		browser.addListener(SWT.Resize, e -> checkBrowserLater());
 		browser.setJavascriptEnabled(true);
 		browser.setText(template());
 		browser.addProgressListener(org.eclipse.swt.browser.ProgressListener.completedAdapter(e -> {
@@ -263,7 +286,58 @@ public class ChatView extends ViewPart {
 				return null;
 			}
 		};
+	}
 
+	private static List<Composite> ancestors(org.eclipse.swt.widgets.Control control) {
+		List<Composite> chain = new ArrayList<>();
+		for (Composite c = control.getParent(); c != null; c = c.getParent()) {
+			chain.add(c);
+		}
+		return chain;
+	}
+
+	private void checkBrowserLater() {
+		if (browser == null || browser.isDisposed() || browserCheckScheduled) {
+			return;
+		}
+		browserCheckScheduled = true;
+		// not inside the browser's own events: it may be replaced
+		browser.getDisplay().asyncExec(() -> {
+			browserCheckScheduled = false;
+			if (browser != null && !browser.isDisposed() && !ancestors(browser).equals(browserAncestors)) {
+				recreateBrowser();
+			}
+		});
+	}
+
+	/**
+	 * A browser moved to another place of the workbench (dragged to another side, detached) stays white and takes
+	 * no input on some platforms, so it is replaced by a new one that shows the chat again. UI thread.
+	 */
+	private void recreateBrowser() {
+		Composite parent = browser.getParent();
+		List<String> scripts = new ArrayList<>(shownScripts.values());
+		browser.dispose();
+		pageLoaded = false;
+		pendingScripts.clear();
+		browser = new Browser(parent, SWT.NONE);
+		createBrowser(parent);
+		browser.moveAbove(planBar);
+		pendingScripts.addAll(scripts);
+		parent.layout(true, true);
+	}
+
+	/** Keeps a script that changes the shown chat for {@link #recreateBrowser()}. */
+	private void remember(String script) {
+		if (script.equals("showEmpty()")) {
+			shownScripts.clear();
+		}
+		String key = null;
+		if (script.startsWith("setText(") || script.startsWith("setThinking(")) {
+			int comma = script.indexOf(',', script.indexOf(',') + 1);
+			key = comma < 0 ? null : script.substring(0, comma);
+		}
+		shownScripts.put(key != null ? key : "#" + shownScriptCount++, script);
 	}
 
 	private void createInput(Composite parent) {
@@ -881,6 +955,7 @@ public class ChatView extends ViewPart {
 		if (browser == null || browser.isDisposed()) {
 			return;
 		}
+		remember(script);
 		if (!pageLoaded) {
 			pendingScripts.add(script);
 			return;
@@ -1405,6 +1480,7 @@ public class ChatView extends ViewPart {
 
 	@Override
 	public void dispose() {
+		getSite().getPage().removePartListener(partListener);
 		saveChat(true);
 		BellaPlugin.getDefault().devScope().removeListener(scopeListener);
 		scopeJob = null;

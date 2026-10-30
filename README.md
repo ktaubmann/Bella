@@ -343,6 +343,7 @@ The Claude integration deliberately uses `java.net.http` instead of the Anthropi
   - If the connection to the SAP system breaks (network, VPN), ADT may still show the project as logged on. Bella tries a read once more; after that, the tools report the lost connection instead of claiming objects do not exist. Writes are never repeated.
   - Reading DDIC objects and loading definitions for editor actions was tested against a simulated ADT backend. The ADT endpoints for tables, structures and data elements differ between releases, so please report objects Bella cannot read.
 - If ADT itself uses `Ctrl+↑` in the ABAP editor, *Preferences → General → Keys* shows a conflict. Change the shortcut there.
+- When the chat view is dragged to another place (e.g. the right side) or detached, Eclipse moves its embedded browser, which some browser engines no longer draw afterwards. Bella then replaces the browser and shows the chat again; the scroll position and expanded details are not kept.
 - Command names in *Keys* and *Quick Access* still follow the operating system language; Eclipse resolves them before Bella starts.
 - All translations except German and English were machine-generated. Corrections are welcome.
 
