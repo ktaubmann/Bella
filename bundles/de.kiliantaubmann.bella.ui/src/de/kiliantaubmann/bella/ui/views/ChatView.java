@@ -97,8 +97,6 @@ public class ChatView extends ViewPart {
 	private Button newChatButton;
 	/** Context, mode, status and history below the buttons. */
 	private Composite options;
-	/** Narrowest input beside the buttons; below it the input gets its own row. */
-	static final int MIN_INPUT_WIDTH = 220;
 	/** Accept, change or cancel, shown below a plan. */
 	private Composite planBar;
 	/** Plan mode for the running planning turn, on top of the drop-down's mode. */
@@ -350,10 +348,10 @@ public class ChatView extends ViewPart {
 		createPlanBar(parent);
 		Composite bottom = new Composite(parent, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).applyTo(bottom);
-		GridLayoutFactory.swtDefaults().numColumns(3).margins(6, 6).applyTo(bottom);
+		GridLayoutFactory.swtDefaults().numColumns(4).equalWidth(true).margins(6, 6).applyTo(bottom);
 		input = new Text(bottom, SWT.MULTI | SWT.WRAP | SWT.BORDER | SWT.V_SCROLL);
 		input.setMessage(Messages.get("chat.inputHint"));
-		GridDataFactory.fillDefaults().grab(true, false).span(1, 2).hint(SWT.DEFAULT, 64).applyTo(input);
+		GridDataFactory.fillDefaults().grab(true, false).span(4, 1).hint(SWT.DEFAULT, 64).applyTo(input);
 		input.addListener(SWT.KeyDown, e -> {
 			if ((e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) && (e.stateMask & SWT.SHIFT) == 0) {
 				e.doit = false;
@@ -364,19 +362,18 @@ public class ChatView extends ViewPart {
 		send.setImage(BellaPlugin.image("send"));
 		send.setToolTipText(Messages.get("chat.send"));
 		send.addListener(SWT.Selection, e -> sendFromInput());
-		// Send and Stop as wide as the text buttons below them
-		GridDataFactory.fillDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(send);
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(send);
 		stop = new Button(bottom, SWT.PUSH);
 		stop.setImage(BellaPlugin.image("stop"));
 		stop.setToolTipText(Messages.get("chat.stop"));
 		stop.setEnabled(false);
 		stop.addListener(SWT.Selection, e -> cancel());
-		GridDataFactory.fillDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(stop);
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(stop);
 		planning = new Button(bottom, SWT.TOGGLE);
 		planning.setImage(BellaPlugin.image("plan"));
 		planning.setText(Messages.get("chat.plan.button"));
 		planning.setToolTipText(Messages.get("chat.plan.buttonTip"));
-		GridDataFactory.swtDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(planning);
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(planning);
 		planning.addListener(SWT.Selection, e -> {
 			if (planning.getSelection()) {
 				setPlanning(true);
@@ -392,11 +389,11 @@ public class ChatView extends ViewPart {
 		newChatButton.setImage(BellaPlugin.image("new_chat"));
 		newChatButton.setText(Messages.get("chat.new"));
 		newChatButton.setToolTipText(Messages.get("chat.newTip"));
-		GridDataFactory.swtDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(newChatButton);
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(newChatButton);
 		newChatButton.addListener(SWT.Selection, e -> newChat());
 		// context, mode and status in one row below, so the button columns stay narrow
 		options = new Composite(bottom, SWT.NONE);
-		GridDataFactory.fillDefaults().span(3, 1).grab(true, false).applyTo(options);
+		GridDataFactory.fillDefaults().span(4, 1).grab(true, false).applyTo(options);
 		bottom.addListener(SWT.Resize, e -> arrangeInput(bottom));
 		GridLayoutFactory.fillDefaults().numColumns(5).spacing(12, 0).applyTo(options);
 		withContext = new Button(options, SWT.CHECK);
@@ -473,26 +470,23 @@ public class ChatView extends ViewPart {
 	}
 
 	/**
-	 * Input beside the buttons, or in a narrow view (e.g. at the side of the workbench) on its own row above
-	 * them, so it never shrinks to a sliver. UI thread.
+	 * The input spans the view; the buttons share one row below it, or two rows if the view is too narrow for
+	 * them side by side. UI thread.
 	 */
 	private void arrangeInput(Composite bottom) {
 		GridLayout layout = (GridLayout) bottom.getLayout();
-		int buttons = Math.max(width(send), width(planning)) + Math.max(width(stop), width(newChatButton))
-				+ 2 * layout.horizontalSpacing + 2 * layout.marginWidth + layout.marginLeft + layout.marginRight;
-		boolean below = bottom.getClientArea().width < MIN_INPUT_WIDTH + buttons;
-		int columns = below ? 2 : 3;
+		int widest = 0;
+		for (Button b : List.of(send, stop, planning, newChatButton)) {
+			widest = Math.max(widest, width(b));
+		}
+		int oneRow = 4 * widest + 3 * layout.horizontalSpacing + 2 * layout.marginWidth + layout.marginLeft
+				+ layout.marginRight;
+		int columns = bottom.getClientArea().width < oneRow ? 2 : 4;
 		if (layout.numColumns == columns) {
 			return;
 		}
 		layout.numColumns = columns;
-		layout.makeColumnsEqualWidth = below;
-		GridData in = (GridData) input.getLayoutData();
-		in.horizontalSpan = below ? 2 : 1;
-		in.verticalSpan = below ? 1 : 2;
-		for (Button b : List.of(send, stop, planning, newChatButton)) {
-			((GridData) b.getLayoutData()).grabExcessHorizontalSpace = below;
-		}
+		((GridData) input.getLayoutData()).horizontalSpan = columns;
 		((GridData) options.getLayoutData()).horizontalSpan = columns;
 		bottom.getParent().layout(true, true);
 	}

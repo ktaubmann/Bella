@@ -215,7 +215,7 @@ class WorkbenchSmokeTest {
 	}
 
 	@Test
-	void inputGetsItsOwnRowInANarrowView() {
+	void inputSpansTheChatView() {
 		ChatView view = ChatView.open().orElseThrow();
 		pump();
 		Text input = find(view.getSite().getShell(), Text.class).stream()
@@ -226,18 +226,15 @@ class WorkbenchSmokeTest {
 		top.setSize(1000, 600);
 		top.layout(true, true);
 		pump();
-		assertEquals(3, layout.numColumns, "wide: buttons beside the input");
+		assertEquals(4, layout.numColumns, "wide: the buttons in one row below the input");
+		assertEquals(4, ((GridData) input.getLayoutData()).horizontalSpan);
+		assertTrue(input.getSize().x > 900, "the input spans the view");
 		top.setSize(260, 600);
 		top.layout(true, true);
 		pump();
-		assertEquals(2, layout.numColumns, "narrow: buttons below the input");
+		assertEquals(2, layout.numColumns, "narrow: the buttons in two rows");
 		assertEquals(2, ((GridData) input.getLayoutData()).horizontalSpan);
 		assertTrue(input.getSize().x > 200, "the input keeps the width of the view");
-		top.setSize(1000, 600);
-		top.layout(true, true);
-		pump();
-		assertEquals(3, layout.numColumns);
-		assertEquals(1, ((GridData) input.getLayoutData()).horizontalSpan);
 		top.getParent().layout(true, true);
 		page().hideView(view);
 	}
