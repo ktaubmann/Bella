@@ -412,6 +412,8 @@ public final class AdtClient {
 		case "ENHANCEMENT", "ENHANCEMENT_IMPLEMENTATION", "BADI_IMPLEMENTATION" -> "ENHO";
 		case "ENHANCEMENT_SPOT", "BADI_SPOT" -> "ENHS";
 		case "TECHNICAL_SETTINGS" -> "TABL/DTT";
+		case "AUTHORIZATION_FIELD" -> "AUTH";
+		case "TOGGLE", "FEATURETOGGLE" -> "FEATURE_TOGGLE";
 		case "DDIC_VIEW" -> "VIEW";
 		default -> t;
 		};
@@ -516,7 +518,7 @@ public final class AdtClient {
 
 	/** Main types ADT describes only as XML, without a source text. */
 	private static final List<String> XML_ONLY = List.of("DTEL", "DOMA", "TTYP", "MSAG", "VIEW", "SHLP", "ENQU",
-			"TRAN", "SKTD");
+			"TRAN", "SKTD", "AUTH", "FEATURE_TOGGLE", "FTG2");
 
 	/** Characters of an XML description kept by {@link #readDefinition}. */
 	static final int XML_SUMMARY_CHARS = 8_000;
@@ -546,6 +548,13 @@ public final class AdtClient {
 			if (described != null) {
 				return described;
 			}
+		}
+		if (uri.startsWith(AdtSpecialObjects.AUTH)) {
+			return AdtSpecialObjects.describeAuth(readMetadata(uri, AdtSpecialObjects.AUTH_TYPE, cancel));
+		}
+		if (uri.startsWith(AdtSpecialObjects.TOGGLES)) {
+			return AdtSpecialObjects.describeToggle(readMetadata(uri + "/states", AdtSpecialObjects.TOGGLE_TYPE, cancel),
+					ref.name());
 		}
 		AdtServerDriven.Type sdo = AdtServerDriven.ofUri(uri);
 		if (sdo != null) {

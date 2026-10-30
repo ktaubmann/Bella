@@ -38,7 +38,7 @@ final class AdtServerDriven {
 	 * the source is AFF JSON (else CDS text; the wrong one answers 415).
 	 */
 	record Type(String code, String collection, String label, String createType, String metadataType, String root,
-			boolean json) {
+			boolean json, boolean readOnly) {
 
 		String rootName() {
 			return root.substring(0, root.indexOf(' '));
@@ -71,11 +71,14 @@ final class AdtServerDriven {
 				true);
 		add("SAJT", "/sap/bc/adt/applicationjob/templates", "application job template", "SAJT", BLUES_V2, BLUE,
 				true);
+		// read only, as in ARC-1 (7.58, 8.16, BTP)
+		TYPES.put("SMBC", new Type("SMBC", "/sap/bc/adt/bct/smbctyp", "business configuration maintenance object",
+				"SMBC/TYP", BLUES_V1, BLUE, true, true));
 	}
 
 	private static void add(String code, String collection, String label, String createType, String metadataType,
 			String root, boolean json) {
-		TYPES.put(code, new Type(code, collection, label, createType, metadataType, root, json));
+		TYPES.put(code, new Type(code, collection, label, createType, metadataType, root, json, false));
 	}
 
 	private AdtServerDriven() {
@@ -100,9 +103,13 @@ final class AdtServerDriven {
 		return null;
 	}
 
-	/** Object URI with the name in upper case; ARC-1 does not lower-case these names either. */
+	/**
+	 * Object URI with the name in upper case, as ARC-1 sends it; maintenance
+	 * objects in lower case, as verified there.
+	 */
 	static String uri(Type t, String name) {
-		return t.collection() + "/" + URLEncoder.encode(name.trim().toUpperCase(Locale.ROOT), StandardCharsets.UTF_8);
+		return t.collection() + "/" + (t.readOnly() ? AdtObjectRef.encodeName(name)
+				: URLEncoder.encode(name.trim().toUpperCase(Locale.ROOT), StandardCharsets.UTF_8));
 	}
 
 	/** Content-Type of a source PUT. */
@@ -113,8 +120,8 @@ final class AdtServerDriven {
 	/** Short help when a system answers 404 for a whole type. */
 	static String unavailable(Type t) {
 		return t.code() + " (" + t.label() + ") is not available through ADT on this system. These types come with "
-				+ "newer releases: most with SAP_BASIS 8.16 (ABAP Platform 2025), DTDC, DSFD, DRTY and EVTB also with "
-				+ "7.58.";
+				+ "newer releases: most with SAP_BASIS 8.16 (ABAP Platform 2025); DTDC, DSFD, DRTY, EVTB, APLO, SAJC and "
+				+ "SAJT also with 7.58.";
 	}
 
 	/**
@@ -184,6 +191,7 @@ final class AdtServerDriven {
 		return t.code() + " " + AdtXml.attr(root, "name") + " (" + t.label() + ")"
 				+ (AdtXml.attr(root, "description").isEmpty() ? "" : ": " + AdtXml.attr(root, "description"))
 				+ (pkg.isEmpty() ? "" : ", package " + pkg) + (version.isEmpty() ? "" : ", " + version) + ". Source ("
-				+ (t.json() ? "AFF JSON" : "CDS") + "; change it with adt_write_source):";
+				+ (t.json() ? "AFF JSON" : "CDS") + (t.readOnly() ? ", read only in Bella" : "; change it with adt_write_source")
+				+ "):";
 	}
 }

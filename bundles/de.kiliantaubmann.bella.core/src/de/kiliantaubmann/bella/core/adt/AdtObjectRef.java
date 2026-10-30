@@ -37,6 +37,14 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 		default:
 			break;
 		}
+		switch (full) {
+		case "AUTH":
+			return AdtSpecialObjects.authUri(name);
+		case "FEATURE_TOGGLE", "FTG2":
+			return AdtSpecialObjects.toggleUri(name);
+		default:
+			break;
+		}
 		AdtServerDriven.Type sdo = AdtServerDriven.type(full);
 		if (sdo != null) {
 			return AdtServerDriven.uri(sdo, name);

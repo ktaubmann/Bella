@@ -157,7 +157,7 @@ public final class AdtToolProvider implements ToolProvider {
 			+ "(CDS dynamic cache), DTSC (CDS static cache), DESD (CDS logical external schema), CSNM (CSN model), EVTB "
 			+ "(RAP event binding), EVTO (RAP event object), COTA (communication target), UIAD (launchpad app descriptor "
 			+ "item), APLO (application log object), SAJC/SAJT (application job catalog entry/template)";
-	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), TABL/DTT (technical settings of a table), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document), and from SAP_BASIS 8.16 (some 7.58) " + SERVER_DRIVEN_DESC
+	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), TABL/DTT (technical settings of a table), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document), AUTH (authorization field), FEATURE_TOGGLE, SOBJ (BOR object type; 'method' reads one method's program), SMBC (business configuration maintenance object), and from SAP_BASIS 8.16 (some 7.58) " + SERVER_DRIVEN_DESC
 			+ ". Omit if unknown.";
 
 	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
@@ -1462,6 +1462,10 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult readSource(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem sys = system(in);
 		AdtClient c = client(sys);
+		if (List.of("SOBJ", "BOR").contains(String.valueOf(Json.str(in, "type")).trim().toUpperCase(Locale.ROOT))) {
+			// no ADT service; a search for SOBJ finds maintenance objects instead
+			return ToolResult.ok(AdtSpecialObjects.bor(c, requiredName(in), Json.str(in, "method"), cancel));
+		}
 		AdtObjectRef ref = resolve(c, in, cancel);
 		String include = Json.str(in, "include");
 		boolean main = include == null || include.isBlank() || include.equalsIgnoreCase("main");
@@ -3582,6 +3586,9 @@ public final class AdtToolProvider implements ToolProvider {
 	 */
 	private ToolResult createServerDriven(AdtSystem s, AdtClient c, AdtServerDriven.Type t, JsonObject in,
 			CancelToken cancel) throws IOException {
+		if (t.readOnly()) {
+			return ToolResult.error("Bella only reads " + t.code() + " (" + t.label() + ").");
+		}
 		String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
 		String pkg = Json.str(in, "package").trim().toUpperCase(Locale.ROOT);
 		String transport = Json.str(in, "transport");
@@ -3625,6 +3632,9 @@ public final class AdtToolProvider implements ToolProvider {
 
 	private ToolResult writeServerDriven(AdtSystem s, AdtClient c, AdtServerDriven.Type t, String name, String uri,
 			JsonObject in, CancelToken cancel) throws IOException {
+		if (t.readOnly()) {
+			return ToolResult.error("Bella only reads " + t.code() + " (" + t.label() + ").");
+		}
 		String source = Json.str(in, "source");
 		if (source == null || source.isBlank()) {
 			return ToolResult.error("Give 'source', the " + (t.json() ? "AFF JSON" : "CDS source") + " of " + name + ".");
