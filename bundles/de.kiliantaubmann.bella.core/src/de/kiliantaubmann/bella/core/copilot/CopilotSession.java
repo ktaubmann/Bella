@@ -57,6 +57,13 @@ public final class CopilotSession implements Conversation {
 	}
 
 	@Override
+	public synchronized boolean continuesConversation() {
+		ChatSession.Settings s = settings.get();
+		return acp != null && acp.isAlive() && !contextLost && Objects.equals(processModel, s.model())
+				&& Objects.equals(processEffort, s.effort());
+	}
+
+	@Override
 	public String describe() {
 		String model = settings.get().model();
 		return (model == null || model.isBlank() ? "default" : model) + " (Copilot)";

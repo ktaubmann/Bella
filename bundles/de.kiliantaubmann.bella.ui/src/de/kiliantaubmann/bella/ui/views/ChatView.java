@@ -1314,8 +1314,10 @@ public class ChatView extends ViewPart {
 			if (editor.isPresent()) {
 				EditorContext ctx = EditorBridge.context(part, editor.get());
 				int hash = ctx.source().hashCode();
-				// a changed provider starts a new conversation in ask(), which has not seen the source
+				// a changed provider starts a new conversation in ask(), and a CLI that has to start again
+				// (Claude subscription, Copilot) loses the earlier messages: neither has seen the source
 				boolean known = BellaPlugin.getDefault().conversationType().isInstance(session.unwrap())
+						&& session.unwrap().continuesConversation()
 						&& Integer.valueOf(hash).equals(sentSources.get(ctx.describeObject()));
 				prompt = withEditorContext(text, ctx, known);
 				pendingSource = known ? null : Map.entry(ctx.describeObject(), hash);

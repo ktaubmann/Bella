@@ -64,6 +64,13 @@ public final class ClaudeCodeSession implements Conversation {
 	}
 
 	@Override
+	public synchronized boolean continuesConversation() {
+		ChatSession.Settings s = settings.get();
+		return process != null && process.isAlive() && !contextLost && Objects.equals(processModel, s.model())
+				&& Objects.equals(processEffort, s.effort());
+	}
+
+	@Override
 	public String describe() {
 		return settings.get().model() + " (Claude Code)";
 	}

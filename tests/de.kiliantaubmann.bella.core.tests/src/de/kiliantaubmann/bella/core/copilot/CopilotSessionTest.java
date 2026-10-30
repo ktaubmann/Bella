@@ -389,8 +389,11 @@ class CopilotSessionTest {
 
 	@Test
 	void modelChangeStartsANewProcess() throws Exception {
+		assertFalse(session.continuesConversation(), "no process yet");
 		session.ask("a", new Recorder(), CancelToken.NONE);
+		assertTrue(session.continuesConversation());
 		model = "gpt-5";
+		assertFalse(session.continuesConversation(), "the new process does not know the earlier messages");
 		Recorder r = new Recorder();
 		session.ask("b", r, CancelToken.NONE);
 		assertEquals(2, fake.started.size());

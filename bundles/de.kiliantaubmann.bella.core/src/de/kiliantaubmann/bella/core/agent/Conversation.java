@@ -18,6 +18,14 @@ public interface Conversation extends AutoCloseable {
 	/** Starts over with a new system prompt. */
 	void reset(String system);
 
+	/**
+	 * Whether the next {@link #ask} continues the conversation the model already has. A CLI that has to
+	 * start again (process ended, model or effort changed) begins without the earlier messages.
+	 */
+	default boolean continuesConversation() {
+		return true;
+	}
+
 	/** Short label for the status line, e.g. the model and how it is reached. */
 	default String describe() {
 		return "";

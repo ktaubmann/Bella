@@ -308,7 +308,9 @@ class ClaudeCodeSessionTest {
 		FakeCli fake = new FakeCli(ECHO);
 		ClaudeCodeSession s = session(fake);
 		s.ask("a", new Recorder(), CancelToken.NONE);
+		assertTrue(s.continuesConversation());
 		model = "sonnet";
+		assertFalse(s.continuesConversation(), "the new process does not know the earlier messages");
 		Recorder r = new Recorder();
 		s.ask("b", r, CancelToken.NONE);
 		assertEquals(2, fake.started.size());
