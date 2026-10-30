@@ -1493,6 +1493,12 @@ public class ChatView extends ViewPart {
 		} catch (RuntimeException e) {
 			answers = Optional.empty();
 		}
+		// the page closed the question itself; a new browser must show it answered, too
+		if (askQuestions != null) {
+			var answered = AskUserToolProvider.answersToJson(answers);
+			rememberScript("askDone(" + str(key) + "," + Json.GSON.toJson(AskUserToolProvider.toJson(askQuestions))
+					+ "," + (answered == null ? "null" : Json.GSON.toJson(answered)) + ")");
+		}
 		recordQuestions(answers);
 		askAnswer = null;
 		askKey = null;
