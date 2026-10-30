@@ -71,6 +71,7 @@ final class AdtServerDriven {
 				true);
 		add("SAJT", "/sap/bc/adt/applicationjob/templates", "application job template", "SAJT", BLUES_V2, BLUE,
 				true);
+		add("TABL/DTI", AdtTableIndex.COLLECTION, "secondary index of a table", "TABL/DTI", BLUES_V1, BLUE, true);
 		// read only, as in ARC-1 (7.58, 8.16, BTP)
 		TYPES.put("SMBC", new Type("SMBC", "/sap/bc/adt/bct/smbctyp", "business configuration maintenance object",
 				"SMBC/TYP", BLUES_V1, BLUE, true, true));
@@ -90,6 +91,9 @@ final class AdtServerDriven {
 			return null;
 		}
 		String c = code.trim().toUpperCase(Locale.ROOT);
+		if (c.equals("INDEX") || TYPES.containsKey(c)) {
+			return TYPES.get(c.equals("INDEX") ? "TABL/DTI" : c);
+		}
 		return TYPES.get(c.contains("/") ? c.substring(0, c.indexOf('/')) : c);
 	}
 
@@ -108,6 +112,9 @@ final class AdtServerDriven {
 	 * objects in lower case, as verified there.
 	 */
 	static String uri(Type t, String name) {
+		if (t.code().equals("TABL/DTI")) {
+			return AdtTableIndex.uri(name);
+		}
 		return t.collection() + "/" + (t.readOnly() ? AdtObjectRef.encodeName(name)
 				: URLEncoder.encode(name.trim().toUpperCase(Locale.ROOT), StandardCharsets.UTF_8));
 	}
@@ -120,8 +127,8 @@ final class AdtServerDriven {
 	/** Short help when a system answers 404 for a whole type. */
 	static String unavailable(Type t) {
 		return t.code() + " (" + t.label() + ") is not available through ADT on this system. These types come with "
-				+ "newer releases: most with SAP_BASIS 8.16 (ABAP Platform 2025); DTDC, DSFD, DRTY, EVTB, APLO, SAJC and "
-				+ "SAJT also with 7.58.";
+				+ "newer releases: most with SAP_BASIS 8.16 (ABAP Platform 2025); DTDC, DSFD, DRTY, EVTB, APLO, SAJC, "
+				+ "SAJT and table indexes (TABL/DTI) also with 7.58.";
 	}
 
 	/**
@@ -143,6 +150,9 @@ final class AdtServerDriven {
 			extra = "\n  <blue:additionalCreationProperties><adtcore:content adtcore:type=\"application/vnd.sap.adt."
 					+ "objecttype.new.content.additional.v1+json\">" + AdtXml.escape(Json.GSON.toJson(props))
 					+ "</adtcore:content></blue:additionalCreationProperties>";
+		}
+		if (t.code().equals("TABL/DTI")) {
+			extra = AdtTableIndex.containerRef(name);
 		}
 		String prefix = t.rootName().substring(0, t.rootName().indexOf(':'));
 		return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<" + t.rootName() + " xmlns:" + prefix + "=\""

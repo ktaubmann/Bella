@@ -156,8 +156,9 @@ public final class AdtToolProvider implements ToolProvider {
 	private static final String SERVER_DRIVEN_DESC = "DRTY (CDS simple type or enum), DSFD (CDS scalar function), DTDC "
 			+ "(CDS dynamic cache), DTSC (CDS static cache), DESD (CDS logical external schema), CSNM (CSN model), EVTB "
 			+ "(RAP event binding), EVTO (RAP event object), COTA (communication target), UIAD (launchpad app descriptor "
-			+ "item), APLO (application log object), SAJC/SAJT (application job catalog entry/template)";
-	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), TABL/DTT (technical settings of a table), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document), AUTH (authorization field), FEATURE_TOGGLE, SOBJ (BOR object type; 'method' reads one method's program), SMBC (business configuration maintenance object), and from SAP_BASIS 8.16 (some 7.58) " + SERVER_DRIVEN_DESC
+			+ "item), APLO (application log object), SAJC/SAJT (application job catalog entry/template), TABL/DTI "
+			+ "(secondary index TABLE~ID; AFF JSON with uniqueIndex and indexFields; package of its table)";
+	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), TABL/DTT (technical settings of a table), TABL/DTI (secondary index, named TABLE~ID), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document), AUTH (authorization field), FEATURE_TOGGLE, SOBJ (BOR object type; 'method' reads one method's program), SMBC (business configuration maintenance object), and from SAP_BASIS 8.16 (some 7.58) " + SERVER_DRIVEN_DESC
 			+ ". Omit if unknown.";
 
 	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
@@ -315,7 +316,8 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "For classes, 'include' selects main (default), definitions, implementations, macros or testclasses. "
 						+ "To save tokens, read one method with 'method' or only matching lines with 'grep' instead of the whole source.",
 				schema(new String[] { "name" }, objectProps("include", "string",
-						"Class include: main, definitions, implementations, macros, testclasses.", "method", "string",
+						"Class include: main, definitions, implementations, macros, testclasses. For a table: indexes lists its "
+								+ "secondary indexes.", "method", "string",
 						"Only this method: its declaration and METHOD … ENDMETHOD, e.g. GET_ITEMS or ZIF_X~SAVE.", "grep",
 						"string", "Only lines matching this regex (case-insensitive), with line numbers and 2 lines of context.",
 						"version", "string",
@@ -728,6 +730,10 @@ public final class AdtToolProvider implements ToolProvider {
 				String pkg = Json.str(in, "name") == null ? "" : Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
 				return checkPackage(pkg, pkg, patterns);
 			}
+			if (name.equals("adt_create_object") && "TABL/DTI".equals(AdtDdic.normalizeType(Json.str(in, "type")))) {
+				return checkPackage(Json.str(in, "name"), client(system(in)).packageOf(
+						AdtTableIndex.tableUri(Json.str(in, "name")), cancel), patterns);
+			}
 			if (name.equals("adt_create_object") && !inGroup) {
 				String pkg = Json.str(in, "package");
 				return checkPackage(Json.str(in, "name"), pkg == null ? "" : pkg.trim(), patterns);
@@ -932,6 +938,8 @@ public final class AdtToolProvider implements ToolProvider {
 		if (group != null && !group.isBlank()
 				&& List.of("FUNC", "INCL").contains(AdtDdic.normalizeType(Json.str(in, "type")))) {
 			target = c.packageOf(AdtDdic.groupUri(group), cancel);
+		} else if ("TABL/DTI".equals(AdtDdic.normalizeType(Json.str(in, "type")))) {
+			target = c.packageOf(AdtTableIndex.tableUri(Json.str(in, "name")), cancel);
 		} else {
 			String pkg = Json.str(in, "package");
 			if (pkg == null || pkg.isBlank()) {
@@ -1462,6 +1470,9 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult readSource(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem sys = system(in);
 		AdtClient c = client(sys);
+		if ("indexes".equalsIgnoreCase(String.valueOf(Json.str(in, "include")).trim())) {
+			return ToolResult.ok(AdtTableIndex.list(c, requiredName(in), cancel));
+		}
 		if (List.of("SOBJ", "BOR").contains(String.valueOf(Json.str(in, "type")).trim().toUpperCase(Locale.ROOT))) {
 			// no ADT service; a search for SOBJ finds maintenance objects instead
 			return ToolResult.ok(AdtSpecialObjects.bor(c, requiredName(in), Json.str(in, "method"), cancel));
@@ -2176,7 +2187,8 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtClient c = client(s);
 		AdtObjectRef ref = resolve(c, in, cancel);
 		String uri = AdtObjectRef.objectUri(ref.uri());
-		boolean force = in.has("force") && in.get("force").isJsonPrimitive() && in.get("force").getAsBoolean();
+		boolean force = in.has("force") && in.get("force").isJsonPrimitive() && in.get("force").getAsBoolean()
+				|| uri.startsWith(AdtTableIndex.COLLECTION + "/"); // nothing uses an index by name
 		if (!force) {
 			List<AdtObjectRef> users = c.whereUsed(uri, cancel).stream()
 					.filter(u -> !u.name().equalsIgnoreCase(ref.name())).toList();
@@ -3251,7 +3263,8 @@ public final class AdtToolProvider implements ToolProvider {
 		String pkg = Json.str(in, "package");
 		String transport = Json.str(in, "transport");
 		boolean inGroup = Json.str(in, "group") != null && !Json.str(in, "group").isBlank();
-		if ((pkg == null || pkg.isBlank()) && !(type.equals("FUNC") || type.equals("INCL") && inGroup)) {
+		if ((pkg == null || pkg.isBlank()) && !(type.equals("FUNC") || type.equals("INCL") && inGroup
+				|| type.equals("TABL/DTI"))) {
 			return ToolResult.error("Give 'package', e.g. $TMP.");
 		}
 		if (type.equals("MSAG") && transport != null && !transport.isBlank()
@@ -3590,7 +3603,16 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.error("Bella only reads " + t.code() + " (" + t.label() + ").");
 		}
 		String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
-		String pkg = Json.str(in, "package").trim().toUpperCase(Locale.ROOT);
+		String pkg = Json.str(in, "package") == null ? "" : Json.str(in, "package").trim().toUpperCase(Locale.ROOT);
+		if (t.code().equals("TABL/DTI")) {
+			// an index belongs to the package of its table
+			String table = c.packageOf(AdtTableIndex.tableUri(name), cancel);
+			if (!pkg.isEmpty() && !pkg.equals(table)) {
+				return ToolResult.error("An index belongs to the package of its table, " + table + ", not " + pkg
+						+ ". Leave 'package' out. Nothing was created.");
+			}
+			pkg = table;
+		}
 		String transport = Json.str(in, "transport");
 		String source = Json.str(in, "source");
 		boolean hasSource = source != null && !source.isBlank();
@@ -3724,6 +3746,22 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.error("Activation failed for " + names + ":\n" + format(msgs));
 		}
 		for (AdtObjectRef r : refs) {
+			if (!r.uri().startsWith(AdtTableIndex.COLLECTION + "/")) {
+				continue;
+			}
+			// 7.58 reports a failed unique index on duplicate data only as a warning and marks it active (ARC-1)
+			if (msgs.stream().anyMatch(m -> m.severity().equals("Warning"))) {
+				return ToolResult.error("The activation of index " + r.name() + " returned warnings, so whether the "
+						+ "database index exists is not confirmed; it may still be marked active. Check it in ADT before "
+						+ "retrying:\n" + format(msgs));
+			}
+			String v = indexVersion(c, r, cancel);
+			if (!"active".equals(v)) {
+				return ToolResult.error("SAP reported no error, but index " + r.name() + " is "
+						+ (v == null ? "in an unknown state" : "still " + v) + " after the activation.");
+			}
+		}
+		for (AdtObjectRef r : refs) {
 			// some releases cancel a settings activation with only a warning (ARC-1, BTP)
 			String v = r.uri().startsWith(AdtTableSettings.COLLECTION + "/") ? settingsVersion(c, r, cancel) : "active";
 			if (!"active".equals(v)) {
@@ -3738,6 +3776,16 @@ public final class AdtToolProvider implements ToolProvider {
 		boolean atc = in.has("run_atc") && in.get("run_atc").isJsonPrimitive() && in.get("run_atc").getAsBoolean();
 		return ToolResult.ok(done + (test ? "\n\n" + unitTestsAfterActivation(c, refs, cancel) : "")
 				+ (atc ? "\n\n" + atcAfterActivation(c, refs, cancel) : ""));
+	}
+
+	/** Version of an index after an activation, {@code null} if it cannot be read. */
+	private static String indexVersion(AdtClient c, AdtObjectRef ref, CancelToken cancel) {
+		try {
+			return AdtXml.attr(AdtXml.parse(c.readMetadata(ref.uri() + "?version=inactive",
+					"application/vnd.sap.adt.blues.v1+xml", cancel)).getDocumentElement(), "version");
+		} catch (IOException e) {
+			return null;
+		}
 	}
 
 	/** Version of a table's technical settings (active, inactive, new), {@code null} if it cannot be read. */

@@ -86,6 +86,7 @@ final class AdtDdic {
 		case "ENQU/DL", "LOCK_OBJECT", "LOCKOBJECT" -> "ENQU";
 		case "KTD", "SKTD/TYP", "KNOWLEDGE_TRANSFER_DOCUMENT" -> "SKTD";
 		case "TABL/DTT", "TECHNICAL_SETTINGS" -> "TABL/DTT";
+		case "TABL/DTI", "INDEX" -> "TABL/DTI";
 		default -> t.contains("/") ? t.substring(0, t.indexOf('/')) : t;
 		};
 	}

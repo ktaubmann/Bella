@@ -558,9 +558,11 @@ public final class AdtClient {
 		}
 		AdtServerDriven.Type sdo = AdtServerDriven.ofUri(uri);
 		if (sdo != null) {
+			// an unversioned read of an index can hide another user's pending change (ARC-1)
+			String version = sdo.code().equals("TABL/DTI") ? "?version=inactive" : "";
 			String meta;
 			try {
-				meta = readMetadata(uri, sdo.metadataType(), cancel);
+				meta = readMetadata(uri + version, sdo.metadataType(), cancel);
 			} catch (AdtException e) {
 				if (e.status() == 404) {
 					throw new AdtException(404, "No " + sdo.code() + " " + ref.name() + ". If the name is right: "
@@ -568,7 +570,8 @@ public final class AdtClient {
 				}
 				throw e;
 			}
-			String src = send(AdtRequest.get(uri + "/source/main", "application/json, text/plain, */*"), cancel).body();
+			String src = send(AdtRequest.get(uri + "/source/main" + version, "application/json, text/plain, */*"), cancel)
+					.body();
 			if (sdo.json()) {
 				try {
 					src = Json.PRETTY.toJson(Json.GSON.fromJson(src, JsonElement.class));
