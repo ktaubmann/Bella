@@ -41,10 +41,10 @@ final class AdtDdic {
 
 	/** Types Bella can create. */
 	static final List<String> CREATABLE = List.of("CLAS", "INTF", "PROG", "INCL", "FUGR", "FUNC", "MSAG", "DTEL",
-			"DOMA", "TTYP", "TABL/DT", "TABL/DS", "DDLS", "DCLS", "DDLX", "BDEF", "SRVD", "SRVB", "ENHO");
+			"DOMA", "TTYP", "TABL/DT", "TABL/DS", "DDLS", "DCLS", "DDLX", "BDEF", "SRVD", "SRVB", "ENHO", "ENQU", "SKTD");
 
 	/** Types without source code: everything is in the metadata XML. */
-	static final Set<String> METADATA_ONLY = Set.of("MSAG", "DTEL", "DOMA", "TTYP", "SRVB", "ENHO");
+	static final Set<String> METADATA_ONLY = Set.of("MSAG", "DTEL", "DOMA", "TTYP", "SRVB", "ENHO", "ENQU", "SKTD");
 
 	/** Types whose source Bella's style check understands. */
 	static final Set<String> ABAP_SOURCE = Set.of("CLAS", "INTF", "PROG", "INCL", "FUGR", "FUNC");
@@ -83,6 +83,9 @@ final class AdtDdic {
 		case "TTYP/DA", "TABLE_TYPE" -> "TTYP";
 		case "MSAG/N", "MESSAGE_CLASS" -> "MSAG";
 		case "ENHO/XHB", "BADI_IMPLEMENTATION", "ENHANCEMENT_IMPLEMENTATION" -> "ENHO";
+		case "ENQU/DL", "LOCK_OBJECT", "LOCKOBJECT" -> "ENQU";
+		case "KTD", "SKTD/TYP", "KNOWLEDGE_TRANSFER_DOCUMENT" -> "SKTD";
+		case "TABL/DTT", "TECHNICAL_SETTINGS" -> "TABL/DTT";
 		default -> t.contains("/") ? t.substring(0, t.indexOf('/')) : t;
 		};
 	}
@@ -218,6 +221,15 @@ final class AdtDdic {
 			contentType = TABLETYPE_TYPE;
 		}
 		case "SRVB" -> body = serviceBindingXml(n, description, p, lang, responsible, props);
+		case "SKTD" -> {
+			body = AdtKtd.createXml(n, p, lang, AdtKtd.parentType(Json.str(props, "documents_type")));
+			contentType = AdtKtd.TYPE;
+		}
+		case "ENQU" -> {
+			// with its tables: SAP refuses a lock object without primary table
+			body = AdtLockObject.xml(n, description, p, lang, responsible, AdtLockObject.created(props));
+			contentType = AdtLockObject.TYPE;
+		}
 		case "ENHO" -> {
 			// the container only; the implementations follow with a PUT (AdtBadi)
 			String spot = Json.str(props, "enhancement_spot");

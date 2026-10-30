@@ -153,11 +153,13 @@ public final class AdtToolProvider implements ToolProvider {
 			+ "headings (list and column headings).";
 	private static final String SYSTEM_DESC = "ABAP project / system id to use. Omit to use the system of the active editor.";
 	private static final String NAME_DESC = "Object name, e.g. ZCL_SALES_ORDER.";
-	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document). Omit if unknown.";
+	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), TABL/DTT (technical settings of a table), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document). Omit if unknown.";
 
 	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
 			+ "module, needs 'group'), MSAG (message class), DTEL, DOMA, TTYP, TABL/DT (table), TABL/DS (structure), "
-			+ "DDLS, DCLS, DDLX, BDEF, SRVD, SRVB (service binding), ENHO (BAdI implementation).";
+			+ "DDLS, DCLS, DDLX, BDEF, SRVD, SRVB (service binding), ENHO (BAdI implementation), ENQU (lock object), "
+			+ "SKTD (knowledge transfer document of a CDS view, behavior or service definition, service binding or "
+			+ "package).";
 
 	/** Fields of DDIC objects, shared by adt_create_object and adt_write_metadata. */
 	private static final String[] DDIC_PROPS = { "domain", "string", "DTEL: the domain it is based on.",
@@ -173,7 +175,15 @@ public final class AdtToolProvider implements ToolProvider {
 			"TTYP: builtin or structure (default: guessed from row_type).", "service_definition", "string",
 			"SRVB: the service definition.", "binding_type", "string", "SRVB: e.g. ODATA V4 UI or ODATA V2 Web API.",
 			"odata_version", "string", "SRVB: V2 or V4.", "category", "string", "SRVB: 0 UI, 1 Web API.",
-			"enhancement_spot", "string", "ENHO: the enhancement spot whose BAdIs are implemented; cannot change." };
+			"enhancement_spot", "string", "ENHO: the enhancement spot whose BAdIs are implemented; cannot change.",
+			"documents_type", "string", "SKTD: type of the documented object (DDLS, BDEF, SRVD, SRVB or DEVC); the "
+					+ "KTD has its name. 'source' is the Markdown.",
+			"allow_rfc", "boolean", "ENQU: the lock modules may be called by RFC.", "data_class", "string",
+			"TABL/DTT: data class, e.g. APPL0 (master data), APPL1 (transaction data), USER.", "size_category",
+			"integer", "TABL/DTT: size category 0-9.", "logging", "boolean", "TABL/DTT: log data changes.",
+			"buffering_allowed", "string", "TABL/DTT: N not allowed, A allowed but off, X on.", "buffering_type",
+			"string", "TABL/DTT: \"\" none, P single records, G generic, X full.", "buffering_key_fields", "integer",
+			"TABL/DTT: key fields of generic buffering." };
 
 	private static String[] createProps() {
 		List<String> p = new ArrayList<>(List.of(objectProps("description", "string",
@@ -209,6 +219,12 @@ public final class AdtToolProvider implements ToolProvider {
 				+ "it). Changing adds or replaces them by name; fields left out keep their value.", "name", "string",
 				"badi", "string", "implementing_class", "string", "filter", "string", "short_text", "string", "active",
 				"boolean", "default", "boolean"));
+		props.add("tables", arrayOf("ENQU: the tables as {table, lock_mode}, the primary table first; lock_mode E "
+				+ "(exclusive), S (shared), X (exclusive, not cumulative) or \"\" (no lock, only the link). A change "
+				+ "of the tables needs 'lock_parameters'.", "table", "string", "lock_mode", "string"));
+		props.add("lock_parameters", arrayOf("ENQU: lock parameters as {name, table, field, wanted}; wanted=false "
+				+ "leaves a field out of ENQUEUE_. On create SAP derives them from the keys when left out.", "name",
+				"string", "table", "string", "field", "string", "wanted", "boolean"));
 	}
 
 	private static JsonObject arrayOf(String description, String... itemProps) {
@@ -285,7 +301,7 @@ public final class AdtToolProvider implements ToolProvider {
 		t.add(ToolSpec.of("adt_read_source",
 				"Read the saved source or definition of a repository object: classes, interfaces, programs, CDS views, function modules, "
 						+ "DDIC tables and structures (fields and types), data elements, domains (incl. fixed values), table types, message classes, "
-						+ "classic DDIC views (VIEW), lock objects (ENQU), transactions (TRAN), enhancement implementations (ENHO; BAdI "
+						+ "classic DDIC views (VIEW), lock objects (ENQU), technical settings of tables (TABL/DTT), transactions (TRAN), enhancement implementations (ENHO; BAdI "
 						+ "implementations as the JSON adt_write_metadata takes), enhancement spots (ENHS: BAdIs, their "
 						+ "interfaces and filters) "
 						+ "and knowledge transfer documents (SKTD, the documented purpose of an object, as Markdown). "
@@ -429,7 +445,9 @@ public final class AdtToolProvider implements ToolProvider {
 		t.add(ToolSpec.of("adt_write_source",
 				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. "
 						+ "Works for ABAP (classes, interfaces, programs, includes, function modules) and for CDS views (DDLS), "
-						+ "access controls (DCLS), metadata extensions (DDLX), behavior definitions (BDEF) and service definitions (SRVD). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system. "
+						+ "access controls (DCLS), metadata extensions (DDLX), behavior definitions (BDEF) and service definitions (SRVD), "
+						+ "and the Markdown of knowledge transfer documents (SKTD; with several documented nodes each part "
+						+ "under its \"## <node id>\" heading, as adt_read_source shows them). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system. "
 						+ "ABAP main sources are checked by SAP before saving; a write that adds syntax errors is refused.",
 				schema(new String[] { "name", "source" }, objectProps("source", "string",
 						"Complete new source code, or with 'method' the new method body.", "method", "string",
@@ -463,7 +481,7 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "'data_type' and 'length', table types 'row_type', service bindings 'service_definition', "
 						+ "BAdI implementations (ENHO) 'enhancement_spot' and 'badi_implementations' (read the spot "
 						+ "with adt_read_source type ENHS for its BAdIs, interfaces and filters; the implementing "
-						+ "classes go first in the same 'objects'). "
+						+ "classes go first in the same 'objects'), lock objects (ENQU) 'tables'. "
 						+ "Objects that depend on each other (domain and data element, table and its CDS view, a RAP "
 						+ "stack) go together in 'objects' and are activated together at the end.",
 				createSchema, Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
@@ -483,8 +501,9 @@ public final class AdtToolProvider implements ToolProvider {
 		removeImpl.add("items", str);
 		metadataSchema.getAsJsonObject("properties").add("remove_implementations", removeImpl);
 		t.add(ToolSpec.of("adt_write_metadata",
-				"Change the metadata of a data element (DTEL), domain (DOMA), table type (TTYP), the messages of a "
-						+ "message class (MSAG) or the BAdI implementations of an enhancement implementation (ENHO). "
+				"Change the metadata of a data element (DTEL), domain (DOMA), table type (TTYP), lock object (ENQU), "
+						+ "the technical settings of a table (TABL/DTT, 'name' is the table), the messages of a message "
+						+ "class (MSAG) or the BAdI implementations of an enhancement implementation (ENHO). "
 						+ "Only the given fields change; Bella reads the object first and keeps everything else. "
 						+ "Message classes: 'messages' adds or replaces messages by number, 'remove_numbers' deletes "
 						+ "some. ENHO: 'badi_implementations' adds or changes implementations by name, "
@@ -739,6 +758,10 @@ public final class AdtToolProvider implements ToolProvider {
 		if (AdtClient.TEXT_POOL.equals(ref.type())) {
 			String[] owner = AdtClient.textPoolOwnerOfUri(ref.uri());
 			ref = new AdtObjectRef(AdtObjectRef.uriFor(owner[1], owner[0]), owner[1], owner[0], "", "");
+		}
+		if (ref.uri().startsWith(AdtTableSettings.COLLECTION + "/")) {
+			// the settings name no package; they belong to their table
+			return c.packageOf(AdtTableSettings.tableUri(ref.uri()), cancel);
 		}
 		return ref.packageName().isEmpty() ? c.packageOf(ref.uri(), cancel) : ref.packageName().toUpperCase(Locale.ROOT);
 	}
@@ -3048,6 +3071,9 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtClient c = client(s);
 		AdtObjectRef ref = resolve(c, in, cancel);
 		String uri = AdtObjectRef.objectUri(ref.uri());
+		if (uri.startsWith(AdtKtd.COLLECTION + "/")) {
+			return writeKtd(s, c, ref, uri, in, cancel);
+		}
 		String include = Json.str(in, "include");
 		String source = Json.str(in, "source");
 		String method = Json.str(in, "method");
@@ -3249,6 +3275,19 @@ public final class AdtToolProvider implements ToolProvider {
 					notes.append(" ").append(messages.size()).append(" messages written.");
 				}
 			}
+			case "SKTD" -> {
+				if (source != null && !source.isBlank()) {
+					try {
+						AdtClient.writeMetadata(session, ref.uri(), AdtKtd.rewrite(c.readMetadata(ref.uri(), AdtKtd.TYPE,
+								cancel), source), AdtKtd.TYPE, transport, cancel);
+					} catch (AdtException e) {
+						return ToolResult.error("Created " + ref.name() + " (SKTD) on " + s.label() + ", but writing its "
+								+ "documentation failed, so it exists empty: " + e.getMessage() + "\nWrite it with "
+								+ "adt_write_source, or remove the object with adt_delete_object.");
+					}
+					notes.append(" Documentation written.");
+				}
+			}
 			case "ENHO" -> {
 				if (!badis.isEmpty()) {
 					try {
@@ -3313,9 +3352,12 @@ public final class AdtToolProvider implements ToolProvider {
 		if (type.equals("ENHO")) {
 			return writeBadis(s, c, in, cancel);
 		}
-		if (!List.of("DTEL", "DOMA", "TTYP", "MSAG").contains(type)) {
-			return ToolResult.error("adt_write_metadata changes DTEL, DOMA, TTYP, MSAG and ENHO; use adt_write_source "
-					+ "for source-based objects.");
+		if (type.equals("TABL/DTT")) {
+			return writeTableSettings(s, c, in, cancel);
+		}
+		if (!List.of("DTEL", "DOMA", "TTYP", "MSAG", "ENQU").contains(type)) {
+			return ToolResult.error("adt_write_metadata changes DTEL, DOMA, TTYP, MSAG, ENQU, ENHO and TABL/DTT "
+					+ "(technical settings); use adt_write_source for source-based objects.");
 		}
 		String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
 		String uri = AdtDdic.objectUri(type, name, null);
@@ -3348,6 +3390,13 @@ public final class AdtToolProvider implements ToolProvider {
 			body = AdtDdic.updateTableTypeXml(current, description, rowType, Json.str(in, "row_type_kind"));
 			contentType = AdtDdic.TABLETYPE_TYPE;
 			summary = "table type";
+		}
+		case "ENQU" -> {
+			AdtLockObject.Stored lock = AdtLockObject.parse(current);
+			body = AdtLockObject.xml(name, description, h.pkg(), lang, null,
+					AdtLockObject.merged(lock.definition(), in));
+			contentType = AdtLockObject.TYPE;
+			summary = "lock object";
 		}
 		default -> {
 			AdtDdic.MessageClass mc = AdtDdic.parseMessageClass(current);
@@ -3434,6 +3483,37 @@ public final class AdtToolProvider implements ToolProvider {
 		return parsed.name().isEmpty() ? new AdtBadi.Spot(spot, parsed.pkg(), parsed.internal(), parsed.badis()) : parsed;
 	}
 
+	/**
+	 * Changes the given technical settings of a table under its lock; SAP's
+	 * document is read in the locked session (with {@code version=inactive},
+	 * so another user's pending change is not lost) and only those fields are
+	 * replaced.
+	 */
+	private ToolResult writeTableSettings(AdtSystem s, AdtClient c, JsonObject in, CancelToken cancel)
+			throws IOException {
+		String table = requiredName(in).toUpperCase(Locale.ROOT);
+		if (!AdtTableSettings.changes(in)) {
+			return ToolResult.error("Give at least one of data_class, size_category, logging, buffering_allowed, "
+					+ "buffering_type, buffering_key_fields.");
+		}
+		String uri = AdtTableSettings.uri(table);
+		String[] version = new String[1];
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeLocked(session, uri, Json.str(in, "transport"), cancel, before -> {
+				version[0] = AdtTableSettings.parse(before).version();
+				return AdtTableSettings.patched(before, in);
+			}, AdtTableSettings.readUri(table), AdtTableSettings.TYPE);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Saved the technical settings of " + table + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet; "
+				+ ("new".equals(version[0]) ? "they are activated with the table (type TABL)."
+						: "activate them with type TABL/DTT."));
+	}
+
 	/** Adds, changes or removes BAdI implementations, keeping what SAP stores beyond the given fields. */
 	private ToolResult writeBadis(AdtSystem s, AdtClient c, JsonObject in, CancelToken cancel) throws IOException {
 		String name = requiredName(in).toUpperCase(Locale.ROOT);
@@ -3474,6 +3554,21 @@ public final class AdtToolProvider implements ToolProvider {
 				+ s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
 	}
 
+	/** The Markdown of a knowledge transfer document, written into the envelope SAP returns. */
+	private ToolResult writeKtd(AdtSystem s, AdtClient c, AdtObjectRef ref, String uri, JsonObject in,
+			CancelToken cancel) throws IOException {
+		String body = AdtKtd.rewrite(c.readMetadata(uri, AdtKtd.TYPE, cancel), Json.str(in, "source"));
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeMetadata(session, uri, body, AdtKtd.TYPE, Json.str(in, "transport"), cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Saved the knowledge transfer document " + ref.name() + " in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
+	}
+
 	/** Syntax check of a saved source that Bella's style check does not understand (CDS, RAP, DDIC sources). */
 	private static String syntaxAfterWrite(AdtClient c, String objectUri, CancelToken cancel) {
 		try {
@@ -3496,6 +3591,12 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		if (refs.isEmpty()) {
 			return ToolResult.error("No objects given.");
+		}
+		for (AdtObjectRef r : refs) {
+			if (r.uri().startsWith(AdtTableSettings.COLLECTION + "/") && "new".equals(settingsVersion(c, r, cancel))) {
+				return ToolResult.error("The technical settings of " + r.name() + " are new; SAP activates them only "
+						+ "with the table's first activation. Activate " + r.name() + " with type TABL.");
+			}
 		}
 		try {
 			// written texts stay inactive until their pool is activated, which activating the program does not do
@@ -3520,12 +3621,31 @@ public final class AdtToolProvider implements ToolProvider {
 		if (errors) {
 			return ToolResult.error("Activation failed for " + names + ":\n" + format(msgs));
 		}
+		for (AdtObjectRef r : refs) {
+			// some releases cancel a settings activation with only a warning (ARC-1, BTP)
+			String v = r.uri().startsWith(AdtTableSettings.COLLECTION + "/") ? settingsVersion(c, r, cancel) : "active";
+			if (!"active".equals(v)) {
+				return ToolResult.error("SAP reported no error, but the technical settings of " + r.name() + " are "
+						+ (v == null ? "in an unknown state" : "still " + v) + " after the activation"
+						+ (msgs.isEmpty() ? "." : ":\n" + format(msgs)));
+			}
+		}
 		String done = "Activated " + names + " on " + s.label() + (msgs.isEmpty() ? "." : ":\n" + format(msgs));
 		boolean test = in.has("run_unit_tests") && in.get("run_unit_tests").isJsonPrimitive()
 				&& in.get("run_unit_tests").getAsBoolean();
 		boolean atc = in.has("run_atc") && in.get("run_atc").isJsonPrimitive() && in.get("run_atc").getAsBoolean();
 		return ToolResult.ok(done + (test ? "\n\n" + unitTestsAfterActivation(c, refs, cancel) : "")
 				+ (atc ? "\n\n" + atcAfterActivation(c, refs, cancel) : ""));
+	}
+
+	/** Version of a table's technical settings (active, inactive, new), {@code null} if it cannot be read. */
+	private static String settingsVersion(AdtClient c, AdtObjectRef ref, CancelToken cancel) {
+		try {
+			return AdtTableSettings.parse(c.readMetadata(AdtTableSettings.readUri(ref.name()), AdtTableSettings.TYPE,
+					cancel)).version();
+		} catch (IOException e) {
+			return null;
+		}
 	}
 
 	/** One ATC run over the activated objects, with what to do about the findings. */

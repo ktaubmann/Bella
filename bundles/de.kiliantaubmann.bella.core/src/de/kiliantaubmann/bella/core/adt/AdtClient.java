@@ -408,6 +408,7 @@ public final class AdtClient {
 		case "KTD", "KNOWLEDGE_TRANSFER_DOCUMENT" -> "SKTD";
 		case "ENHANCEMENT", "ENHANCEMENT_IMPLEMENTATION", "BADI_IMPLEMENTATION" -> "ENHO";
 		case "ENHANCEMENT_SPOT", "BADI_SPOT" -> "ENHS";
+		case "TECHNICAL_SETTINGS" -> "TABL/DTT";
 		case "DDIC_VIEW" -> "VIEW";
 		default -> t;
 		};
@@ -523,7 +524,7 @@ public final class AdtClient {
 		}
 		String t = type.toUpperCase(Locale.ROOT);
 		int slash = t.indexOf('/');
-		return XML_ONLY.contains(slash > 0 ? t.substring(0, slash) : t);
+		return t.equals("TABL/DTT") || XML_ONLY.contains(slash > 0 ? t.substring(0, slash) : t);
 	}
 
 	/**
@@ -541,6 +542,22 @@ public final class AdtClient {
 			String described = AdtBadi.describe(AdtBadi.parse(readMetadata(uri, AdtBadi.ENHO_TYPE, cancel)));
 			if (described != null) {
 				return described;
+			}
+		}
+		if (uri.startsWith(AdtLockObject.COLLECTION + "/")) {
+			return AdtLockObject.describe(AdtLockObject.parse(readMetadata(uri, AdtLockObject.TYPE, cancel)));
+		}
+		if (uri.startsWith(AdtTableSettings.COLLECTION + "/")) {
+			String table = ref.name();
+			try {
+				return AdtTableSettings.describe(AdtTableSettings.parse(readMetadata(AdtTableSettings.readUri(table),
+						AdtTableSettings.TYPE, cancel)));
+			} catch (AdtException e) {
+				if (e.status() == 404 || e.status() == 406) {
+					throw new AdtException(e.status(), "No technical settings of " + table + " through ADT: either "
+							+ "there is no such table, or the system has no ADT service for them (7.50 has none).");
+				}
+				throw e;
 			}
 		}
 		if (uri.startsWith("/sap/bc/adt/enhancements/enhsxsb/")) {
@@ -1918,6 +1935,34 @@ public final class AdtClient {
 			}
 			if (!put.ok()) {
 				throw new AdtException(put.status(), "Could not write the metadata: " + AdtErrors.message(put));
+			}
+		});
+	}
+
+	/** A change of a metadata document that was read under the lock. */
+	interface DocumentChange {
+		String apply(String current) throws IOException;
+	}
+
+	/**
+	 * Lock, read the document in the locked session, PUT the changed one,
+	 * unlock: for documents where a read before the lock could miss another
+	 * change (technical settings).
+	 *
+	 * @param readUri the GET, e.g. with {@code ?version=inactive}
+	 * @return the transport request used, empty for local objects
+	 */
+	public static String writeLocked(AdtTransport.Session session, String objectUri, String transport,
+			CancelToken cancel, DocumentChange change, String readUri, String contentType) throws IOException {
+		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
+			AdtResponse get = exchange(session, AdtRequest.get(readUri, contentType), cancel);
+			if (!get.ok()) {
+				throw new AdtException(get.status(), "Could not read before writing: " + AdtErrors.message(get));
+			}
+			String path = objectUri + "?lockHandle=" + enc(handle) + (tr.isBlank() ? "" : "&corrNr=" + enc(tr));
+			AdtResponse put = exchange(session, putMetadata(path, change.apply(get.body()), contentType), cancel);
+			if (!put.ok()) {
+				throw new AdtException(put.status(), "Could not write: " + AdtErrors.message(put));
 			}
 		});
 	}

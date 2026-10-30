@@ -30,6 +30,8 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 			return "/sap/bc/adt/ddic/tables/" + encodeName(name);
 		case "TABL/DS":
 			return "/sap/bc/adt/ddic/structures/" + encodeName(name);
+		case "TABL/DTT":
+			return "/sap/bc/adt/ddic/db/settings/" + encodeName(name); // technical settings of a table
 		case "FUGR/FF", "FUNC":
 			return null; // function modules live below their group; found by search
 		default:
