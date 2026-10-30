@@ -103,7 +103,10 @@ class AdtTableIndexTest {
 						+ "</SEU_ADT_REPOSITORY_OBJ_NODE><SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>TABL/DT</OBJECT_TYPE>"
 						+ "<OBJECT_NAME>ZORDERS</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE></TREE_CONTENT></DATA>"
 						+ "</asx:values></asx:abap>"))
-				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(activation[0]));
+				.route("POST /sap/bc/adt/activation", r -> FakeAdt.ok(activation[0]))
+				.route("GET /sap/bc/adt/repository/informationsystem/search", r -> FakeAdt.ok("<adtcore:objectReferences "
+						+ "xmlns:adtcore=\"http://www.sap.com/adt/core\"><adtcore:objectReference adtcore:uri=\"" + TABLE
+						+ "\" adtcore:type=\"TABL/DT\" adtcore:name=\"ZORDERS\"/></adtcore:objectReferences>"));
 		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
 		ToolResult read = p.call("adt_read_source", Json.parseObject("{\"name\":\"ZORDERS~001\",\"type\":\"TABL/DTI\"}"),
 				CancelToken.NONE);
@@ -124,5 +127,30 @@ class AdtTableIndexTest {
 		assertTrue(still.isError() && still.content().contains("still inactive"), still.content());
 		version[0] = "active";
 		assertFalse(p.call("adt_activate", Json.parseObject(json), CancelToken.NONE).isError());
+
+		// a warning about the table activated with it says nothing about the index
+		activation[0] = warning.replace(INDEX, TABLE);
+		String both = "{\"objects\":[{\"name\":\"ZORDERS\",\"type\":\"TABL\"},{\"name\":\"ZORDERS~001\","
+				+ "\"type\":\"TABL/DTI\"}]}";
+		ToolResult tableWarned = p.call("adt_activate", Json.parseObject(both), CancelToken.NONE);
+		assertFalse(tableWarned.isError(), tableWarned.content());
+		activation[0] = warning;
+		assertTrue(p.call("adt_activate", Json.parseObject(both), CancelToken.NONE).content().contains("is not confirmed"));
+	}
+
+	@Test
+	void messagesAreMatchedToTheirObject() {
+		AdtObjectRef table = new AdtObjectRef(TABLE, "ZORDERS", "TABL/DT", null, null);
+		AdtObjectRef index = new AdtObjectRef(INDEX, "ZORDERS~001", "TABL/DTI", null, null);
+		List<AdtObjectRef> refs = List.of(table, index);
+		assertTrue(AdtToolProvider.about(msg(null), index, refs));
+		assertTrue(AdtToolProvider.about(msg("/sap/bc/adt/ddic/db/indexes/ZORDERS%7E001/source/main#start=1"), index,
+				refs));
+		assertFalse(AdtToolProvider.about(msg(TABLE + "/source/main#start=3,1"), index, refs));
+		assertTrue(AdtToolProvider.about(msg("/sap/bc/adt/ddic/tables/zother"), index, refs));
+	}
+
+	private static AdtClient.Message msg(String uri) {
+		return new AdtClient.Message("Warning", "x", uri, 0);
 	}
 }

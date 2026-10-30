@@ -3586,7 +3586,13 @@ public final class AdtToolProvider implements ToolProvider {
 		List<String> remove = new ArrayList<>();
 		JsonArray arr = Json.arr(in, "remove_implementations");
 		if (arr != null) {
-			arr.forEach(e -> remove.add(e.getAsString().trim().toUpperCase(Locale.ROOT)));
+			for (JsonElement e : arr) {
+				if (!e.isJsonPrimitive()) {
+					return ToolResult.error("'remove_implementations' lists the names of BAdI implementations as "
+							+ "strings, e.g. [\"ZIMPL_ORDERS\"]. Nothing was changed.");
+				}
+				remove.add(e.getAsString().trim().toUpperCase(Locale.ROOT));
+			}
 		}
 		List<AdtBadi.Entry> entries = inputs == null && remove.isEmpty() ? stored.entries()
 				: AdtBadi.merged(stored, inputs == null ? List.of() : inputs, remove,
@@ -3766,7 +3772,7 @@ public final class AdtToolProvider implements ToolProvider {
 				continue;
 			}
 			// 7.58 reports a failed unique index on duplicate data only as a warning and marks it active (ARC-1)
-			if (msgs.stream().anyMatch(m -> m.severity().equals("Warning"))) {
+			if (msgs.stream().anyMatch(m -> m.severity().equals("Warning") && about(m, r, refs))) {
 				return ToolResult.error("The activation of index " + r.name() + " returned warnings, so whether the "
 						+ "database index exists is not confirmed; it may still be marked active. Check it in ADT before "
 						+ "retrying:\n" + format(msgs));
@@ -3792,6 +3798,31 @@ public final class AdtToolProvider implements ToolProvider {
 		boolean atc = in.has("run_atc") && in.get("run_atc").isJsonPrimitive() && in.get("run_atc").getAsBoolean();
 		return ToolResult.ok(done + (test ? "\n\n" + unitTestsAfterActivation(c, refs, cancel) : "")
 				+ (atc ? "\n\n" + atcAfterActivation(c, refs, cancel) : ""));
+	}
+
+	/**
+	 * Whether a message of an activation may be about {@code r}: it points to
+	 * it, to no object, or to none of the other activated objects.
+	 */
+	static boolean about(AdtClient.Message m, AdtObjectRef r, List<AdtObjectRef> refs) {
+		String u = sameUri(m.uri());
+		if (u.isEmpty() || u.equals(sameUri(r.uri()))) {
+			return true;
+		}
+		return refs.stream().noneMatch(o -> o != r && u.equals(sameUri(o.uri())));
+	}
+
+	/** The object URI without query, fragment or source path, for comparing. */
+	private static String sameUri(String uri) {
+		if (uri == null || uri.isBlank()) {
+			return "";
+		}
+		String u = uri.trim();
+		int q = u.indexOf('?');
+		if (q >= 0) {
+			u = u.substring(0, q);
+		}
+		return AdtObjectRef.objectUri(u).replace("%7E", "~").replace("%7e", "~").toLowerCase(Locale.ROOT);
 	}
 
 	/** Version of an index after an activation, {@code null} if it cannot be read. */

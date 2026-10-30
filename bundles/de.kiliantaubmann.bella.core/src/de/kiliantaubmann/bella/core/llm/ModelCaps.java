@@ -12,10 +12,13 @@ public final class ModelCaps {
 	/** Families that accept server-side refusal fallbacks ({@code fallbacks: "default"}). */
 	private static final List<String> FALLBACK = List.of("claude-opus-5", "claude-fable-5", "claude-mythos-5");
 
-	/**
-	 * Families with the tool search tool and context editing ({@code clear_tool_uses}); Claude 4.5 and later.
-	 */
+	/** Families with the tool search tool; Claude Haiku 4.5 has none, Claude Haiku 5.5 has it. */
 	private static final List<String> TOOL_SEARCH = List.of("claude-fable-5", "claude-mythos-5", "claude-opus-5",
+			"claude-sonnet-5", "claude-haiku-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6",
+			"claude-opus-4-5", "claude-sonnet-4-6", "claude-sonnet-4-5");
+
+	/** Families with context editing ({@code clear_tool_uses}); Claude 4.5 and later. */
+	private static final List<String> CONTEXT_EDITING = List.of("claude-fable-5", "claude-mythos-5", "claude-opus-5",
 			"claude-sonnet-5", "claude-haiku-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6",
 			"claude-opus-4-5", "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-haiku-4-5");
 
@@ -61,7 +64,7 @@ public final class ModelCaps {
 
 	/** Whether old tool results can be cleared server-side ({@code context_management}). */
 	public static boolean contextEditing(String model) {
-		return startsWithAny(model, TOOL_SEARCH);
+		return startsWithAny(model, CONTEXT_EDITING);
 	}
 
 	private static boolean startsWithAny(String model, List<String> prefixes) {

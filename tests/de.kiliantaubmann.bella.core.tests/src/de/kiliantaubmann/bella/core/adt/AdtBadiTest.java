@@ -214,6 +214,9 @@ class AdtBadiTest {
 		ToolResult missing = p.call("adt_write_metadata", Json.parseObject("{\"name\":\"ZMY_ENH\",\"type\":\"ENHO\","
 				+ "\"remove_implementations\":[\"ZMY_NONE\"]}"), CancelToken.NONE);
 		assertTrue(missing.content().contains("has no BAdI implementation ZMY_NONE"), missing.content());
+		ToolResult notNames = p.call("adt_write_metadata", Json.parseObject("{\"name\":\"ZMY_ENH\",\"type\":\"ENHO\","
+				+ "\"remove_implementations\":[{\"name\":\"ZMY_IMPL_A\"}]}"), CancelToken.NONE);
+		assertTrue(notNames.isError() && notNames.content().contains("as strings"), notNames.content());
 		assertEquals(2, writes.size());
 	}
 

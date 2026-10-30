@@ -18,6 +18,8 @@ public final class LoggingProvider implements LlmProvider {
 	private static final String AREA = "llm";
 
 	private final LlmProvider delegate;
+	/** Model, system prompt and tools of the last chat request: a change of them misses the cache by design. */
+	private volatile String lastPrefix;
 
 	private LoggingProvider(LlmProvider delegate) {
 		this.delegate = delegate;
@@ -55,10 +57,19 @@ public final class LoggingProvider implements LlmProvider {
 					+ u.cacheWriteTokens() + ", toolCalls=" + r.toolCalls().size() + ", text=" + r.text().length()
 					+ " chars (" + Log.millisSince(start) + " ms)"
 					+ (r.stopDetail() == null ? "" : ", detail: " + r.stopDetail()));
-			if (request.purpose() == ChatRequest.Purpose.CHAT && request.messages().size() > 1
-					&& u.cacheReadTokens() == 0 && u.promptTokens() > 0) {
-				Log.info(AREA, id() + " prompt cache missed: the whole chat was sent again at full price (a pause "
-						+ "longer than the cache lifetime, or the tools or system prompt changed)");
+			if (request.purpose() == ChatRequest.Purpose.CHAT) {
+				String prefix = prefix(request);
+				String before = lastPrefix;
+				lastPrefix = prefix;
+				if (request.messages().size() > 1 && u.cacheReadTokens() == 0 && u.promptTokens() > 0) {
+					if (prefix.equals(before)) {
+						Log.info(AREA, id() + " prompt cache missed: the whole chat was sent again at full price "
+								+ "(a pause longer than the cache lifetime)");
+					} else {
+						Log.debug(AREA, () -> id() + " prompt cache not used: model, system prompt or tools differ "
+								+ "from the previous request");
+					}
+				}
 			}
 			Log.debug(AREA, () -> "answer text:\n" + Log.clip(r.text()));
 			return r;
@@ -73,6 +84,16 @@ public final class LoggingProvider implements LlmProvider {
 			Log.error(AREA, id() + " failed after " + Log.millisSince(start) + " ms", e);
 			throw e;
 		}
+	}
+
+	/** What comes before the messages in a request, as far as it decides the prompt cache. */
+	static String prefix(ChatRequest request) {
+		StringBuilder sb = new StringBuilder(String.valueOf(request.model())).append('\n')
+				.append(request.system() == null ? 0 : request.system().hashCode());
+		request.tools().forEach(t -> sb.append('\n').append(t.name()).append(t.deferred() ? "*" : "")
+				.append(t.inputSchema() == null ? 0 : t.inputSchema().hashCode())
+				.append(t.description() == null ? 0 : t.description().hashCode()));
+		return sb.toString();
 	}
 
 	private static String lastMessage(ChatRequest request) {
