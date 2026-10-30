@@ -22,6 +22,8 @@ import org.eclipse.jface.preference.PreferencePage;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.browser.Browser;
+import org.eclipse.swt.layout.GridData;
+import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
@@ -210,6 +212,34 @@ class WorkbenchSmokeTest {
 			elsewhere.dispose();
 			page().hideView(view);
 		}
+	}
+
+	@Test
+	void inputGetsItsOwnRowInANarrowView() {
+		ChatView view = ChatView.open().orElseThrow();
+		pump();
+		Text input = find(view.getSite().getShell(), Text.class).stream()
+				.filter(t -> (t.getStyle() & SWT.MULTI) != 0).findFirst().orElseThrow();
+		Composite bottom = input.getParent();
+		Composite top = bottom.getParent();
+		GridLayout layout = (GridLayout) bottom.getLayout();
+		top.setSize(1000, 600);
+		top.layout(true, true);
+		pump();
+		assertEquals(3, layout.numColumns, "wide: buttons beside the input");
+		top.setSize(260, 600);
+		top.layout(true, true);
+		pump();
+		assertEquals(2, layout.numColumns, "narrow: buttons below the input");
+		assertEquals(2, ((GridData) input.getLayoutData()).horizontalSpan);
+		assertTrue(input.getSize().x > 200, "the input keeps the width of the view");
+		top.setSize(1000, 600);
+		top.layout(true, true);
+		pump();
+		assertEquals(3, layout.numColumns);
+		assertEquals(1, ((GridData) input.getLayoutData()).horizontalSpan);
+		top.getParent().layout(true, true);
+		page().hideView(view);
 	}
 
 	@Test

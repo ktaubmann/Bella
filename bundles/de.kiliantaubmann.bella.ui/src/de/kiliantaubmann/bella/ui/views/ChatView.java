@@ -21,6 +21,7 @@ import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.layout.GridDataFactory;
 import org.eclipse.jface.layout.GridLayoutFactory;
 import org.eclipse.swt.layout.GridData;
+import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.jface.preference.PreferenceDialog;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.browser.Browser;
@@ -93,6 +94,11 @@ public class ChatView extends ViewPart {
 	static final List<ChatMode> MODES = java.util.Arrays.stream(ChatMode.values()).filter(m -> m != ChatMode.PLAN)
 			.toList();
 	private Button planning;
+	private Button newChatButton;
+	/** Context, mode, status and history below the buttons. */
+	private Composite options;
+	/** Narrowest input beside the buttons; below it the input gets its own row. */
+	static final int MIN_INPUT_WIDTH = 220;
 	/** Accept, change or cancel, shown below a plan. */
 	private Composite planBar;
 	/** Plan mode for the running planning turn, on top of the drop-down's mode. */
@@ -328,7 +334,7 @@ public class ChatView extends ViewPart {
 	}
 
 	/** Keeps a script that changes the shown chat for {@link #recreateBrowser()}. */
-	private void remember(String script) {
+	private void rememberScript(String script) {
 		if (script.equals("showEmpty()")) {
 			shownScripts.clear();
 		}
@@ -382,15 +388,16 @@ public class ChatView extends ViewPart {
 				cancelPlan();
 			}
 		});
-		Button newChatButton = new Button(bottom, SWT.PUSH);
+		newChatButton = new Button(bottom, SWT.PUSH);
 		newChatButton.setImage(BellaPlugin.image("new_chat"));
 		newChatButton.setText(Messages.get("chat.new"));
 		newChatButton.setToolTipText(Messages.get("chat.newTip"));
 		GridDataFactory.swtDefaults().align(SWT.FILL, SWT.BEGINNING).applyTo(newChatButton);
 		newChatButton.addListener(SWT.Selection, e -> newChat());
 		// context, mode and status in one row below, so the button columns stay narrow
-		Composite options = new Composite(bottom, SWT.NONE);
+		options = new Composite(bottom, SWT.NONE);
 		GridDataFactory.fillDefaults().span(3, 1).grab(true, false).applyTo(options);
+		bottom.addListener(SWT.Resize, e -> arrangeInput(bottom));
 		GridLayoutFactory.fillDefaults().numColumns(5).spacing(12, 0).applyTo(options);
 		withContext = new Button(options, SWT.CHECK);
 		withContext.setText(Messages.get("chat.withContext"));
@@ -463,6 +470,35 @@ public class ChatView extends ViewPart {
 		setMode(ChatMode.NORMAL);
 		BellaPlugin.getDefault().devScope().addListener(scopeListener);
 		scopeJob.schedule();
+	}
+
+	/**
+	 * Input beside the buttons, or in a narrow view (e.g. at the side of the workbench) on its own row above
+	 * them, so it never shrinks to a sliver. UI thread.
+	 */
+	private void arrangeInput(Composite bottom) {
+		GridLayout layout = (GridLayout) bottom.getLayout();
+		int buttons = Math.max(width(send), width(planning)) + Math.max(width(stop), width(newChatButton))
+				+ 2 * layout.horizontalSpacing + 2 * layout.marginWidth + layout.marginLeft + layout.marginRight;
+		boolean below = bottom.getClientArea().width < MIN_INPUT_WIDTH + buttons;
+		int columns = below ? 2 : 3;
+		if (layout.numColumns == columns) {
+			return;
+		}
+		layout.numColumns = columns;
+		layout.makeColumnsEqualWidth = below;
+		GridData in = (GridData) input.getLayoutData();
+		in.horizontalSpan = below ? 2 : 1;
+		in.verticalSpan = below ? 1 : 2;
+		for (Button b : List.of(send, stop, planning, newChatButton)) {
+			((GridData) b.getLayoutData()).grabExcessHorizontalSpace = below;
+		}
+		((GridData) options.getLayoutData()).horizontalSpan = columns;
+		bottom.getParent().layout(true, true);
+	}
+
+	private static int width(Button b) {
+		return b.computeSize(SWT.DEFAULT, SWT.DEFAULT).x;
 	}
 
 	/** Selects a mode in the drop-down and uses it from the next tool call on. UI thread. */
@@ -955,7 +991,7 @@ public class ChatView extends ViewPart {
 		if (browser == null || browser.isDisposed()) {
 			return;
 		}
-		remember(script);
+		rememberScript(script);
 		if (!pageLoaded) {
 			pendingScripts.add(script);
 			return;
