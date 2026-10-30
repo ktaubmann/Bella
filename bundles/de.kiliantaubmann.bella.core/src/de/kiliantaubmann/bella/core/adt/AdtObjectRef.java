@@ -37,6 +37,10 @@ public record AdtObjectRef(String uri, String name, String type, String packageN
 		default:
 			break;
 		}
+		AdtServerDriven.Type sdo = AdtServerDriven.type(full);
+		if (sdo != null) {
+			return AdtServerDriven.uri(sdo, name);
+		}
 		String vit = switch (full.indexOf('/') > 0 ? full.substring(0, full.indexOf('/')) : full) {
 		// classic DDIC views and transactions only answer on the generic workbench endpoint (as in ARC-1)
 		case "VIEW" -> "viewdv";

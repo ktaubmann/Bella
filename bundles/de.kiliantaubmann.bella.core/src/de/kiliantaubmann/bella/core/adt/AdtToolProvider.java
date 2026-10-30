@@ -153,13 +153,20 @@ public final class AdtToolProvider implements ToolProvider {
 			+ "headings (list and column headings).";
 	private static final String SYSTEM_DESC = "ABAP project / system id to use. Omit to use the system of the active editor.";
 	private static final String NAME_DESC = "Object name, e.g. ZCL_SALES_ORDER.";
-	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), TABL/DTT (technical settings of a table), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document). Omit if unknown.";
+	private static final String SERVER_DRIVEN_DESC = "DRTY (CDS simple type or enum), DSFD (CDS scalar function), DTDC "
+			+ "(CDS dynamic cache), DTSC (CDS static cache), DESD (CDS logical external schema), CSNM (CSN model), EVTB "
+			+ "(RAP event binding), EVTO (RAP event object), COTA (communication target), UIAD (launchpad app descriptor "
+			+ "item), APLO (application log object), SAJC/SAJT (application job catalog entry/template)";
+	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), TABL/DTT (technical settings of a table), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document), and from SAP_BASIS 8.16 (some 7.58) " + SERVER_DRIVEN_DESC
+			+ ". Omit if unknown.";
 
 	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
 			+ "module, needs 'group'), MSAG (message class), DTEL, DOMA, TTYP, TABL/DT (table), TABL/DS (structure), "
 			+ "DDLS, DCLS, DDLX, BDEF, SRVD, SRVB (service binding), ENHO (BAdI implementation), ENQU (lock object), "
 			+ "SKTD (knowledge transfer document of a CDS view, behavior or service definition, service binding or "
-			+ "package).";
+			+ "package), and from SAP_BASIS 8.16 (some 7.58) " + SERVER_DRIVEN_DESC + " with 'source' as AFF JSON "
+			+ "(CDS text for DRTY, DSFD, DTDC, DTSC); SAJC needs generalInformation.className, SAJT "
+			+ "generalInformation.catalogName in it.";
 
 	/** Fields of DDIC objects, shared by adt_create_object and adt_write_metadata. */
 	private static final String[] DDIC_PROPS = { "domain", "string", "DTEL: the domain it is based on.",
@@ -447,7 +454,8 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "Works for ABAP (classes, interfaces, programs, includes, function modules) and for CDS views (DDLS), "
 						+ "access controls (DCLS), metadata extensions (DDLX), behavior definitions (BDEF) and service definitions (SRVD), "
 						+ "and the Markdown of knowledge transfer documents (SKTD; with several documented nodes each part "
-						+ "under its \"## <node id>\" heading, as adt_read_source shows them). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system. "
+						+ "under its \"## <node id>\" heading, as adt_read_source shows them), and the AFF JSON or CDS "
+						+ "source of the newer object types (DRTY, DSFD, DTDC, EVTB, APLO …). If the object is open in the developer's editor, the code is written into the editor instead and not saved. Otherwise it is saved (not activated) in the SAP system. "
 						+ "ABAP main sources are checked by SAP before saving; a write that adds syntax errors is refused.",
 				schema(new String[] { "name", "source" }, objectProps("source", "string",
 						"Complete new source code, or with 'method' the new method body.", "method", "string",
@@ -762,6 +770,11 @@ public final class AdtToolProvider implements ToolProvider {
 		if (ref.uri().startsWith(AdtTableSettings.COLLECTION + "/")) {
 			// the settings name no package; they belong to their table
 			return c.packageOf(AdtTableSettings.tableUri(ref.uri()), cancel);
+		}
+		AdtServerDriven.Type sdo = AdtServerDriven.ofUri(ref.uri());
+		if (sdo != null) {
+			// the package reference comes only with the type's own media type
+			return AdtClient.parsePackage(c.readMetadata(ref.uri(), sdo.metadataType(), cancel));
 		}
 		return ref.packageName().isEmpty() ? c.packageOf(ref.uri(), cancel) : ref.packageName().toUpperCase(Locale.ROOT);
 	}
@@ -3074,6 +3087,10 @@ public final class AdtToolProvider implements ToolProvider {
 		if (uri.startsWith(AdtKtd.COLLECTION + "/")) {
 			return writeKtd(s, c, ref, uri, in, cancel);
 		}
+		AdtServerDriven.Type sdo = AdtServerDriven.ofUri(uri);
+		if (sdo != null) {
+			return writeServerDriven(s, c, sdo, ref.name(), uri, in, cancel);
+		}
 		String include = Json.str(in, "include");
 		String source = Json.str(in, "source");
 		String method = Json.str(in, "method");
@@ -3247,6 +3264,10 @@ public final class AdtToolProvider implements ToolProvider {
 		if ("update".equals(processing) == (updateKind == null || updateKind.isBlank()) && type.equals("FUNC")
 				&& processing != null) {
 			return ToolResult.error("update_task_kind goes with processing_type update, and only with it.");
+		}
+		AdtServerDriven.Type sdo = AdtServerDriven.type(type);
+		if (sdo != null) {
+			return createServerDriven(s, c, sdo, in, cancel);
 		}
 		List<AdtBadi.Entry> badis = type.equals("ENHO") ? badisToCreate(c, name, in, cancel) : List.of();
 		String language = Json.str(in, "language");
@@ -3552,6 +3573,77 @@ public final class AdtToolProvider implements ToolProvider {
 		return ToolResult.ok("Saved the BAdI implementations of " + name + " (" + String.join(", ",
 				entries.stream().map(AdtBadi.Entry::name).toList()) + (entries.isEmpty() ? "none" : "") + ") in "
 				+ s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
+	}
+
+	/**
+	 * Creates a server-driven object: POST of its metadata, then its source.
+	 * The source is checked before the POST, so a malformed one leaves nothing
+	 * behind. Application log objects are active at once.
+	 */
+	private ToolResult createServerDriven(AdtSystem s, AdtClient c, AdtServerDriven.Type t, JsonObject in,
+			CancelToken cancel) throws IOException {
+		String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
+		String pkg = Json.str(in, "package").trim().toUpperCase(Locale.ROOT);
+		String transport = Json.str(in, "transport");
+		String source = Json.str(in, "source");
+		boolean hasSource = source != null && !source.isBlank();
+		if (t.code().equals("APLO") && name.length() > 20) {
+			return ToolResult.error("Application log objects have at most 20 characters. Nothing was created.");
+		}
+		if (hasSource) {
+			AdtServerDriven.checkSource(t, source);
+		}
+		String body = AdtServerDriven.createXml(t, name, Json.str(in, "description"), pkg, source);
+		String query = transport == null || transport.isBlank() ? "" : "?corrNr=" + AdtClient.enc(transport.trim());
+		AdtObjectRef ref;
+		try {
+			ref = c.create(new AdtDdic.CreateRequest(t.collection(), body, t.metadataType(), query,
+					AdtServerDriven.uri(t, name), t.code()), name, pkg, Json.str(in, "description"), cancel);
+		} catch (AdtException e) {
+			if (e.status() == 404) {
+				return ToolResult.error(AdtServerDriven.unavailable(t) + " Nothing was created.");
+			}
+			throw e;
+		}
+		String state = t.code().equals("APLO") ? " It is active (SAP activates application log objects on save)."
+				: " Not activated yet.";
+		if (hasSource) {
+			try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+				AdtClient.writeSourceAs(session, ref.uri(), source, AdtServerDriven.sourceType(t), transport, cancel);
+			} catch (AdtException e) {
+				return ToolResult.error("Created " + name + " (" + t.code() + ") on " + s.label() + ", but writing its "
+						+ "source failed: " + e.getMessage() + "\nRead it, then write the source with adt_write_source; "
+						+ "do not create it again.");
+			} finally {
+				c.invalidate(ref.uri());
+				inactive.remove(s.destinationId());
+			}
+		}
+		return ToolResult.ok("Created " + name + " (" + t.code() + ", " + t.label() + ") in package " + pkg + " on "
+				+ s.label() + "." + (hasSource ? " Source written." : "") + state);
+	}
+
+	private ToolResult writeServerDriven(AdtSystem s, AdtClient c, AdtServerDriven.Type t, String name, String uri,
+			JsonObject in, CancelToken cancel) throws IOException {
+		String source = Json.str(in, "source");
+		if (source == null || source.isBlank()) {
+			return ToolResult.error("Give 'source', the " + (t.json() ? "AFF JSON" : "CDS source") + " of " + name + ".");
+		}
+		if (Json.str(in, "method") != null || Json.str(in, "include") != null) {
+			return ToolResult.error(t.code() + " has one source; 'method' and 'include' do not apply.");
+		}
+		AdtServerDriven.checkSource(t, source);
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeSourceAs(session, uri, source, AdtServerDriven.sourceType(t), Json.str(in, "transport"),
+					cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Saved " + name + " (" + t.code() + ") in " + s.label()
+				+ (tr.isEmpty() ? "" : " (transport " + tr + ")")
+				+ (t.code().equals("APLO") ? ". Active at once." : ". Not activated yet."));
 	}
 
 	/** The Markdown of a knowledge transfer document, written into the envelope SAP returns. */

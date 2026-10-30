@@ -23,7 +23,10 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
+import com.google.gson.JsonElement;
+
 import de.kiliantaubmann.bella.core.util.CancelToken;
+import de.kiliantaubmann.bella.core.util.Json;
 import de.kiliantaubmann.bella.core.util.Log;
 
 /**
@@ -544,6 +547,28 @@ public final class AdtClient {
 				return described;
 			}
 		}
+		AdtServerDriven.Type sdo = AdtServerDriven.ofUri(uri);
+		if (sdo != null) {
+			String meta;
+			try {
+				meta = readMetadata(uri, sdo.metadataType(), cancel);
+			} catch (AdtException e) {
+				if (e.status() == 404) {
+					throw new AdtException(404, "No " + sdo.code() + " " + ref.name() + ". If the name is right: "
+							+ AdtServerDriven.unavailable(sdo));
+				}
+				throw e;
+			}
+			String src = send(AdtRequest.get(uri + "/source/main", "application/json, text/plain, */*"), cancel).body();
+			if (sdo.json()) {
+				try {
+					src = Json.PRETTY.toJson(Json.GSON.fromJson(src, JsonElement.class));
+				} catch (RuntimeException notJson) {
+					// shown as SAP sent it
+				}
+			}
+			return AdtServerDriven.header(sdo, meta) + "\n" + src;
+		}
 		if (uri.startsWith(AdtLockObject.COLLECTION + "/")) {
 			return AdtLockObject.describe(AdtLockObject.parse(readMetadata(uri, AdtLockObject.TYPE, cancel)));
 		}
@@ -912,6 +937,23 @@ public final class AdtClient {
 			// service definitions answer 400 "Accept header missing" without one
 			AdtResponse put = exchange(session, AdtRequest.put(path.toString(), source, "text/plain; charset=utf-8")
 					.withHeader("Accept", "text/plain"), cancel);
+			if (!put.ok()) {
+				throw new AdtException(put.status(), "Could not write source: " + AdtErrors.message(put));
+			}
+		});
+	}
+
+	/**
+	 * Writes {@code source/main} with another media type than ABAP's text,
+	 * e.g. the AFF JSON of server-driven objects: lock, PUT, unlock.
+	 *
+	 * @return the transport request used, empty for local objects
+	 */
+	public static String writeSourceAs(AdtTransport.Session session, String objectUri, String source,
+			String contentType, String transport, CancelToken cancel) throws IOException {
+		return withLock(session, objectUri, transport, cancel, (handle, tr) -> {
+			String path = objectUri + "/source/main?lockHandle=" + enc(handle) + (tr.isBlank() ? "" : "&corrNr=" + enc(tr));
+			AdtResponse put = exchange(session, AdtRequest.put(path, source, contentType), cancel);
 			if (!put.ok()) {
 				throw new AdtException(put.status(), "Could not write source: " + AdtErrors.message(put));
 			}
