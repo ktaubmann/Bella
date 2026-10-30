@@ -112,7 +112,7 @@ MESSAGES = {
  "prefs.chatModel": "聊天模型：", "prefs.chatModel.tip": "用于聊天和代码生成的模型",
  "prefs.completionModel": "补全模型：", "prefs.completionModel.tip": "用于行内补全的快速模型",
  "prefs.effort": "投入程度（effort）：", "prefs.effort.default": "模型默认值",
- "prefs.fallback": "被拒绝的请求在服务器端用备用模型重试", "prefs.baseUrl": "基础 URL：",
+ "prefs.fallback": "被拒绝的请求在服务器端用备用模型重试", "prefs.longCache": "提示缓存保留一小时而不是五分钟（每次写入成本更高）", "prefs.baseUrl": "基础 URL：",
  "prefs.claude.link": "在 <a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a> 创建 API 密钥。密钥保存在 Eclipse 安全存储中。",
  "prefs.openai": "OpenAI 兼容", "prefs.openai.baseUrl.tip": "例如 https://api.openai.com/v1 或 http://localhost:11434/v1（Ollama）",
  "prefs.general": "常规", "prefs.maxTokens": "最大输出令牌数：", "prefs.lang.eclipse": "与 Eclipse 相同",

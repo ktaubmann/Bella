@@ -29,6 +29,8 @@ public final class ToolRegistry {
 	private volatile String preferredProviderId = ADT_PROVIDER_ID;
 	private volatile Map<String, ToolSpec> tools = Map.of();
 	private volatile Map<String, ToolProvider> providerByTool = Map.of();
+	/** The last tool list of each provider, used while it fails, so the list the model sees stays the same. */
+	private final Map<String, List<ToolSpec>> lastListed = new java.util.concurrent.ConcurrentHashMap<>();
 
 	public void addProvider(ToolProvider provider) {
 		providers.removeIf(p -> p.id().equals(provider.id()));
@@ -37,6 +39,7 @@ public final class ToolRegistry {
 
 	public void removeProvider(String id) {
 		providers.removeIf(p -> p.id().equals(id));
+		lastListed.remove(id);
 	}
 
 	public List<ToolProvider> providers() {
@@ -50,7 +53,10 @@ public final class ToolRegistry {
 
 	/**
 	 * Re-reads the tool lists. Providers that fail (server down, not logged
-	 * on) are skipped and reported to {@code onError}.
+	 * on) are reported to {@code onError} and keep the tools they listed last
+	 * (calls then fail with the provider's error): the tools come first in a
+	 * request, so a changed list would make the whole chat miss the prompt cache.
+	 * The order is stable for the same reason.
 	 */
 	public void refresh(Consumer<String> onError) {
 		Map<String, ToolSpec> merged = new LinkedHashMap<>();
@@ -62,9 +68,13 @@ public final class ToolRegistry {
 			List<ToolSpec> specs;
 			try {
 				specs = provider.listTools();
+				lastListed.put(provider.id(), List.copyOf(specs));
 			} catch (Exception e) {
 				onError.accept(provider.displayName() + ": " + e.getMessage());
-				continue;
+				specs = lastListed.get(provider.id());
+				if (specs == null) {
+					continue;
+				}
 			}
 			for (ToolSpec spec : specs) {
 				String cap = spec.capability();
@@ -81,8 +91,8 @@ public final class ToolRegistry {
 				}
 			}
 		}
-		this.tools = Map.copyOf(merged);
-		this.providerByTool = Map.copyOf(owners);
+		this.tools = java.util.Collections.unmodifiableMap(merged);
+		this.providerByTool = java.util.Collections.unmodifiableMap(owners);
 	}
 
 	private boolean isPreferred(ToolProvider p) {

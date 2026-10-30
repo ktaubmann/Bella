@@ -55,6 +55,11 @@ public final class LoggingProvider implements LlmProvider {
 					+ u.cacheWriteTokens() + ", toolCalls=" + r.toolCalls().size() + ", text=" + r.text().length()
 					+ " chars (" + Log.millisSince(start) + " ms)"
 					+ (r.stopDetail() == null ? "" : ", detail: " + r.stopDetail()));
+			if (request.purpose() == ChatRequest.Purpose.CHAT && request.messages().size() > 1
+					&& u.cacheReadTokens() == 0 && u.promptTokens() > 0) {
+				Log.info(AREA, id() + " prompt cache missed: the whole chat was sent again at full price (a pause "
+						+ "longer than the cache lifetime, or the tools or system prompt changed)");
+			}
 			Log.debug(AREA, () -> "answer text:\n" + Log.clip(r.text()));
 			return r;
 		} catch (LlmException e) {

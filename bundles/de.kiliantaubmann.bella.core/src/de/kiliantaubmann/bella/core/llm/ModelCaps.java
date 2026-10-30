@@ -13,6 +13,13 @@ public final class ModelCaps {
 	private static final List<String> FALLBACK = List.of("claude-opus-5", "claude-fable-5", "claude-mythos-5");
 
 	/**
+	 * Families with the tool search tool and context editing ({@code clear_tool_uses}); Claude 4.5 and later.
+	 */
+	private static final List<String> TOOL_SEARCH = List.of("claude-fable-5", "claude-mythos-5", "claude-opus-5",
+			"claude-sonnet-5", "claude-haiku-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6",
+			"claude-opus-4-5", "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-haiku-4-5");
+
+	/**
 	 * Families with a context window of 200,000 tokens; newer Claude models have 1,000,000.
 	 * {@code claude-sonnet-4-2} and {@code claude-opus-4-2} match the dated IDs of Claude 4.0.
 	 */
@@ -45,6 +52,16 @@ public final class ModelCaps {
 
 	public static boolean refusalFallback(String model) {
 		return startsWithAny(model, FALLBACK);
+	}
+
+	/** Whether tools can be deferred to the tool search tool ({@code defer_loading}). */
+	public static boolean toolSearch(String model) {
+		return startsWithAny(model, TOOL_SEARCH);
+	}
+
+	/** Whether old tool results can be cleared server-side ({@code context_management}). */
+	public static boolean contextEditing(String model) {
+		return startsWithAny(model, TOOL_SEARCH);
 	}
 
 	private static boolean startsWithAny(String model, List<String> prefixes) {

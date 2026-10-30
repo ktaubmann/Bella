@@ -17,9 +17,11 @@ import com.google.gson.JsonObject;
  *                    fix preview send POST requests and still change nothing, so they are {@code READ}
  * @param providerId  id of the {@link ToolProvider} that executes it
  * @param remoteName  the name the provider knows the tool by
+ * @param deferred    rarely needed: a provider that supports it loads the tool only when the model
+ *                    searches for it, so its definition costs no tokens until then
  */
 public record ToolSpec(String name, String description, JsonObject inputSchema, String capability, Kind kind,
-		String providerId, String remoteName) {
+		String providerId, String remoteName, boolean deferred) {
 
 	public enum Kind {
 		READ, WRITE, UNKNOWN
@@ -57,10 +59,15 @@ public record ToolSpec(String name, String description, JsonObject inputSchema, 
 	}
 
 	public static ToolSpec of(String name, String description, JsonObject inputSchema, String capability, Kind kind) {
-		return new ToolSpec(name, description, inputSchema, capability, kind, null, name);
+		return new ToolSpec(name, description, inputSchema, capability, kind, null, name, false);
 	}
 
 	public ToolSpec withProvider(String id, String exposedName) {
-		return new ToolSpec(exposedName, description, inputSchema, capability, kind, id, remoteName);
+		return new ToolSpec(exposedName, description, inputSchema, capability, kind, id, remoteName, deferred);
+	}
+
+	/** The same tool, loaded only on demand (see {@code deferred}). */
+	public ToolSpec asDeferred() {
+		return new ToolSpec(name, description, inputSchema, capability, kind, providerId, remoteName, true);
 	}
 }

@@ -47,7 +47,84 @@ class AnthropicProviderTest {
 		JsonObject tool = body.getAsJsonArray("tools").get(0).getAsJsonObject();
 		assertTrue(tool.get("eager_input_streaming").getAsBoolean());
 		assertTrue(body.get("stream").getAsBoolean());
-		assertEquals(AnthropicProvider.FALLBACK_BETA, p.headers(chat("claude-opus-5", null)).get("anthropic-beta"));
+		assertEquals(AnthropicProvider.FALLBACK_BETA + "," + AnthropicProvider.CONTEXT_BETA,
+				p.headers(chat("claude-opus-5", null)).get("anthropic-beta"));
+	}
+
+	@Test
+	void rareToolsGoBehindToolSearchAndTheSystemPromptNamesThem() {
+		ToolSpec rare = ToolSpec.of("adt_git", "abapGit", SCHEMA, null, ToolSpec.Kind.READ).asDeferred();
+		ChatRequest r = new ChatRequest("claude-opus-5-5", "sys", List.of(Json.userText("hi")), List.of(TOOL, rare),
+				1000, ChatRequest.Purpose.CHAT, null);
+		JsonObject body = provider(new FakeHttp(), false).buildBody(r);
+		JsonArray tools = body.getAsJsonArray("tools");
+		assertEquals(3, tools.size());
+		assertEquals("tool_search_tool_bm25_20251119", tools.get(0).getAsJsonObject().get("type").getAsString());
+		assertNull(tools.get(1).getAsJsonObject().get("defer_loading"));
+		assertTrue(tools.get(2).getAsJsonObject().get("defer_loading").getAsBoolean());
+		String system = body.getAsJsonArray("system").get(0).getAsJsonObject().get("text").getAsString();
+		assertTrue(system.startsWith("sys\n\n") && system.contains(AnthropicProvider.TOOL_SEARCH)
+				&& system.endsWith(": adt_git."), system);
+
+		// a model without tool search, or nothing left to load up front: every tool is sent as before
+		for (ChatRequest plain : List.of(
+				new ChatRequest("claude-3-7-sonnet", "sys", List.of(Json.userText("hi")), List.of(TOOL, rare), 1000,
+						ChatRequest.Purpose.CHAT, null),
+				new ChatRequest("claude-opus-5-5", "sys", List.of(Json.userText("hi")), List.of(rare), 1000,
+						ChatRequest.Purpose.CHAT, null))) {
+			JsonObject b = provider(new FakeHttp(), false).buildBody(plain);
+			b.getAsJsonArray("tools").forEach(t -> {
+				assertNull(t.getAsJsonObject().get("defer_loading"));
+				assertNull(t.getAsJsonObject().get("type"));
+			});
+			assertEquals("sys", b.getAsJsonArray("system").get(0).getAsJsonObject().get("text").getAsString());
+		}
+	}
+
+	@Test
+	void longChatsClearOldToolResultsAndTheCacheCanLastAnHour() {
+		ToolSpec ask = ToolSpec.of("ask_user", "Ask", SCHEMA, null, ToolSpec.Kind.READ);
+		JsonObject body = provider(new FakeHttp(), false).buildBody(new ChatRequest("claude-sonnet-5-5", "sys",
+				List.of(Json.userText("hi")), List.of(TOOL, ask), 1000, ChatRequest.Purpose.CHAT, null));
+		JsonObject edit = body.getAsJsonObject("context_management").getAsJsonArray("edits").get(0).getAsJsonObject();
+		assertEquals("clear_tool_uses_20250919", edit.get("type").getAsString());
+		assertEquals(AnthropicProvider.CLEAR_TRIGGER_TOKENS, edit.getAsJsonObject("trigger").get("value").getAsInt());
+		assertEquals("ask_user", edit.getAsJsonArray("exclude_tools").get(0).getAsString());
+		assertNull(provider(new FakeHttp(), false).buildBody(chat("claude-sonnet-5-5", null))
+				.getAsJsonObject("context_management").getAsJsonArray("edits").get(0).getAsJsonObject()
+				.get("exclude_tools"), "only tools of the request");
+		assertNull(body.getAsJsonObject("cache_control").get("ttl"));
+		assertEquals(AnthropicProvider.CONTEXT_BETA,
+				provider(new FakeHttp(), false).headers(chat("claude-sonnet-5-5", null)).get("anthropic-beta"));
+
+		AnthropicProvider longCache = new AnthropicProvider(() -> "key", null, false, true, new FakeHttp(), 2);
+		assertEquals("1h", longCache.buildBody(chat("claude-opus-5", null)).getAsJsonObject("cache_control")
+				.get("ttl").getAsString());
+		// older models know neither
+		ChatRequest old = chat("claude-3-7-sonnet", null);
+		assertNull(provider(new FakeHttp(), false).buildBody(old).get("context_management"));
+		assertFalse(provider(new FakeHttp(), false).headers(old).containsKey("anthropic-beta"));
+	}
+
+	@Test
+	void toolSearchBlocksAreKeptForTheNextRequest() throws Exception {
+		FakeHttp http = new FakeHttp().respond(200, "text/event-stream", sse(
+				"content_block_start", "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"server_tool_use\",\"id\":\"srvtoolu_1\",\"name\":\"tool_search_tool_bm25\"}}",
+				"content_block_delta", "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"query\\\":\\\"git\\\"}\"}}",
+				"content_block_start", "{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_search_tool_result\",\"tool_use_id\":\"srvtoolu_1\",\"content\":{\"type\":\"tool_search_tool_search_result\",\"tool_references\":[{\"type\":\"tool_reference\",\"tool_name\":\"adt_git\"}]}}}",
+				"content_block_start", "{\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"adt_read_source\",\"input\":{}}}",
+				"content_block_delta", "{\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"name\\\":\\\"ZCL_X\\\"}\"}}",
+				"message_delta", "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"context_management\":{\"applied_edits\":[]}}"));
+		ChatResult r = provider(http, false).chat(chat("claude-opus-5-5", null), StreamListener.NONE, CancelToken.NONE);
+		assertEquals(1, r.toolCalls().size(), "the search runs on the server");
+		assertEquals("toolu_1", r.toolCalls().get(0).id());
+		JsonArray content = r.assistantMessage().getAsJsonArray("content");
+		assertEquals(3, content.size());
+		JsonObject search = content.get(0).getAsJsonObject();
+		assertEquals("server_tool_use", search.get("type").getAsString());
+		assertEquals("git", search.getAsJsonObject("input").get("query").getAsString());
+		assertEquals("adt_git", content.get(1).getAsJsonObject().getAsJsonObject("content")
+				.getAsJsonArray("tool_references").get(0).getAsJsonObject().get("tool_name").getAsString());
 	}
 
 	@Test

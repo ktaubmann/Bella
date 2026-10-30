@@ -112,7 +112,7 @@ MESSAGES = {
  "prefs.chatModel": "채팅 모델:", "prefs.chatModel.tip": "채팅 및 코드 생성용 모델",
  "prefs.completionModel": "자동 완성 모델:", "prefs.completionModel.tip": "인라인 자동 완성용 빠른 모델",
  "prefs.effort": "노력(effort):", "prefs.effort.default": "모델 기본값",
- "prefs.fallback": "거부된 요청을 서버 측에서 대체 모델로 다시 시도", "prefs.baseUrl": "기본 URL:",
+ "prefs.fallback": "거부된 요청을 서버 측에서 대체 모델로 다시 시도", "prefs.longCache": "프롬프트 캐시를 5분 대신 1시간 유지(쓰기마다 비용이 더 듦)", "prefs.baseUrl": "기본 URL:",
  "prefs.claude.link": "<a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a>에서 API 키를 만드세요. 키는 Eclipse 보안 저장소에 보관됩니다.",
  "prefs.openai": "OpenAI 호환", "prefs.openai.baseUrl.tip": "예: https://api.openai.com/v1 또는 http://localhost:11434/v1(Ollama)",
  "prefs.general": "일반", "prefs.maxTokens": "최대 출력 토큰:", "prefs.lang.eclipse": "Eclipse와 동일",

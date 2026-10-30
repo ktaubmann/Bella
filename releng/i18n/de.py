@@ -169,7 +169,7 @@ MESSAGES = {
  "prefs.completionModel.tip": "Schnelles Modell für die Inline-Vervollständigung",
  "prefs.effort": "Aufwand (Effort):",
  "prefs.effort.default": "Modellstandard",
- "prefs.fallback": "Abgelehnte Anfragen serverseitig mit einem Ersatzmodell wiederholen",
+ "prefs.fallback": "Abgelehnte Anfragen serverseitig mit einem Ersatzmodell wiederholen", "prefs.longCache": "Prompt-Cache eine Stunde statt fünf Minuten halten (jedes Schreiben kostet mehr)",
  "prefs.baseUrl": "Basis-URL:",
  "prefs.claude.link": "API-Key anlegen unter <a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a>. Keys liegen im sicheren Speicher von Eclipse.",
  "prefs.openai": "OpenAI-kompatibel",

@@ -34,6 +34,25 @@ class AdtToolProviderTest {
 	}
 
 	@Test
+	void theLongTypeListIsSentOnceAndRareToolsAreDeferred() {
+		List<ToolSpec> tools = new AdtToolProvider(twoSystems(), () -> null).listTools();
+		int full = 0;
+		for (ToolSpec t : tools) {
+			String json = Json.GSON.toJson(t.inputSchema());
+			if (json.contains("knowledge transfer document")) {
+				assertTrue(List.of("adt_read_source", "adt_create_object", "adt_write_metadata").contains(t.name()),
+						t.name() + " repeats the full type list");
+				full++;
+			}
+			assertEquals(AdtToolProvider.DEFERRED.contains(t.name()), t.deferred(), t.name());
+		}
+		assertTrue(full >= 1);
+		assertTrue(tools.stream().filter(ToolSpec::deferred).count() == AdtToolProvider.DEFERRED.size(),
+				"every deferred name is a tool");
+		assertFalse(tools.stream().filter(t -> t.name().equals("adt_read_source")).findFirst().orElseThrow().deferred());
+	}
+
+	@Test
 	void readsSourceFromDefaultSystem() {
 		FakeAdt adt = twoSystems().route("GET /sap/bc/adt/oo/classes/zcl_a/source/main",
 				r -> new AdtResponse(200, "text/plain", "CLASS zcl_a DEFINITION."));

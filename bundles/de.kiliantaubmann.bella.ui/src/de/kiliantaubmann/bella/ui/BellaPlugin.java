@@ -365,7 +365,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 		}
 		if (usesAnthropic()) {
 			return new AnthropicProvider(() -> SecureStore.get(SecureStore.ANTHROPIC_KEY),
-					s.getString(Prefs.ANTHROPIC_BASE_URL), s.getBoolean(Prefs.REFUSAL_FALLBACK), http);
+					s.getString(Prefs.ANTHROPIC_BASE_URL), s.getBoolean(Prefs.REFUSAL_FALLBACK),
+					s.getBoolean(Prefs.LONG_CACHE), http);
 		}
 		return new OpenAiCompatibleProvider(() -> SecureStore.get(SecureStore.OPENAI_KEY),
 				s.getString(Prefs.OPENAI_BASE_URL), http);

@@ -84,6 +84,7 @@ public class BellaPreferencePage extends PreferencePage implements IWorkbenchPre
 		form.text(claude, Messages.get("prefs.completionModel"), Prefs.COMPLETION_MODEL,
 				Messages.get("prefs.completionModel.tip"));
 		form.check(claude, Messages.get("prefs.fallback"), Prefs.REFUSAL_FALLBACK);
+		form.check(claude, Messages.get("prefs.longCache"), Prefs.LONG_CACHE);
 		form.text(claude, Messages.get("prefs.baseUrl"), Prefs.ANTHROPIC_BASE_URL, null);
 		link(claude, Messages.get("prefs.claude.link"));
 

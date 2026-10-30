@@ -20,6 +20,7 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
 		s.setDefault(Prefs.EFFORT, "");
 		s.setDefault(Prefs.MAX_TOKENS, 32000);
 		s.setDefault(Prefs.REFUSAL_FALLBACK, true);
+		s.setDefault(Prefs.LONG_CACHE, false);
 		s.setDefault(Prefs.CC_EXECUTABLE, "");
 		s.setDefault(Prefs.CC_CHAT_MODEL, "opus");
 		s.setDefault(Prefs.CC_COMPLETION_MODEL, "haiku");

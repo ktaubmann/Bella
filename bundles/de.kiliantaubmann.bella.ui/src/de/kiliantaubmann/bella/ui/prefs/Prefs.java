@@ -12,6 +12,8 @@ public final class Prefs {
 	public static final String EFFORT = "chat.effort";
 	public static final String MAX_TOKENS = "chat.maxTokens";
 	public static final String REFUSAL_FALLBACK = "anthropic.refusalFallback";
+	/** Keep the chat's prompt cache for an hour instead of five minutes. */
+	public static final String LONG_CACHE = "anthropic.longCache";
 
 	/** Path to the {@code claude} executable, empty for automatic detection. */
 	public static final String CC_EXECUTABLE = "claudeCode.executable";

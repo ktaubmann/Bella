@@ -112,7 +112,7 @@ MESSAGES = {
  "prefs.chatModel": "Модель чата:", "prefs.chatModel.tip": "Модель для чата и генерации кода",
  "prefs.completionModel": "Модель автодополнения:", "prefs.completionModel.tip": "Быстрая модель для встроенного автодополнения",
  "prefs.effort": "Усилие (effort):", "prefs.effort.default": "По умолчанию модели",
- "prefs.fallback": "Повторять отклонённые запросы на резервной модели (на сервере)", "prefs.baseUrl": "Базовый URL:",
+ "prefs.fallback": "Повторять отклонённые запросы на резервной модели (на сервере)", "prefs.longCache": "Хранить кэш промпта час вместо пяти минут (каждая запись дороже)", "prefs.baseUrl": "Базовый URL:",
  "prefs.claude.link": "Создайте ключ API на <a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a>. Ключи хранятся в защищённом хранилище Eclipse.",
  "prefs.openai": "Совместимый с OpenAI", "prefs.openai.baseUrl.tip": "напр. https://api.openai.com/v1 или http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Общие", "prefs.maxTokens": "Макс. выходных токенов:", "prefs.lang.eclipse": "Как в Eclipse",

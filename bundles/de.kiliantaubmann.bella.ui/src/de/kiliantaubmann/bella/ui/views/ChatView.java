@@ -184,6 +184,13 @@ public class ChatView extends ViewPart {
 	private String earlierChat;
 	/** The session's model history is the whole chat, so the history may keep it for an exact restore. */
 	private boolean exactHistory = true;
+	/**
+	 * Hash of the editor source per object the model got in this conversation: an unchanged source is not
+	 * sent again with the next question, since every copy stays in the chat and is sent with each request.
+	 */
+	private final Map<String, Integer> sentSources = new HashMap<>();
+	/** Object and source hash of the question being sent, recorded once its turn is answered. */
+	private Map.Entry<String, Integer> pendingSource;
 	/** The renderer of the running answer, {@code null} between answers. */
 	private volatile Renderer renderer;
 	/** The open question menu ("messageId_segment"), its questions and the answer the tool waits for. */
@@ -635,6 +642,7 @@ public class ChatView extends ViewPart {
 		// a new conversation knows no package yet; the developer names it again
 		plugin.devScope().reset();
 		shownToolErrors = List.of();
+		sentSources.clear();
 	}
 
 	private void newChat() {
@@ -1304,18 +1312,32 @@ public class ChatView extends ViewPart {
 			IEditorPart part = activeEditor();
 			Optional<ITextEditor> editor = EditorBridge.textEditor(part);
 			if (editor.isPresent()) {
-				prompt = withEditorContext(text, EditorBridge.context(part, editor.get()));
+				EditorContext ctx = EditorBridge.context(part, editor.get());
+				int hash = ctx.source().hashCode();
+				// a changed provider starts a new conversation in ask(), which has not seen the source
+				boolean known = BellaPlugin.getDefault().conversationType().isInstance(session.unwrap())
+						&& Integer.valueOf(hash).equals(sentSources.get(ctx.describeObject()));
+				prompt = withEditorContext(text, ctx, known);
+				pendingSource = known ? null : Map.entry(ctx.describeObject(), hash);
 				bindEditor(part);
 			}
 		}
 		ask(text.startsWith(REVISE_PLAN) ? text.substring(REVISE_PLAN.length()) : text, prompt, planning);
 	}
 
-	static String withEditorContext(String question, EditorContext ctx) {
+	/**
+	 * @param sourceKnown the model got this source with an earlier question of the chat: only the object
+	 *                    and the selection are sent
+	 */
+	static String withEditorContext(String question, EditorContext ctx, boolean sourceKnown) {
 		StringBuilder sb = new StringBuilder(question).append("\n\n<editor_context>\nObject: ")
 				.append(ctx.describeObject()).append('\n');
 		if (!ctx.selection().isEmpty()) {
 			sb.append("Selected code:\n```abap\n").append(ctx.selection()).append("\n```\n");
+		}
+		if (sourceKnown) {
+			return sb.append("Source in the editor: unchanged since it went with an earlier message of this chat."
+					+ "\n</editor_context>").toString();
 		}
 		String src = ctx.source();
 		if (src.length() > 60_000) {
@@ -1339,6 +1361,8 @@ public class ChatView extends ViewPart {
 	 *                 a plan, then offers to accept, change or cancel it
 	 */
 	public void ask(String display, String prompt, boolean planning) {
+		Map.Entry<String, Integer> source = pendingSource;
+		pendingSource = null;
 		if (running != null) {
 			return;
 		}
@@ -1413,6 +1437,9 @@ public class ChatView extends ViewPart {
 					}
 					if (answered.get() && earlier != null && earlierChat == earlier) {
 						earlierChat = null; // the model knows the chat now
+					}
+					if (answered.get() && source != null && generation == chatGeneration) {
+						sentSources.put(source.getKey(), source.getValue());
 					}
 					if (generation == chatGeneration) {
 						saveChat();

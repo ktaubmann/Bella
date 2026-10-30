@@ -99,4 +99,45 @@ class ToolRegistryTest {
 		assertEquals("debug_step", ToolRegistry.exposedName(new Fake(ToolRegistry.DEBUG_PROVIDER_ID, List.of()),
 				"debug_step"));
 	}
+
+	@Test
+	void aFailingProviderKeepsItsLastToolsInTheSameOrder() {
+		boolean[] down = { false };
+		Fake listed = new Fake("mcp:arc1", List.of(spec("search", null), spec("read", null)));
+		ToolProvider mcp = new ToolProvider() {
+			@Override
+			public String id() {
+				return listed.id();
+			}
+
+			@Override
+			public String displayName() {
+				return listed.displayName();
+			}
+
+			@Override
+			public List<ToolSpec> listTools() {
+				if (down[0]) {
+					throw new IllegalStateException("server down");
+				}
+				return listed.listTools();
+			}
+
+			@Override
+			public ToolResult call(String remoteName, JsonObject input, CancelToken cancel) {
+				return listed.call(remoteName, input, cancel);
+			}
+		};
+		ToolRegistry r = new ToolRegistry();
+		r.addProvider(new Fake("adt", List.of(spec("adt_a", null), spec("adt_b", null))));
+		r.addProvider(mcp);
+		r.refresh(e -> {
+		});
+		List<String> before = r.tools().stream().map(ToolSpec::name).toList();
+		down[0] = true;
+		List<String> errors = new ArrayList<>();
+		r.refresh(errors::add);
+		assertEquals(1, errors.size());
+		assertEquals(before, r.tools().stream().map(ToolSpec::name).toList(), "same tools, same order");
+	}
 }

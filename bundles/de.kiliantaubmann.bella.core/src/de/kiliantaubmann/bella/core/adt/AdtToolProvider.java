@@ -160,6 +160,21 @@ public final class AdtToolProvider implements ToolProvider {
 			+ "(secondary index TABLE~ID; AFF JSON with uniqueIndex and indexFields; package of its table)";
 	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), TABL/DTT (technical settings of a table), TABL/DTI (secondary index, named TABLE~ID), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document), AUTH (authorization field), FEATURE_TOGGLE, SOBJ (BOR object type; 'method' reads one method's program), SMBC (business configuration maintenance object), and from SAP_BASIS 8.16 (some 7.58) " + SERVER_DRIVEN_DESC
 			+ ". Omit if unknown.";
+	/**
+	 * The type parameter of every tool but {@code adt_read_source}: the full
+	 * list is long and would be sent once per tool with every request.
+	 */
+	private static final String SHORT_TYPE_DESC = "Object type, e.g. CLAS, INTF, PROG, FUNC, TABL, DTEL, DDLS, BDEF; "
+			+ "the parameter 'type' of adt_read_source lists all types. Omit if unknown.";
+
+	/**
+	 * Tools most chats never need. Providers with tool search load them only
+	 * when the model searches for them, so their definitions cost no tokens
+	 * until then; the others still send every tool.
+	 */
+	static final List<String> DEFERRED = List.of("adt_git", "adt_git_write", "adt_ui5", "adt_trace_control",
+			"adt_http_send", "adt_format_settings", "adt_transport_manage", "adt_transport_review",
+			"adt_package_manage", "adt_rap", "adt_quickfix", "adt_text_elements", "adt_write_text_elements");
 
 	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
 			+ "module, needs 'group'), MSAG (message class), DTEL, DOMA, TTYP, TABL/DT (table), TABL/DS (structure), "
@@ -264,7 +279,7 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	private static String[] objectProps(String... extra) {
-		List<String> p = new ArrayList<>(List.of("name", "string", NAME_DESC, "type", "string", TYPE_DESC, "system",
+		List<String> p = new ArrayList<>(List.of("name", "string", NAME_DESC, "type", "string", SHORT_TYPE_DESC, "system",
 				"string", SYSTEM_DESC));
 		p.addAll(List.of(extra));
 		return p.toArray(String[]::new);
@@ -306,6 +321,14 @@ public final class AdtToolProvider implements ToolProvider {
 						"Only objects of this package.", "max_results", "integer",
 						"Default 50 (objects).", "system", "string", SYSTEM_DESC),
 				Capability.SEARCH, ToolSpec.Kind.READ));
+		JsonObject readSchema = schema(new String[] { "name" }, objectProps("include", "string",
+				"Class include: main, definitions, implementations, macros, testclasses. For a table: indexes lists its "
+						+ "secondary indexes.", "method", "string",
+				"Only this method: its declaration and METHOD … ENDMETHOD, e.g. GET_ITEMS or ZIF_X~SAVE.", "grep",
+				"string", "Only lines matching this regex (case-insensitive), with line numbers and 2 lines of context.",
+				"version", "string",
+				"auto (default: newest saved version, with a note if it is not activated), active or inactive."));
+		readSchema.getAsJsonObject("properties").getAsJsonObject("type").addProperty("description", TYPE_DESC);
 		t.add(ToolSpec.of("adt_read_source",
 				"Read the saved source or definition of a repository object: classes, interfaces, programs, CDS views, function modules, "
 						+ "DDIC tables and structures (fields and types), data elements, domains (incl. fixed values), table types, message classes, "
@@ -315,19 +338,12 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "and knowledge transfer documents (SKTD, the documented purpose of an object, as Markdown). "
 						+ "For classes, 'include' selects main (default), definitions, implementations, macros or testclasses. "
 						+ "To save tokens, read one method with 'method' or only matching lines with 'grep' instead of the whole source.",
-				schema(new String[] { "name" }, objectProps("include", "string",
-						"Class include: main, definitions, implementations, macros, testclasses. For a table: indexes lists its "
-								+ "secondary indexes.", "method", "string",
-						"Only this method: its declaration and METHOD … ENDMETHOD, e.g. GET_ITEMS or ZIF_X~SAVE.", "grep",
-						"string", "Only lines matching this regex (case-insensitive), with line numbers and 2 lines of context.",
-						"version", "string",
-						"auto (default: newest saved version, with a note if it is not activated), active or inactive.")),
-				Capability.READ_SOURCE, ToolSpec.Kind.READ));
+				readSchema, Capability.READ_SOURCE, ToolSpec.Kind.READ));
 		JsonObject contextSchema = schema(new String[0], "name", "string",
 				"Object whose used objects should be looked up, e.g. ZCL_SALES_ORDER.", "type", "string",
 				"Type of 'name'. Without 'name' it applies to every entry of 'names', e.g. DOMA for the domains "
 						+ "instead of the data elements of the same name; look up names of other types in a second "
-						+ "call. " + TYPE_DESC,
+						+ "call. " + SHORT_TYPE_DESC,
 				"source", "string", "ABAP code whose used objects should be looked up (e.g. code you are about to change).",
 				"system", "string", SYSTEM_DESC);
 		JsonObject names = new JsonObject();
@@ -680,12 +696,12 @@ public final class AdtToolProvider implements ToolProvider {
 		JsonObject objects = new JsonObject();
 		objects.addProperty("type", "array");
 		objects.addProperty("description", "Objects to activate together.");
-		JsonObject item = schema(new String[] { "name" }, "name", "string", NAME_DESC, "type", "string", TYPE_DESC);
+		JsonObject item = schema(new String[] { "name" }, "name", "string", NAME_DESC, "type", "string", SHORT_TYPE_DESC);
 		objects.add("items", item);
 		activateSchema.getAsJsonObject("properties").add("objects", objects);
 		t.add(ToolSpec.of("adt_activate", "Activate one or more objects in the SAP system.", activateSchema,
 				Capability.ACTIVATE, ToolSpec.Kind.WRITE));
-		return t;
+		return t.stream().map(spec -> DEFERRED.contains(spec.name()) ? spec.asDeferred() : spec).toList();
 	}
 
 	// ---- execution -------------------------------------------------------------

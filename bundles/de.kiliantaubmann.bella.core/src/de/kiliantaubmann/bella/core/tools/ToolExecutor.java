@@ -38,10 +38,11 @@ public final class ToolExecutor {
 
 	private static final String AREA = "tool";
 	/**
-	 * Longest result handed to the model, in characters (about 30,000 tokens). Larger results (table
-	 * contents, traces, very long sources) are cut so one tool call cannot fill the context window.
+	 * Longest result handed to the model, in characters (about 15,000 tokens). Larger results (table
+	 * contents, traces, very long sources) are cut: every result stays in the chat and is sent again with
+	 * each later request, so one large read keeps costing tokens for the rest of the chat.
 	 */
-	static final int MAX_RESULT_CHARS = 120_000;
+	static final int MAX_RESULT_CHARS = 60_000;
 	/** Input of {@code adt_activate} that runs ABAP Unit after a successful activation. */
 	static final String AUTO_TEST = "run_unit_tests";
 

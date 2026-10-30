@@ -23,6 +23,7 @@ import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.CancelToken.CancelledException;
 import de.kiliantaubmann.bella.core.util.HttpTransport;
 import de.kiliantaubmann.bella.core.util.Json;
+import de.kiliantaubmann.bella.core.util.Log;
 import de.kiliantaubmann.bella.core.util.SseParser;
 
 /**
@@ -39,22 +40,53 @@ public final class AnthropicProvider implements LlmProvider {
 
 	static final String API_VERSION = "2023-06-01";
 	static final String FALLBACK_BETA = "server-side-fallback-2026-07-01";
+	static final String CONTEXT_BETA = "context-management-2025-06-27";
+	static final String TOOL_SEARCH = "tool_search_tool_bm25";
+
+	/**
+	 * Old tool results are cleared server-side once a chat request exceeds
+	 * this many input tokens; Bella's own history stays complete.
+	 */
+	static final int CLEAR_TRIGGER_TOKENS = 150_000;
+	/** At least this much per clearing, since each one costs a cache write of what follows. */
+	static final int CLEAR_AT_LEAST_TOKENS = 50_000;
+	/** The most recent tool results are never cleared. */
+	static final int CLEAR_KEEP_TOOL_USES = 6;
+
+	private static final String AREA = "llm";
 
 	private final Supplier<String> apiKey;
 	private final String baseUrl;
 	private final boolean refusalFallback;
+	private final boolean longCache;
 	private final HttpTransport http;
 	private final int maxRetries;
 
 	public AnthropicProvider(Supplier<String> apiKey, String baseUrl, boolean refusalFallback, HttpTransport http) {
-		this(apiKey, baseUrl, refusalFallback, http, 2);
+		this(apiKey, baseUrl, refusalFallback, false, http, 2);
+	}
+
+	/**
+	 * @param longCache keep the chat's prompt cache for an hour instead of five minutes: writes cost 2x
+	 *                  instead of 1.25x, but a pause of more than five minutes no longer writes the
+	 *                  whole chat again
+	 */
+	public AnthropicProvider(Supplier<String> apiKey, String baseUrl, boolean refusalFallback, boolean longCache,
+			HttpTransport http) {
+		this(apiKey, baseUrl, refusalFallback, longCache, http, 2);
 	}
 
 	AnthropicProvider(Supplier<String> apiKey, String baseUrl, boolean refusalFallback, HttpTransport http,
 			int maxRetries) {
+		this(apiKey, baseUrl, refusalFallback, false, http, maxRetries);
+	}
+
+	AnthropicProvider(Supplier<String> apiKey, String baseUrl, boolean refusalFallback, boolean longCache,
+			HttpTransport http, int maxRetries) {
 		this.apiKey = apiKey;
 		this.baseUrl = baseUrl == null || baseUrl.isBlank() ? DEFAULT_BASE_URL : stripSlash(baseUrl);
 		this.refusalFallback = refusalFallback;
+		this.longCache = longCache;
 		this.http = http;
 		this.maxRetries = maxRetries;
 	}
@@ -69,24 +101,41 @@ public final class AnthropicProvider implements LlmProvider {
 		body.addProperty("model", r.model());
 		body.addProperty("max_tokens", r.maxTokens());
 		body.addProperty("stream", true);
-		if (r.system() != null && !r.system().isBlank()) {
+		boolean chat = r.purpose() == ChatRequest.Purpose.CHAT;
+		boolean defer = defers(r);
+		String systemText = r.system() == null ? "" : r.system();
+		if (defer) {
+			// the model has to know what it can search for
+			systemText += (systemText.isBlank() ? "" : "\n\n") + "These tools load on demand: find them with "
+					+ TOOL_SEARCH + " (by name or purpose) before you call one: " + String.join(", ",
+							r.tools().stream().filter(ToolSpec::deferred).map(ToolSpec::name).toList()) + ".";
+		}
+		if (!systemText.isBlank()) {
 			JsonArray system = new JsonArray();
-			system.add(Json.textBlock(r.system()));
+			system.add(Json.textBlock(systemText));
 			body.add("system", system);
 		}
 		JsonArray messages = new JsonArray();
 		r.messages().forEach(messages::add);
 		body.add("messages", messages);
-		boolean chat = r.purpose() == ChatRequest.Purpose.CHAT;
 		if (chat) {
 			// Automatic caching: the breakpoint moves to the last cacheable block,
 			// so each turn reads the previous turns from the cache.
 			JsonObject cache = new JsonObject();
 			cache.addProperty("type", "ephemeral");
+			if (longCache) {
+				cache.addProperty("ttl", "1h");
+			}
 			body.add("cache_control", cache);
 		}
 		if (!r.tools().isEmpty()) {
 			JsonArray tools = new JsonArray();
+			if (defer) {
+				JsonObject search = new JsonObject();
+				search.addProperty("type", "tool_search_tool_bm25_20251119");
+				search.addProperty("name", TOOL_SEARCH);
+				tools.add(search);
+			}
 			for (ToolSpec t : r.tools()) {
 				JsonObject tool = new JsonObject();
 				tool.addProperty("name", t.name());
@@ -94,9 +143,15 @@ public final class AnthropicProvider implements LlmProvider {
 				tool.add("input_schema", t.inputSchema());
 				// Stream large inputs (source code) as generated; validated in finish().
 				tool.addProperty("eager_input_streaming", true);
+				if (defer && t.deferred()) {
+					tool.addProperty("defer_loading", true);
+				}
 				tools.add(tool);
 			}
 			body.add("tools", tools);
+		}
+		if (clearsToolResults(r)) {
+			body.add("context_management", contextManagement(r));
 		}
 		if (chat && ModelCaps.adaptiveThinking(r.model())) {
 			JsonObject thinking = new JsonObject();
@@ -119,14 +174,64 @@ public final class AnthropicProvider implements LlmProvider {
 		return refusalFallback && ModelCaps.refusalFallback(r.model());
 	}
 
+	/**
+	 * Whether rarely used tools go behind the tool search tool: chat turns of
+	 * models that have it, with at least one tool loaded up front. The tool
+	 * list stays the same for every request, so the prompt cache holds.
+	 */
+	static boolean defers(ChatRequest r) {
+		return r.purpose() == ChatRequest.Purpose.CHAT && ModelCaps.toolSearch(r.model())
+				&& r.tools().stream().anyMatch(ToolSpec::deferred) && !r.tools().stream().allMatch(ToolSpec::deferred);
+	}
+
+	static boolean clearsToolResults(ChatRequest r) {
+		return r.purpose() == ChatRequest.Purpose.CHAT && !r.tools().isEmpty() && ModelCaps.contextEditing(r.model());
+	}
+
+	/**
+	 * Clears old tool results (sources, search hits, logs) server-side in long
+	 * chats; the tool calls stay visible and questions to the developer are kept.
+	 */
+	private static JsonObject contextManagement(ChatRequest r) {
+		JsonObject edit = new JsonObject();
+		edit.addProperty("type", "clear_tool_uses_20250919");
+		edit.add("trigger", amount("input_tokens", CLEAR_TRIGGER_TOKENS));
+		edit.add("keep", amount("tool_uses", CLEAR_KEEP_TOOL_USES));
+		edit.add("clear_at_least", amount("input_tokens", CLEAR_AT_LEAST_TOKENS));
+		if (r.tools().stream().anyMatch(t -> t.name().equals("ask_user"))) {
+			JsonArray exclude = new JsonArray();
+			exclude.add("ask_user");
+			edit.add("exclude_tools", exclude);
+		}
+		JsonArray edits = new JsonArray();
+		edits.add(edit);
+		JsonObject cm = new JsonObject();
+		cm.add("edits", edits);
+		return cm;
+	}
+
+	private static JsonObject amount(String type, int value) {
+		JsonObject o = new JsonObject();
+		o.addProperty("type", type);
+		o.addProperty("value", value);
+		return o;
+	}
+
 	Map<String, String> headers(ChatRequest r) {
 		Map<String, String> h = new LinkedHashMap<>();
 		h.put("x-api-key", apiKey.get());
 		h.put("anthropic-version", API_VERSION);
 		h.put("content-type", "application/json");
 		h.put("accept", "text/event-stream");
+		List<String> betas = new ArrayList<>();
 		if (r.purpose() == ChatRequest.Purpose.CHAT && useFallback(r)) {
-			h.put("anthropic-beta", FALLBACK_BETA);
+			betas.add(FALLBACK_BETA);
+		}
+		if (clearsToolResults(r)) {
+			betas.add(CONTEXT_BETA);
+		}
+		if (!betas.isEmpty()) {
+			h.put("anthropic-beta", String.join(",", betas));
 		}
 		return h;
 	}
@@ -256,6 +361,8 @@ public final class AnthropicProvider implements LlmProvider {
 				if ("tool_use".equals(blockType)) {
 					partialJson.put(index, new StringBuilder());
 					listener.onToolUseStart(Json.str(block, "id"), Json.str(block, "name"));
+				} else if ("server_tool_use".equals(blockType)) {
+					partialJson.put(index, new StringBuilder());
 				} else if ("fallback".equals(blockType)) {
 					listener.onFallback(Json.str(Json.obj(block, "from"), "model"),
 							Json.str(Json.obj(block, "to"), "model"));
@@ -309,6 +416,14 @@ public final class AnthropicProvider implements LlmProvider {
 					}
 				}
 				usage(Json.obj(e, "usage"));
+				JsonObject cm = Json.obj(delta, "context_management");
+				if (cm == null) {
+					cm = Json.obj(e, "context_management");
+				}
+				JsonArray applied = Json.arr(cm, "applied_edits");
+				if (applied != null && !applied.isEmpty()) {
+					Log.info(AREA, "context editing cleared old tool results: " + applied);
+				}
 			}
 			case "error" -> {
 				JsonObject err = Json.obj(e, "error");
@@ -353,6 +468,17 @@ public final class AnthropicProvider implements LlmProvider {
 			}
 			for (Map.Entry<Integer, JsonObject> entry : blocks.entrySet()) {
 				JsonObject block = entry.getValue();
+				if ("server_tool_use".equals(Json.str(block, "type"))) {
+					// a tool search: sent back as it came, the API runs it
+					StringBuilder raw = partialJson.get(entry.getKey());
+					if (raw != null && !raw.isEmpty()) {
+						try {
+							block.add("input", Json.parseStrict(raw.toString()));
+						} catch (JsonParseException ex) {
+							// keeps the input of content_block_start
+						}
+					}
+				}
 				if ("tool_use".equals(Json.str(block, "type"))) {
 					StringBuilder raw = partialJson.get(entry.getKey());
 					String rawInput = raw == null || raw.isEmpty() ? "{}" : raw.toString();
@@ -420,7 +546,7 @@ public final class AnthropicProvider implements LlmProvider {
 					continue;
 				}
 				if (i < last && ("thinking".equals(t) || "redacted_thinking".equals(t) || "tool_use".equals(t)
-						|| "server_tool_use".equals(t))) {
+						|| "server_tool_use".equals(t) || "tool_search_tool_result".equals(t))) {
 					continue;
 				}
 				out.add(content.get(i));
