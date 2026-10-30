@@ -41,10 +41,10 @@ final class AdtDdic {
 
 	/** Types Bella can create. */
 	static final List<String> CREATABLE = List.of("CLAS", "INTF", "PROG", "INCL", "FUGR", "FUNC", "MSAG", "DTEL",
-			"DOMA", "TTYP", "TABL/DT", "TABL/DS", "DDLS", "DCLS", "DDLX", "BDEF", "SRVD", "SRVB");
+			"DOMA", "TTYP", "TABL/DT", "TABL/DS", "DDLS", "DCLS", "DDLX", "BDEF", "SRVD", "SRVB", "ENHO");
 
 	/** Types without source code: everything is in the metadata XML. */
-	static final Set<String> METADATA_ONLY = Set.of("MSAG", "DTEL", "DOMA", "TTYP", "SRVB");
+	static final Set<String> METADATA_ONLY = Set.of("MSAG", "DTEL", "DOMA", "TTYP", "SRVB", "ENHO");
 
 	/** Types whose source Bella's style check understands. */
 	static final Set<String> ABAP_SOURCE = Set.of("CLAS", "INTF", "PROG", "INCL", "FUGR", "FUNC");
@@ -82,6 +82,7 @@ final class AdtDdic {
 		case "DOMA/DD", "DOMAIN" -> "DOMA";
 		case "TTYP/DA", "TABLE_TYPE" -> "TTYP";
 		case "MSAG/N", "MESSAGE_CLASS" -> "MSAG";
+		case "ENHO/XHB", "BADI_IMPLEMENTATION", "ENHANCEMENT_IMPLEMENTATION" -> "ENHO";
 		default -> t.contains("/") ? t.substring(0, t.indexOf('/')) : t;
 		};
 	}
@@ -100,6 +101,9 @@ final class AdtDdic {
 		}
 		if (t.equals("SRVB")) {
 			return "/sap/bc/adt/businessservices/bindings/" + AdtObjectRef.encodeName(name);
+		}
+		if (t.equals("ENHO")) {
+			return AdtBadi.uri(name); // only BAdI implementations are created and written
 		}
 		String uri = AdtObjectRef.uriFor(name, t);
 		if (uri == null) {
@@ -214,6 +218,17 @@ final class AdtDdic {
 			contentType = TABLETYPE_TYPE;
 		}
 		case "SRVB" -> body = serviceBindingXml(n, description, p, lang, responsible, props);
+		case "ENHO" -> {
+			// the container only; the implementations follow with a PUT (AdtBadi)
+			String spot = Json.str(props, "enhancement_spot");
+			if (spot == null || spot.isBlank()) {
+				throw new AdtException(400, "Give 'enhancement_spot', the spot whose BAdIs are implemented "
+						+ "(adt_read_source type ENHS lists its BAdIs).");
+			}
+			return new CreateRequest(collection, AdtBadi.xml(n, description, p, lang, responsible, null,
+					spot.trim().toUpperCase(Locale.ROOT), List.of()), AdtBadi.ENHO_TYPE,
+					transport != null && !transport.isBlank() ? "?corrNr=" + AdtClient.enc(transport.trim()) : "", uri, t);
+		}
 		default -> throw new AdtException(400, "Creating objects of type " + type + " is not supported.");
 		}
 		List<String> query = new ArrayList<>();

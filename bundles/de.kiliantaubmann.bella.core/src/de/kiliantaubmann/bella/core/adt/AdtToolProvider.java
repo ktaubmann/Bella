@@ -153,11 +153,11 @@ public final class AdtToolProvider implements ToolProvider {
 			+ "headings (list and column headings).";
 	private static final String SYSTEM_DESC = "ABAP project / system id to use. Omit to use the system of the active editor.";
 	private static final String NAME_DESC = "Object name, e.g. ZCL_SALES_ORDER.";
-	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), SKTD (knowledge transfer document). Omit if unknown.";
+	private static final String TYPE_DESC = "Object type: CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function module), TABL (table or structure), DTEL, DOMA, TTYP, MSAG, DDLS, BDEF, SRVD, VIEW (classic DDIC view), ENQU (lock object), TRAN (transaction), ENHO (enhancement implementation), ENHS (enhancement spot), SKTD (knowledge transfer document). Omit if unknown.";
 
 	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
 			+ "module, needs 'group'), MSAG (message class), DTEL, DOMA, TTYP, TABL/DT (table), TABL/DS (structure), "
-			+ "DDLS, DCLS, DDLX, BDEF, SRVD, SRVB (service binding).";
+			+ "DDLS, DCLS, DDLX, BDEF, SRVD, SRVB (service binding), ENHO (BAdI implementation).";
 
 	/** Fields of DDIC objects, shared by adt_create_object and adt_write_metadata. */
 	private static final String[] DDIC_PROPS = { "domain", "string", "DTEL: the domain it is based on.",
@@ -172,7 +172,8 @@ public final class AdtToolProvider implements ToolProvider {
 			"string", "TTYP: row type, a built-in type (STRING, I …) or a DDIC structure.", "row_type_kind", "string",
 			"TTYP: builtin or structure (default: guessed from row_type).", "service_definition", "string",
 			"SRVB: the service definition.", "binding_type", "string", "SRVB: e.g. ODATA V4 UI or ODATA V2 Web API.",
-			"odata_version", "string", "SRVB: V2 or V4.", "category", "string", "SRVB: 0 UI, 1 Web API." };
+			"odata_version", "string", "SRVB: V2 or V4.", "category", "string", "SRVB: 0 UI, 1 Web API.",
+			"enhancement_spot", "string", "ENHO: the enhancement spot whose BAdIs are implemented; cannot change." };
 
 	private static String[] createProps() {
 		List<String> p = new ArrayList<>(List.of(objectProps("description", "string",
@@ -203,6 +204,11 @@ public final class AdtToolProvider implements ToolProvider {
 				"number", "string", "text", "string"));
 		props.add("fixed_values", arrayOf("DOMA: fixed values as {low, high, text}; replaces all fixed values.",
 				"low", "string", "high", "string", "text", "string"));
+		props.add("badi_implementations", arrayOf("ENHO: BAdI implementations as {name, badi, implementing_class, "
+				+ "filter, short_text, active, default}; 'filter' e.g. COUNTRY = 'DE' OR COUNTRY = 'AT' (\"\" removes "
+				+ "it). Changing adds or replaces them by name; fields left out keep their value.", "name", "string",
+				"badi", "string", "implementing_class", "string", "filter", "string", "short_text", "string", "active",
+				"boolean", "default", "boolean"));
 	}
 
 	private static JsonObject arrayOf(String description, String... itemProps) {
@@ -279,7 +285,9 @@ public final class AdtToolProvider implements ToolProvider {
 		t.add(ToolSpec.of("adt_read_source",
 				"Read the saved source or definition of a repository object: classes, interfaces, programs, CDS views, function modules, "
 						+ "DDIC tables and structures (fields and types), data elements, domains (incl. fixed values), table types, message classes, "
-						+ "classic DDIC views (VIEW), lock objects (ENQU), transactions (TRAN), enhancement implementations (ENHO) "
+						+ "classic DDIC views (VIEW), lock objects (ENQU), transactions (TRAN), enhancement implementations (ENHO; BAdI "
+						+ "implementations as the JSON adt_write_metadata takes), enhancement spots (ENHS: BAdIs, their "
+						+ "interfaces and filters) "
 						+ "and knowledge transfer documents (SKTD, the documented purpose of an object, as Markdown). "
 						+ "For classes, 'include' selects main (default), definitions, implementations, macros or testclasses. "
 						+ "To save tokens, read one method with 'method' or only matching lines with 'grep' instead of the whole source.",
@@ -452,7 +460,10 @@ public final class AdtToolProvider implements ToolProvider {
 				"Create a new object ('name', 'type', 'description'), optionally with initial source; does not "
 						+ "activate. Types: " + CREATE_TYPE_DESC
 						+ " Message classes take 'messages', data elements 'domain' or 'data_type' and labels, domains "
-						+ "'data_type' and 'length', table types 'row_type', service bindings 'service_definition'. "
+						+ "'data_type' and 'length', table types 'row_type', service bindings 'service_definition', "
+						+ "BAdI implementations (ENHO) 'enhancement_spot' and 'badi_implementations' (read the spot "
+						+ "with adt_read_source type ENHS for its BAdIs, interfaces and filters; the implementing "
+						+ "classes go first in the same 'objects'). "
 						+ "Objects that depend on each other (domain and data element, table and its CDS view, a RAP "
 						+ "stack) go together in 'objects' and are activated together at the end.",
 				createSchema, Capability.CREATE_OBJECT, ToolSpec.Kind.WRITE));
@@ -466,11 +477,18 @@ public final class AdtToolProvider implements ToolProvider {
 		str.addProperty("type", "string");
 		remove.add("items", str);
 		metadataSchema.getAsJsonObject("properties").add("remove_numbers", remove);
+		JsonObject removeImpl = new JsonObject();
+		removeImpl.addProperty("type", "array");
+		removeImpl.addProperty("description", "ENHO: names of BAdI implementations to delete.");
+		removeImpl.add("items", str);
+		metadataSchema.getAsJsonObject("properties").add("remove_implementations", removeImpl);
 		t.add(ToolSpec.of("adt_write_metadata",
-				"Change the metadata of a data element (DTEL), domain (DOMA), table type (TTYP) or the messages of a "
-						+ "message class (MSAG). Only the given fields change; Bella reads the object first and keeps "
-						+ "everything else. Message classes: 'messages' adds or replaces messages by number, "
-						+ "'remove_numbers' deletes some. Does not activate (message classes need no activation).",
+				"Change the metadata of a data element (DTEL), domain (DOMA), table type (TTYP), the messages of a "
+						+ "message class (MSAG) or the BAdI implementations of an enhancement implementation (ENHO). "
+						+ "Only the given fields change; Bella reads the object first and keeps everything else. "
+						+ "Message classes: 'messages' adds or replaces messages by number, 'remove_numbers' deletes "
+						+ "some. ENHO: 'badi_implementations' adds or changes implementations by name, "
+						+ "'remove_implementations' deletes some. Does not activate (message classes need no activation).",
 				metadataSchema, null, ToolSpec.Kind.WRITE));
 		t.add(ToolSpec.of("adt_edit_code",
 				"Targeted change of a class, program or include that keeps the rest of the source. Classes: "
@@ -3204,6 +3222,7 @@ public final class AdtToolProvider implements ToolProvider {
 				&& processing != null) {
 			return ToolResult.error("update_task_kind goes with processing_type update, and only with it.");
 		}
+		List<AdtBadi.Entry> badis = type.equals("ENHO") ? badisToCreate(c, name, in, cancel) : List.of();
 		String language = Json.str(in, "language");
 		AdtDdic.CreateRequest req = AdtDdic.create(type, name, Json.str(in, "description"), pkg, transport,
 				language == null || language.isBlank() ? s.language() : language, s.user(), in);
@@ -3228,6 +3247,21 @@ public final class AdtToolProvider implements ToolProvider {
 									pkg.trim().toUpperCase(Locale.ROOT), lang, messages),
 							AdtDdic.MESSAGECLASS_TYPE, transport, cancel);
 					notes.append(" ").append(messages.size()).append(" messages written.");
+				}
+			}
+			case "ENHO" -> {
+				if (!badis.isEmpty()) {
+					try {
+						AdtClient.writeMetadata(session, ref.uri(), AdtBadi.xml(ref.name(), Json.str(in, "description"),
+								pkg.trim().toUpperCase(Locale.ROOT), lang, s.user(), null,
+								Json.str(in, "enhancement_spot").trim().toUpperCase(Locale.ROOT), badis),
+								AdtBadi.ENHO_TYPE, transport, cancel);
+					} catch (AdtException e) {
+						return ToolResult.error("Created " + ref.name() + " (ENHO) on " + s.label() + ", but saving its "
+								+ "BAdI implementations failed, so it exists without them: " + e.getMessage()
+								+ "\nAdd them with adt_write_metadata, or remove the object with adt_delete_object.");
+					}
+					notes.append(" ").append(badis.size()).append(" BAdI implementations written.");
 				}
 			}
 			case "FUNC" -> {
@@ -3276,9 +3310,12 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtSystem s = system(in);
 		AdtClient c = client(s);
 		String type = AdtDdic.normalizeType(Json.str(in, "type"));
+		if (type.equals("ENHO")) {
+			return writeBadis(s, c, in, cancel);
+		}
 		if (!List.of("DTEL", "DOMA", "TTYP", "MSAG").contains(type)) {
-			return ToolResult.error("adt_write_metadata changes DTEL, DOMA, TTYP and MSAG; use adt_write_source for "
-					+ "source-based objects.");
+			return ToolResult.error("adt_write_metadata changes DTEL, DOMA, TTYP, MSAG and ENHO; use adt_write_source "
+					+ "for source-based objects.");
 		}
 		String name = Json.str(in, "name").trim().toUpperCase(Locale.ROOT);
 		String uri = AdtDdic.objectUri(type, name, null);
@@ -3358,6 +3395,83 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 		}
 		return ToolResult.ok(saved + (type.equals("MSAG") ? "." : ". Not activated yet."));
+	}
+
+	/**
+	 * The BAdI implementations of a new enhancement implementation, checked
+	 * against its spot before anything is created: SAP refuses a customer
+	 * implementation of an SAP-internal spot only after leaving an entry in the
+	 * object directory that ADT cannot delete (ARC-1, 8.16).
+	 */
+	private static List<AdtBadi.Entry> badisToCreate(AdtClient c, String name, JsonObject in, CancelToken cancel)
+			throws IOException {
+		String spotName = Json.str(in, "enhancement_spot");
+		if (spotName == null || spotName.isBlank()) {
+			throw new AdtException(400, "Give 'enhancement_spot', the spot whose BAdIs are implemented "
+					+ "(adt_read_source type ENHS lists its BAdIs).");
+		}
+		List<AdtBadi.Input> inputs = AdtBadi.inputs(in);
+		AdtBadi.Spot spot = spot(c, spotName, cancel);
+		if (spot.internal() && name.trim().toUpperCase(Locale.ROOT).matches("[ZY].*")) {
+			throw new AdtException(400, "Enhancement spot " + spot.name() + " is SAP-internal; SAP allows no "
+					+ "implementation of it in the customer namespace. Nothing was created.");
+		}
+		return inputs == null ? List.of() : AdtBadi.created(inputs, spot);
+	}
+
+	private static AdtBadi.Spot spot(AdtClient c, String name, CancelToken cancel) throws IOException {
+		String spot = name.trim().toUpperCase(Locale.ROOT);
+		String xml;
+		try {
+			xml = c.readMetadata(AdtBadi.spotUri(spot), AdtBadi.SPOT_TYPE, cancel);
+		} catch (AdtException e) {
+			if (e.status() == 404) {
+				throw new AdtException(404, "There is no enhancement spot " + spot + " (BAdI spot, ENHS) on this system.");
+			}
+			throw e;
+		}
+		AdtBadi.Spot parsed = AdtBadi.parseSpot(xml);
+		return parsed.name().isEmpty() ? new AdtBadi.Spot(spot, parsed.pkg(), parsed.internal(), parsed.badis()) : parsed;
+	}
+
+	/** Adds, changes or removes BAdI implementations, keeping what SAP stores beyond the given fields. */
+	private ToolResult writeBadis(AdtSystem s, AdtClient c, JsonObject in, CancelToken cancel) throws IOException {
+		String name = requiredName(in).toUpperCase(Locale.ROOT);
+		String uri = AdtBadi.uri(name);
+		AdtBadi.Stored stored = AdtBadi.parse(c.readMetadata(uri, AdtBadi.ENHO_TYPE, cancel));
+		if (!stored.technology().isEmpty() && !stored.technology().equals("BADI_IMPL")) {
+			return ToolResult.error(name + " is a " + stored.technology() + " enhancement; Bella changes only BAdI "
+					+ "implementations.");
+		}
+		String spotGiven = Json.str(in, "enhancement_spot");
+		if (spotGiven != null && !spotGiven.isBlank() && !spotGiven.trim().equalsIgnoreCase(stored.spot())) {
+			return ToolResult.error("The enhancement spot of " + name + " is " + stored.spot() + " and cannot change; "
+					+ "create a new enhancement implementation for " + spotGiven.trim().toUpperCase(Locale.ROOT) + ".");
+		}
+		List<AdtBadi.Input> inputs = AdtBadi.inputs(in);
+		List<String> remove = new ArrayList<>();
+		JsonArray arr = Json.arr(in, "remove_implementations");
+		if (arr != null) {
+			arr.forEach(e -> remove.add(e.getAsString().trim().toUpperCase(Locale.ROOT)));
+		}
+		List<AdtBadi.Entry> entries = inputs == null && remove.isEmpty() ? stored.entries()
+				: AdtBadi.merged(stored, inputs == null ? List.of() : inputs, remove,
+						inputs == null || inputs.isEmpty() ? new AdtBadi.Spot(stored.spot(), "", false, Map.of())
+								: spot(c, stored.spot(), cancel));
+		String description = Json.str(in, "description") == null ? stored.description() : Json.str(in, "description");
+		String body = AdtBadi.xml(name, description, stored.pkg(),
+				AdtDdic.language(stored.language().isEmpty() ? s.language() : stored.language()), null,
+				stored.languageVersion(), stored.spot(), entries);
+		String tr;
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			tr = AdtClient.writeMetadata(session, uri, body, AdtBadi.ENHO_TYPE, Json.str(in, "transport"), cancel);
+		} finally {
+			c.invalidate(uri);
+			inactive.remove(s.destinationId());
+		}
+		return ToolResult.ok("Saved the BAdI implementations of " + name + " (" + String.join(", ",
+				entries.stream().map(AdtBadi.Entry::name).toList()) + (entries.isEmpty() ? "none" : "") + ") in "
+				+ s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
 	}
 
 	/** Syntax check of a saved source that Bella's style check does not understand (CDS, RAP, DDIC sources). */

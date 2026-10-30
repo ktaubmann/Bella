@@ -406,7 +406,8 @@ public final class AdtClient {
 		case "TRANSACTION", "TCODE" -> "TRAN";
 		case "LOCK_OBJECT", "LOCKOBJECT" -> "ENQU";
 		case "KTD", "KNOWLEDGE_TRANSFER_DOCUMENT" -> "SKTD";
-		case "ENHANCEMENT", "ENHANCEMENT_IMPLEMENTATION" -> "ENHO";
+		case "ENHANCEMENT", "ENHANCEMENT_IMPLEMENTATION", "BADI_IMPLEMENTATION" -> "ENHO";
+		case "ENHANCEMENT_SPOT", "BADI_SPOT" -> "ENHS";
 		case "DDIC_VIEW" -> "VIEW";
 		default -> t;
 		};
@@ -535,6 +536,15 @@ public final class AdtClient {
 		String uri = AdtObjectRef.objectUri(ref.uri());
 		if (ref.type() != null && ref.type().toUpperCase(Locale.ROOT).startsWith("SKTD")) {
 			return knowledgeTransferDocument(ref, uri, cancel);
+		}
+		if (uri.startsWith(AdtBadi.COLLECTION + "/")) {
+			String described = AdtBadi.describe(AdtBadi.parse(readMetadata(uri, AdtBadi.ENHO_TYPE, cancel)));
+			if (described != null) {
+				return described;
+			}
+		}
+		if (uri.startsWith("/sap/bc/adt/enhancements/enhsxsb/")) {
+			return AdtBadi.describe(AdtBadi.parseSpot(readMetadata(uri, AdtBadi.SPOT_TYPE, cancel)));
 		}
 		if (!xmlOnly(ref.type())) {
 			try {
@@ -1878,7 +1888,12 @@ public final class AdtClient {
 
 	/** The metadata XML of an object (data element, domain, message class …). */
 	public String readMetadata(String objectUri, CancelToken cancel) throws IOException {
-		return send(AdtRequest.get(objectUri, "application/*"), cancel).body();
+		return readMetadata(objectUri, "application/*", cancel);
+	}
+
+	/** The metadata XML of an object whose endpoint wants its own media type in Accept. */
+	public String readMetadata(String objectUri, String accept, CancelToken cancel) throws IOException {
+		return send(AdtRequest.get(objectUri, accept), cancel).body();
 	}
 
 	/**
