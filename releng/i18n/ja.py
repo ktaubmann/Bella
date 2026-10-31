@@ -112,7 +112,7 @@ MESSAGES = {
  "prefs.chatModel": "チャットモデル：", "prefs.chatModel.tip": "チャットとコード生成に使うモデル",
  "prefs.completionModel": "補完モデル：", "prefs.completionModel.tip": "インライン補完用の高速モデル",
  "prefs.effort": "労力（effort）：", "prefs.effort.default": "モデルの既定値",
- "prefs.fallback": "拒否されたリクエストをサーバー側で代替モデルにより再試行", "prefs.longCache": "プロンプトキャッシュを 5 分ではなく 1 時間保持する（書き込みごとのコストは高くなります）", "prefs.baseUrl": "ベース URL：",
+ "prefs.fallback": "拒否されたリクエストをサーバー側で代替モデルにより再試行", "prefs.longCache": "プロンプトキャッシュを 5 分ではなく 1 時間保持する（書き込みごとのコストは高くなります。ツールの長い実行やメッセージ間の休止があるときに有効です）", "prefs.baseUrl": "ベース URL：",
  "prefs.claude.link": "<a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a> で API キーを作成してください。キーは Eclipse のセキュアストレージに保存されます。",
  "prefs.openai": "OpenAI 互換", "prefs.openai.baseUrl.tip": "例：https://api.openai.com/v1 または http://localhost:11434/v1（Ollama）",
  "prefs.general": "一般", "prefs.maxTokens": "最大出力トークン数：", "prefs.lang.eclipse": "Eclipse と同じ",

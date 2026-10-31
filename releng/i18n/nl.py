@@ -112,7 +112,7 @@ MESSAGES = {
  "prefs.chatModel": "Chatmodel:", "prefs.chatModel.tip": "Model voor chat en codegeneratie",
  "prefs.completionModel": "Aanvulmodel:", "prefs.completionModel.tip": "Snel model voor inline aanvulling",
  "prefs.effort": "Inspanning (effort):", "prefs.effort.default": "Standaard van het model",
- "prefs.fallback": "Geweigerde verzoeken opnieuw proberen met een reservemodel (server-side)", "prefs.longCache": "Promptcache een uur in plaats van vijf minuten bewaren (elke schrijfactie kost meer)", "prefs.baseUrl": "Basis-URL:",
+ "prefs.fallback": "Geweigerde verzoeken opnieuw proberen met een reservemodel (server-side)", "prefs.longCache": "Promptcache een uur in plaats van vijf minuten bewaren (elke schrijfactie kost meer; loont bij lange toolruns en pauzes tussen berichten)", "prefs.baseUrl": "Basis-URL:",
  "prefs.claude.link": "Maak een API-sleutel aan op <a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a>. Sleutels staan in de beveiligde opslag van Eclipse.",
  "prefs.openai": "OpenAI-compatibel", "prefs.openai.baseUrl.tip": "bijv. https://api.openai.com/v1 of http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Algemeen", "prefs.maxTokens": "Max. uitvoertokens:", "prefs.lang.eclipse": "Zoals Eclipse",

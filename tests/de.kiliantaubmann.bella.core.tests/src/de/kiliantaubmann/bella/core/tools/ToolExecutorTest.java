@@ -6,7 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 
@@ -205,5 +209,78 @@ class ToolExecutorTest {
 				ToolExecutor.MAX_RESULT_CHARS - 200));
 		assertTrue(big.content().contains("never write it back as a complete source"));
 		assertFalse(big.isError());
+	}
+
+	@Test
+	void readOnlyCallsOfOneTurnRunSideBySideAndReportInOrder() {
+		// both reads wait until the other one has started: they only finish when they run at the same time
+		CountDownLatch bothStarted = new CountDownLatch(2);
+		ToolProvider reads = new ToolProvider() {
+			@Override
+			public String id() {
+				return "adt";
+			}
+
+			@Override
+			public String displayName() {
+				return "fake";
+			}
+
+			@Override
+			public List<ToolSpec> listTools() {
+				return List.of(ToolSpec.of("adt_read_source", "", new JsonObject(), null, ToolSpec.Kind.READ),
+						ToolSpec.of("adt_write_source", "", new JsonObject(), null, ToolSpec.Kind.WRITE));
+			}
+
+			@Override
+			public ToolResult call(String remoteName, JsonObject input, CancelToken cancel) {
+				if (remoteName.equals("adt_write_source")) {
+					return ToolResult.ok("written");
+				}
+				bothStarted.countDown();
+				try {
+					return ToolResult.ok(bothStarted.await(5, TimeUnit.SECONDS) ? "read " + input.get("n") : "alone");
+				} catch (InterruptedException e) {
+					return ToolResult.error("interrupted");
+				}
+			}
+		};
+		ToolRegistry registry = new ToolRegistry();
+		registry.addProvider(reads);
+		registry.refresh(e -> {
+		});
+		ToolExecutor executor = new ToolExecutor(registry, () -> new ToolPolicy(List.of()), (tool, input) -> true, null);
+		JsonObject first = new JsonObject();
+		first.addProperty("n", 1);
+		JsonObject second = new JsonObject();
+		second.addProperty("n", 2);
+		List<ToolCall> calls = List.of(new ToolCall("a", "adt_read_source", first, "{}", null),
+				new ToolCall("w", "adt_write_source", new JsonObject(), "{}", null),
+				new ToolCall("b", "adt_read_source", second, "{}", null));
+		Map<String, Future<ToolResult>> started = executor.startUnattended(calls, CancelToken.NONE);
+		assertEquals(List.of("a", "b"), List.copyOf(started.keySet()), "the write waits for its confirmation");
+		List<String> events = new ArrayList<>();
+		ToolExecutor.Observer observer = new ToolExecutor.Observer() {
+			@Override
+			public void onToolCall(ToolSpec tool, ToolCall call) {
+				events.add("call " + call.id());
+			}
+
+			@Override
+			public void onToolResult(ToolSpec tool, ToolCall call, ToolResult result) {
+				events.add("result " + call.id() + " " + result.content());
+			}
+		};
+		for (ToolCall call : calls) {
+			if (started.containsKey(call.id())) {
+				executor.deliver(call, started.get(call.id()), observer);
+			} else {
+				executor.run(call, observer, CancelToken.NONE);
+			}
+		}
+		assertEquals(List.of("call a", "result a read 1", "call w", "result w written", "call b", "result b read 2"),
+				events);
+		// a single read runs as before
+		assertTrue(executor.startUnattended(calls.subList(0, 2), CancelToken.NONE).isEmpty());
 	}
 }

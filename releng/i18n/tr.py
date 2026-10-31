@@ -112,7 +112,7 @@ MESSAGES = {
  "prefs.chatModel": "Sohbet modeli:", "prefs.chatModel.tip": "Sohbet ve kod üretimi için model",
  "prefs.completionModel": "Tamamlama modeli:", "prefs.completionModel.tip": "Satır içi tamamlama için hızlı model",
  "prefs.effort": "Efor (effort):", "prefs.effort.default": "Model varsayılanı",
- "prefs.fallback": "Reddedilen istekleri yedek bir modelle yeniden dene (sunucu tarafında)", "prefs.longCache": "İstem önbelleğini beş dakika yerine bir saat tut (her yazma daha pahalı)", "prefs.baseUrl": "Temel URL:",
+ "prefs.fallback": "Reddedilen istekleri yedek bir modelle yeniden dene (sunucu tarafında)", "prefs.longCache": "İstem önbelleğini beş dakika yerine bir saat tut (her yazma daha pahalı; uzun araç çalıştırmalarında ve mesajlar arasındaki aralarda işe yarar)", "prefs.baseUrl": "Temel URL:",
  "prefs.claude.link": "API anahtarını <a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a> adresinde oluşturun. Anahtarlar Eclipse güvenli depolamasında tutulur.",
  "prefs.openai": "OpenAI uyumlu", "prefs.openai.baseUrl.tip": "ör. https://api.openai.com/v1 veya http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Genel", "prefs.maxTokens": "Azami çıktı belirteci:", "prefs.lang.eclipse": "Eclipse gibi",

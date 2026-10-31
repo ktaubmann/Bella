@@ -172,7 +172,7 @@ MESSAGES = {
  "prefs.completionModel.tip": "Fast model for inline completion",
  "prefs.effort": "Effort:",
  "prefs.effort.default": "Model default",
- "prefs.fallback": "Retry declined requests on a fallback model (server-side)", "prefs.longCache": "Keep the prompt cache for an hour instead of five minutes (each write costs more)",
+ "prefs.fallback": "Retry declined requests on a fallback model (server-side)", "prefs.longCache": "Keep the prompt cache for an hour instead of five minutes (each write costs more; pays off with long tool runs and pauses between messages)",
  "prefs.baseUrl": "Base URL:",
  "prefs.claude.link": "Create an API key at <a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a>. Keys are kept in Eclipse secure storage.",
  "prefs.openai": "OpenAI-compatible",

@@ -131,6 +131,17 @@ final class AbaplintRules {
 	private static final Pattern BOOL_FALSE = Pattern.compile("^(\\S+) = ABAP_FALSE$");
 	private static final Pattern CATCH_INTO = Pattern.compile("^CATCH\\b.*\\bINTO\\s+(?:DATA\\(\\s*)?([A-Z0-9_]+)");
 
+	private static final Pattern FUNCTION_NAME = Pattern.compile("^\\s*CALL\\s+FUNCTION\\s+'([^']+)'",
+			Pattern.CASE_INSENSITIVE);
+	private static final Pattern EXCEPTIONS = Pattern.compile("\\bEXCEPTIONS\\b");
+	private static final Pattern EXCEPTIONS_OTHERS = Pattern.compile("\\bEXCEPTIONS\\b.*\\bOTHERS\\b");
+	private static final Pattern RECEIVING = Pattern.compile("\\bRECEIVING\\b");
+	private static final Pattern SPACE_BEFORE_DOT = Pattern.compile("\\S[ \\t]+\\.$");
+	private static final Pattern EMPTY_LINE = Pattern.compile("\\n[ \\t]*\\r?\\n");
+	private static final Pattern PAREN_EXPORTING = Pattern.compile("\\(\\s+EXPORTING\\b", Pattern.CASE_INSENSITIVE);
+	private static final Pattern OTHER_KINDS = Pattern.compile("\\b(?:IMPORTING|CHANGING|RECEIVING|EXCEPTIONS)\\b",
+			Pattern.CASE_INSENSITIVE);
+
 	private AbaplintRules() {
 	}
 
@@ -163,7 +174,7 @@ final class AbaplintRules {
 		for (int i = 0; i < statements.size(); i++) {
 			Statement st = statements.get(i);
 			String code = codes.get(i);
-			String[] w = code.split("\\s+");
+			String[] w = code.split(" ");
 			String first = w[0].replace(":", "");
 			String second = w.length > 1 ? w[1] : "";
 			int line = AbapLint.lineOf(lineStarts, st.start());
@@ -187,7 +198,7 @@ final class AbaplintRules {
 			if (first.equals("CALL") && second.equals("FUNCTION") && code.contains(" DESTINATION ")
 					&& !code.contains("STARTING NEW TASK") && !code.contains("IN BACKGROUND")
 					&& !(code.contains("SYSTEM_FAILURE") && code.contains("COMMUNICATION_FAILURE"))
-					&& !code.matches(".*\\bEXCEPTIONS\\b.*\\bOTHERS\\b.*")) {
+					&& !EXCEPTIONS_OTHERS.matcher(code).find()) {
 				out.add(new Finding(line, "rfc_error_handling", Severity.WARNING, "RFC call without the exceptions "
 						+ "system_failure and communication_failure; a broken connection then dumps."));
 			}
@@ -238,8 +249,7 @@ final class AbaplintRules {
 						"Test class without RISK LEVEL and DURATION; add them, e.g. DURATION SHORT RISK LEVEL HARMLESS."));
 			}
 			if (first.equals("CALL") && second.equals("FUNCTION")) {
-				Matcher fm = Pattern.compile("^\\s*CALL\\s+FUNCTION\\s+'([^']+)'", Pattern.CASE_INSENSITIVE)
-						.matcher(st.text());
+				Matcher fm = FUNCTION_NAME.matcher(st.text());
 				String replacement = fm.find() ? FUNCTION_MODULES.get(fm.group(1).toUpperCase(Locale.ROOT)) : null;
 				if (replacement != null) {
 					out.add(new Finding(line, "function_module_recommendations", Severity.INFO,
@@ -261,20 +271,20 @@ final class AbaplintRules {
 						"Write x IS NOT INITIAL (or x NOT IN …) instead of NOT x IS … (Clean ABAP)."));
 			}
 			// as abaplint: functional calls only (CALL METHOD is call_method), and EXCEPTIONS need RECEIVING
-			if (code.matches(".*\\bRECEIVING\\b.*") && !methods && !first.equals("CALL") && code.contains("(")
-					&& !code.matches(".*\\bEXCEPTIONS\\b.*")) {
+			if (code.contains("RECEIVING") && RECEIVING.matcher(code).find() && !methods && !first.equals("CALL")
+					&& code.contains("(") && !EXCEPTIONS.matcher(code).find()) {
 				out.add(new Finding(line, "omit_receiving", Severity.INFO,
 						"Assign the result of the functional call instead of RECEIVING: x = obj->method( … )."));
 			}
-			if (!methods && omittableExporting(code) >= 0) {
+			if (!methods && code.contains("EXPORTING") && omittableExporting(code) >= 0) {
 				out.add(new Finding(line, "exporting", Severity.INFO,
 						"The call passes only EXPORTING parameters; omit the keyword EXPORTING (Clean ABAP)."));
 			}
 			String slice = source.substring(st.start(), st.end());
-			if (slice.matches("(?s).*\\S[ \\t]+\\.")) {
+			if (SPACE_BEFORE_DOT.matcher(slice).find()) {
 				spaceBeforeDot.add(line);
 			}
-			if (slice.matches("(?s).*\\n[ \\t]*\\r?\\n.*")) {
+			if (slice.indexOf('\n') >= 0 && EMPTY_LINE.matcher(slice).find()) {
 				emptyLines.add(line);
 			}
 			if (i + 1 < statements.size() && sameLine(source, st, statements.get(i + 1))) {
@@ -306,7 +316,15 @@ final class AbaplintRules {
 
 	/** Whether {@code next} starts on the line where {@code st} ends, with only blanks between them. */
 	static boolean sameLine(String source, Statement st, Statement next) {
-		return source.substring(st.end(), next.start()).matches("[ \\t]+") && st.end() < next.start();
+		if (st.end() >= next.start()) {
+			return false;
+		}
+		for (int i = st.end(); i < next.start(); i++) {
+			if (source.charAt(i) != ' ' && source.charAt(i) != '\t') {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -314,12 +332,10 @@ final class AbaplintRules {
 	 * no other parameter kind; -1 if there is none.
 	 */
 	static int omittableExporting(String code) {
-		Matcher m = Pattern.compile("\\(\\s+EXPORTING\\b", Pattern.CASE_INSENSITIVE).matcher(code);
+		Matcher m = PAREN_EXPORTING.matcher(code);
 		while (m.find()) {
 			int close = closingParenthesis(code, m.start());
-			String inner = (close < 0 ? code.substring(m.start()) : code.substring(m.start(), close))
-					.toUpperCase(Locale.ROOT);
-			if (close >= 0 && !inner.matches("(?s).*\\b(?:IMPORTING|CHANGING|RECEIVING|EXCEPTIONS)\\b.*")) {
+			if (close >= 0 && !OTHER_KINDS.matcher(code.substring(m.start(), close)).find()) {
 				return m.end() - "EXPORTING".length();
 			}
 		}
@@ -349,11 +365,11 @@ final class AbaplintRules {
 		Deque<LoopScope> loops = new ArrayDeque<>();
 		for (int i = 0; i < codes.size(); i++) {
 			String code = codes.get(i);
-			String[] w = code.split("\\s+");
+			String[] w = code.split(" ");
 			String first = w[0].replace(":", "");
 			String second = w.length > 1 ? w[1] : "";
 			int line = line(lineStarts, statements, i);
-			String next = i + 1 < codes.size() ? codes.get(i + 1).split("\\s+")[0] : "";
+			String next = i + 1 < codes.size() ? codes.get(i + 1).split(" ")[0] : "";
 
 			switch (first) {
 			case "CASE" -> cases.push(new boolean[1]);
@@ -417,7 +433,7 @@ final class AbaplintRules {
 			// CATCH … INTO x. RAISE EXCEPTION x. only passes the exception on
 			Matcher into = CATCH_INTO.matcher(code);
 			if (into.find() && i + 2 < codes.size() && codes.get(i + 1).equals("RAISE EXCEPTION " + into.group(1))
-					&& List.of("CATCH", "CLEANUP", "ENDTRY").contains(codes.get(i + 2).split("\\s+")[0])) {
+					&& List.of("CATCH", "CLEANUP", "ENDTRY").contains(codes.get(i + 2).split(" ")[0])) {
 				out.add(new Finding(line, "catch_and_raise", Severity.INFO, "CATCH only raises the exception again; "
 						+ "remove the CATCH (declare RAISING) or handle the exception."));
 			}
@@ -486,15 +502,15 @@ final class AbaplintRules {
 	/** Whether a comment stands between two statements. */
 	static boolean commentBetween(String source, Statement a, Statement b) {
 		String between = source.substring(a.end(), b.start());
-		return between.contains("\"") || between.matches("(?s).*\\n\\*.*");
+		return between.contains("\"") || between.contains("\n*");
 	}
 
 	/** The index of the statement that closes the block opened at {@code open} (IF … ENDIF, LOOP … ENDLOOP); -1. */
 	static int matchingEnd(List<String> codes, int open) {
-		String opener = codes.get(open).split("\\s+")[0];
+		String opener = codes.get(open).split(" ")[0];
 		int depth = 0;
 		for (int i = open; i < codes.size(); i++) {
-			String first = codes.get(i).split("\\s+")[0];
+			String first = codes.get(i).split(" ")[0];
 			if (first.equals(opener)) {
 				depth++;
 			} else if (first.equals("END" + opener) && --depth == 0) {
@@ -543,7 +559,7 @@ final class AbaplintRules {
 		List<ElseAfterExit> result = new ArrayList<>();
 		Deque<IfFrame> frames = new ArrayDeque<>();
 		for (int i = 0; i < codes.size(); i++) {
-			String[] w = codes.get(i).split("\\s+");
+			String[] w = codes.get(i).split(" ");
 			String first = w[0].replace(":", "");
 			IfFrame top = frames.peek();
 			if (first.equals("IF")) {

@@ -195,6 +195,10 @@ class AbapLintTest {
 				&& text.indexOf("obsolete_move") < text.indexOf("Hints (style")
 				&& text.indexOf("Hints (style") < text.indexOf("concatenate"), text);
 		assertTrue(AbapLint.format(AbapLint.check("CONCATENATE a b INTO c.")).startsWith("Hints (style"));
+		// the same hint on several lines is listed once
+		String repeated = AbapLint.format(AbapLint.check("CONCATENATE a b INTO c.\nx = 1.\nCONCATENATE d e INTO f."));
+		assertTrue(repeated.contains("Lines 1, 3 [info] concatenate: "), repeated);
+		assertEquals(1, repeated.split("concatenate", -1).length - 1, repeated);
 		assertTrue(hint("MOVE a TO b.").startsWith("1 of them"), hint("MOVE a TO b."));
 		assertEquals("", hint("x = 1."));
 		// splitting the second statement onto its own line is no finding of its own to count

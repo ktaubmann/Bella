@@ -112,7 +112,7 @@ MESSAGES = {
  "prefs.chatModel": "Model chatu:", "prefs.chatModel.tip": "Model pro chat a generování kódu",
  "prefs.completionModel": "Model doplňování:", "prefs.completionModel.tip": "Rychlý model pro doplňování v řádku",
  "prefs.effort": "Úsilí (effort):", "prefs.effort.default": "Výchozí modelu",
- "prefs.fallback": "Odmítnuté požadavky opakovat na záložním modelu (na straně serveru)", "prefs.longCache": "Uchovávat mezipaměť promptu hodinu místo pěti minut (každý zápis stojí víc)", "prefs.baseUrl": "Základní URL:",
+ "prefs.fallback": "Odmítnuté požadavky opakovat na záložním modelu (na straně serveru)", "prefs.longCache": "Uchovávat mezipaměť promptu hodinu místo pěti minut (každý zápis stojí víc; vyplatí se při dlouhých bězích nástrojů a pauzách mezi zprávami)", "prefs.baseUrl": "Základní URL:",
  "prefs.claude.link": "Klíč API vytvoříte na <a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a>. Klíče jsou v zabezpečeném úložišti Eclipse.",
  "prefs.openai": "Kompatibilní s OpenAI", "prefs.openai.baseUrl.tip": "např. https://api.openai.com/v1 nebo http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Obecné", "prefs.maxTokens": "Max. výstupních tokenů:", "prefs.lang.eclipse": "Jako Eclipse",

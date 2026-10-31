@@ -2,6 +2,8 @@ package de.kiliantaubmann.bella.core.agent;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Future;
 import java.util.function.Supplier;
 
 import com.google.gson.JsonArray;
@@ -167,9 +169,13 @@ public final class ChatSession implements Conversation {
 					break;
 				}
 				JsonArray results = new JsonArray();
+				// read-only calls that need no confirmation run side by side, the others one after the other
+				Map<String, Future<ToolResult>> started = executor.startUnattended(result.toolCalls(), cancel);
 				for (ToolCall call : result.toolCalls()) {
 					cancel.throwIfCancelled();
-					ToolResult r = runTool(call, listener, cancel);
+					Future<ToolResult> running = started.get(call.id());
+					ToolResult r = running != null ? executor.deliver(call, running, listener)
+							: runTool(call, listener, cancel);
 					JsonObject block = new JsonObject();
 					block.addProperty("type", "tool_result");
 					block.addProperty("tool_use_id", call.id());

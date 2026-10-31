@@ -29,4 +29,14 @@ class ModelCapsTest {
 		assertTrue(ModelCaps.contextEditing("claude-sonnet-4-5-20250929"));
 		assertFalse(ModelCaps.contextEditing("claude-sonnet-4-20250514"));
 	}
+
+	@Test
+	void haiku55TakesEffortAndSonnet55TheFallback() {
+		assertTrue(ModelCaps.effort("claude-haiku-5-5"));
+		assertTrue(ModelCaps.adaptiveThinking("claude-haiku-5-5"));
+		assertFalse(ModelCaps.effort("claude-haiku-4-5"));
+		assertTrue(ModelCaps.refusalFallback("claude-sonnet-5-5"));
+		assertFalse(ModelCaps.refusalFallback("claude-sonnet-5"));
+		assertTrue(ModelCaps.refusalFallback("claude-opus-5-5"));
+	}
 }

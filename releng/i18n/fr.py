@@ -113,7 +113,7 @@ MESSAGES = {
  "prefs.chatModel": "Modèle de chat :", "prefs.chatModel.tip": "Modèle pour le chat et la génération de code",
  "prefs.completionModel": "Modèle de complétion :", "prefs.completionModel.tip": "Modèle rapide pour la complétion en ligne",
  "prefs.effort": "Effort :", "prefs.effort.default": "Par défaut du modèle",
- "prefs.fallback": "Relancer les requêtes refusées sur un modèle de repli (côté serveur)", "prefs.longCache": "Garder le cache du prompt une heure au lieu de cinq minutes (chaque écriture coûte plus)", "prefs.baseUrl": "URL de base :",
+ "prefs.fallback": "Relancer les requêtes refusées sur un modèle de repli (côté serveur)", "prefs.longCache": "Garder le cache du prompt une heure au lieu de cinq minutes (chaque écriture coûte plus ; utile pour les longues exécutions d’outils et les pauses entre les messages)", "prefs.baseUrl": "URL de base :",
  "prefs.claude.link": "Créez une clé API sur <a href=\"https://console.anthropic.com/settings/keys\">console.anthropic.com</a>. Les clés sont conservées dans le stockage sécurisé d’Eclipse.",
  "prefs.openai": "Compatible OpenAI", "prefs.openai.baseUrl.tip": "p. ex. https://api.openai.com/v1 ou http://localhost:11434/v1 (Ollama)",
  "prefs.general": "Général", "prefs.maxTokens": "Jetons de sortie max. :", "prefs.lang.eclipse": "Comme Eclipse",

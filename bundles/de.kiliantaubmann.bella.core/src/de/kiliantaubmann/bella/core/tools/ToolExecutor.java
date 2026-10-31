@@ -1,6 +1,13 @@
 package de.kiliantaubmann.bella.core.tools;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Supplier;
 
 import com.google.gson.JsonObject;
@@ -60,6 +67,61 @@ public final class ToolExecutor {
 
 	public ToolRegistry registry() {
 		return tools;
+	}
+
+	/** At most this many tools of one turn run side by side; SAP serves one user's sessions in parallel. */
+	static final int MAX_PARALLEL = 4;
+	private static final ExecutorService PARALLEL = Executors.newVirtualThreadPerTaskExecutor();
+
+	/**
+	 * Starts the read-only calls of a turn that run without asking, so they run side by side; empty if fewer
+	 * than two would. Each one's result is handed to the observer by {@link #deliver}, in the order of the
+	 * calls, as if they had run one after the other.
+	 */
+	public Map<String, Future<ToolResult>> startUnattended(List<ToolCall> calls, CancelToken cancel) {
+		List<ToolCall> unattended = calls.stream().filter(this::runsUnattended).limit(MAX_PARALLEL).toList();
+		Map<String, Future<ToolResult>> started = new LinkedHashMap<>();
+		if (unattended.size() < 2) {
+			return started;
+		}
+		for (ToolCall call : unattended) {
+			started.put(call.id(), PARALLEL.submit(() -> run(call, Observer.NONE, cancel)));
+		}
+		return started;
+	}
+
+	/** Reports a call started by {@link #startUnattended} to the observer and waits for its result. */
+	public ToolResult deliver(ToolCall call, Future<ToolResult> running, Observer observer) {
+		ToolSpec tool = tools.find(call.name()).orElseThrow();
+		observer.onToolCall(tool, call);
+		ToolResult result;
+		try {
+			result = running.get();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			running.cancel(true);
+			result = ToolResult.error("Interrupted.");
+		} catch (ExecutionException e) {
+			Throwable cause = e.getCause() == null ? e : e.getCause();
+			result = ToolResult.error(cause.getMessage() == null ? cause.toString() : cause.getMessage());
+		}
+		observer.onToolResult(tool, call, result);
+		return result;
+	}
+
+	/** Read-only, valid input and allowed without asking; never questions to the developer or the debugger. */
+	boolean runsUnattended(ToolCall call) {
+		if (tools == null || !call.inputValid()) {
+			return false;
+		}
+		Optional<ToolSpec> spec = tools.find(call.name());
+		if (spec.isEmpty()) {
+			return false;
+		}
+		ToolSpec tool = spec.get();
+		return tool.kind() == ToolSpec.Kind.READ && !ToolRegistry.ASK_PROVIDER_ID.equals(tool.providerId())
+				&& !ToolRegistry.DEBUG_PROVIDER_ID.equals(tool.providerId())
+				&& policy.get().decide(tool, call.input()) == ToolPolicy.Decision.AUTO;
 	}
 
 	public ToolResult run(ToolCall call, Observer observer, CancelToken cancel) {

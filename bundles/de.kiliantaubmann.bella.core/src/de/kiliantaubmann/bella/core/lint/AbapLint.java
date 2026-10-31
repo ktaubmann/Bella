@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -90,6 +91,10 @@ public final class AbapLint {
 	private static final Pattern BARE_TEXT_LITERAL = Pattern.compile(
 			"(?:'(?:[^']|'')*\\p{L}(?:[^']|'')*'|`(?:[^`]|``)*\\p{L}(?:[^`]|``)*`)(?!\\s*\\(\\w{1,3}\\))");
 
+	private static final Pattern BOOLEAN_X = Pattern.compile("(?:=|<>|\\bEQ|\\bNE)\\s*'X'(?:\\s|\\.|\\)|$)");
+	private static final Pattern BOOLEAN_SPACE = Pattern.compile("(?:=|<>|\\bEQ|\\bNE)\\s*SPACE(?:\\s|\\.|\\)|$)");
+	private static final Pattern CONDITION = Pattern.compile("\\b(?:IF|ELSEIF|CHECK|WHILE)\\b");
+
 	private static final Pattern MESSAGE_TYPE = Pattern.compile("(?i)\\b(?:TYPE|LIKE)\\s+'[A-Z]'");
 
 	private AbapLint() {
@@ -138,6 +143,15 @@ public final class AbapLint {
 		if (CdsLint.isCds(source)) {
 			return CdsLint.check(source, target);
 		}
+		NORMALIZED.set(new IdentityHashMap<>());
+		try {
+			return checkAbap(source, naming, target, out);
+		} finally {
+			NORMALIZED.remove();
+		}
+	}
+
+	private static List<Finding> checkAbap(String source, NamingRules naming, Target target, List<Finding> out) {
 		int[] lineStarts = lineStarts(source);
 		List<Statement> statements = AbapStructureScanner.statements(source);
 		List<String> codes = statements.stream().map(AbapLint::normalized).toList();
@@ -152,7 +166,7 @@ public final class AbapLint {
 			Statement st = statements.get(i);
 			String raw = st.text().trim().toUpperCase(Locale.ROOT);
 			String code = normalized(st);
-			List<String> w = List.of(code.split("\\s+"));
+			List<String> w = List.of(code.split(" "));
 			String first = w.get(0).replace(":", "");
 			String second = w.size() > 1 ? w.get(1) : "";
 			int line = lineOf(lineStarts, st.start());
@@ -247,9 +261,7 @@ public final class AbapLint {
 			}
 
 			// ---- Clean ABAP
-			if (raw.matches("(?s).*(?:=|<>|\\bEQ|\\bNE)\\s*'X'(?:\\s|\\.|\\)|$).*")
-					|| raw.matches("(?s).*(?:=|<>|\\bEQ|\\bNE)\\s*SPACE(?:\\s|\\.|\\)|$).*")
-					&& raw.matches("(?s).*\\b(?:IF|ELSEIF|CHECK|WHILE)\\b.*")) {
+			if (BOOLEAN_X.matcher(raw).find() || BOOLEAN_SPACE.matcher(raw).find() && CONDITION.matcher(raw).find()) {
 				out.add(new Finding(line, "boolean_literal", Severity.INFO,
 						"Use abap_true / abap_false (and xsdbool( )) instead of 'X' and space for booleans (Clean ABAP)."));
 			}
@@ -439,7 +451,7 @@ public final class AbapLint {
 		for (int i = 0; i < statements.size(); i++) {
 			Statement st = statements.get(i);
 			String code = normalized(st);
-			String[] w = code.split("\\s+");
+			String[] w = code.split(" ");
 			String first = w[0].replace(":", "");
 			String second = w.length > 1 ? w[1] : "";
 			int line = lineOf(lineStarts, st.start());
@@ -581,7 +593,7 @@ public final class AbapLint {
 			List<Finding> out) {
 		Statement header = statements.get(start);
 		int line = lineOf(lineStarts, header.start());
-		String name = normalized(header).split("\\s+").length > 1 ? normalized(header).split("\\s+")[1] : "";
+		String name = normalized(header).split(" ").length > 1 ? normalized(header).split(" ")[1] : "";
 		int count = end - start - 1;
 		if (!testClass && count > MAX_METHOD_STATEMENTS) {
 			out.add(new Finding(line, "method_length", Severity.INFO, name.toLowerCase(Locale.ROOT) + " has " + count
@@ -590,7 +602,7 @@ public final class AbapLint {
 		int complexity = 1;
 		for (int j = start + 1; j < end; j++) {
 			String code = normalized(statements.get(j));
-			String first = code.split("\\s+")[0];
+			String first = code.split(" ")[0];
 			if (List.of("IF", "ELSEIF", "LOOP", "DO", "WHILE", "CATCH", "CHECK").contains(first)
 					|| first.equals("WHEN") && !code.startsWith("WHEN OTHERS")) {
 				complexity++;
@@ -618,7 +630,7 @@ public final class AbapLint {
 		int structDepth = 0;
 		for (int j = start + 1; j < end; j++) {
 			String code = normalized(statements.get(j));
-			String first = code.split("\\s+")[0].replace(":", "");
+			String first = code.split(" ")[0].replace(":", "");
 			if (!first.equals("TYPES")) {
 				continue;
 			}
@@ -677,7 +689,7 @@ public final class AbapLint {
 		int structDepth = 0;
 		for (int j = start + 1; j < end; j++) {
 			String code = normalized(statements.get(j));
-			String first = code.split("\\s+")[0].replace(":", "");
+			String first = code.split(" ")[0].replace(":", "");
 			if (!first.equals("DATA") && !first.equals("FIELD-SYMBOLS")) {
 				continue;
 			}
@@ -846,8 +858,19 @@ public final class AbapLint {
 		return (int) (LOGICAL_OPERATOR.matcher(code).results().count() - BETWEEN.matcher(code).results().count());
 	}
 
+	/**
+	 * The normalized text of each statement of the source {@link #check} works on: the rules ask for it many
+	 * times per statement. Null outside a check.
+	 */
+	private static final ThreadLocal<Map<Statement, String>> NORMALIZED = new ThreadLocal<>();
+
 	/** Statement text upper-cased, literals blanked, without the final period. */
 	static String normalized(Statement st) {
+		Map<Statement, String> known = NORMALIZED.get();
+		return known == null ? normalize(st) : known.computeIfAbsent(st, AbapLint::normalize);
+	}
+
+	private static String normalize(Statement st) {
 		String code = LITERAL.matcher(st.text()).replaceAll("''").trim().toUpperCase(Locale.ROOT);
 		return code.endsWith(".") ? code.substring(0, code.length() - 1).trim() : code;
 	}
@@ -1074,7 +1097,7 @@ public final class AbapLint {
 		String methodName = null;
 		for (int i = 0; i < codes.size(); i++) {
 			String code = codes.get(i);
-			String[] w = code.split("\\s+");
+			String[] w = code.split(" ");
 			String first = w[0].replace(":", "");
 			String second = w.length > 1 ? w[1] : "";
 			if (first.equals("CLASS") && code.contains(" DEFINITION")) {
@@ -1263,10 +1286,27 @@ public final class AbapLint {
 			sb.append(problems.isEmpty() ? "" : "\n")
 					.append("Hints (style; apply them where they make the code clearer, do not rework working code "
 							+ "just for them):\n");
-			hints.forEach(f -> sb.append(f.format()).append('\n'));
+			// one line per hint text: the same hint on many lines is read once
+			Map<String, List<Finding>> same = new LinkedHashMap<>();
+			hints.forEach(f -> same.computeIfAbsent(f.rule() + "\0" + f.message(), k -> new ArrayList<>()).add(f));
+			for (List<Finding> group : same.values()) {
+				Finding f = group.get(0);
+				if (group.size() == 1) {
+					sb.append(f.format()).append('\n');
+					continue;
+				}
+				List<String> lines = group.stream().limit(MAX_LISTED_LINES).map(g -> String.valueOf(g.line())).toList();
+				sb.append("Lines ").append(String.join(", ", lines))
+						.append(group.size() > MAX_LISTED_LINES ? " and " + (group.size() - MAX_LISTED_LINES) + " more" : "")
+						.append(" [").append(f.severity().label()).append("] ").append(f.rule()).append(": ")
+						.append(f.message()).append('\n');
+			}
 		}
 		return sb.toString();
 	}
+
+	/** Lines listed for a hint that occurs more often. */
+	private static final int MAX_LISTED_LINES = 20;
 
 	/**
 	 * A note for the model when {@link AbapLintFix} can fix some of {@code findings} of {@code source}; empty

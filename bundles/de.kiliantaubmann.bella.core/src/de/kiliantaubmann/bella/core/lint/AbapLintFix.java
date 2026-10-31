@@ -37,6 +37,12 @@ public final class AbapLintFix {
 			"empty_line_in_statement", "whitespace_end");
 
 	private static final int FLAGS = Pattern.CASE_INSENSITIVE | Pattern.DOTALL;
+	/** Changes inside a statement, in the order they apply. */
+	private static final List<String> IN_STATEMENT = List.of("prefer_is_not", "exporting", "space_before_dot",
+			"empty_line_in_statement");
+	private static final Pattern SPACE_BEFORE_DOT = Pattern.compile("(\\S)[ \\t]+\\.$");
+	private static final Pattern EMPTY_LINE = Pattern.compile("\\r?\\n[ \\t]*(?=\\r?\\n)");
+	private static final Pattern LINE_NUMBER = Pattern.compile("^Line (\\d+)");
 	private static final Pattern MOVE = Pattern.compile("MOVE\\s+(?!EXACT\\b)(\\S+)\\s+(\\??TO)\\s+(\\S+)\\.", FLAGS);
 	private static final Pattern COMPUTE = Pattern.compile("COMPUTE\\s+(?!EXACT\\b)(.+)", FLAGS);
 	private static final Pattern ADD = Pattern.compile("ADD\\s+(\\S+)\\s+TO\\s+(\\S+)\\.", FLAGS);
@@ -177,10 +183,12 @@ public final class AbapLintFix {
 				text = f.text();
 				applied.add("Line " + line + " " + f.rule());
 			}
-			for (String rule : List.of("prefer_is_not", "exporting", "space_before_dot", "empty_line_in_statement")) {
-				String changed = inStatement(rule, text, mask(text));
+			String textMask = f == null ? sliceMask : mask(text);
+			for (String rule : IN_STATEMENT) {
+				String changed = inStatement(rule, text, textMask);
 				if (!changed.equals(text)) {
 					text = changed;
+					textMask = mask(text);
 					applied.add("Line " + line + " " + rule);
 				}
 			}
@@ -199,12 +207,16 @@ public final class AbapLintFix {
 
 	private static boolean hasComment(String mask, int from, int to) {
 		String part = mask.substring(from, to);
-		return part.indexOf('"') >= 0 || part.matches("(?s)(?:.*\\n)?\\*.*");
+		return part.indexOf('"') >= 0 || part.startsWith("*") || part.contains("\n*");
 	}
 
 	/** One statement in its modern form, or null. Patterns run on the mask, the result is built from the text. */
 	private static Fix fixStatement(String s, String m, Target t, Set<String> plainTables) {
-		String first = m.split("\\s+", 2)[0].toUpperCase(Locale.ROOT);
+		int blank = 0;
+		while (blank < m.length() && !Character.isWhitespace(m.charAt(blank))) {
+			blank++;
+		}
+		String first = m.substring(0, blank).toUpperCase(Locale.ROOT);
 		boolean compoundAssignment = t.cloud() || t.release() >= 754;
 		return switch (first) {
 		case "MOVE" -> match(MOVE, s, m, g -> new Fix("obsolete_move",
@@ -337,10 +349,10 @@ public final class AbapLintFix {
 			return result;
 		}
 		case "space_before_dot" -> {
-			return text.replaceFirst("(?s)(\\S)[ \\t]+\\.$", "$1.");
+			return SPACE_BEFORE_DOT.matcher(text).replaceFirst("$1.");
 		}
 		case "empty_line_in_statement" -> {
-			return text.replaceAll("\\r?\\n[ \\t]*(?=\\r?\\n)", "");
+			return text.indexOf('\n') < 0 ? text : EMPTY_LINE.matcher(text).replaceAll("");
 		}
 		default -> {
 			return text;
@@ -407,7 +419,7 @@ public final class AbapLintFix {
 	}
 
 	private static int lineNumber(String entry) {
-		Matcher m = Pattern.compile("^Line (\\d+)").matcher(entry);
+		Matcher m = LINE_NUMBER.matcher(entry);
 		return m.find() ? Integer.parseInt(m.group(1)) : 0;
 	}
 

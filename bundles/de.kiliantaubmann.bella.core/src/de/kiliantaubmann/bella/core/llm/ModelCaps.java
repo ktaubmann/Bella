@@ -7,10 +7,15 @@ public final class ModelCaps {
 
 	/** Families that take {@code thinking: {type: "adaptive"}} and {@code output_config.effort}. */
 	private static final List<String> ADAPTIVE = List.of("claude-opus-5", "claude-opus-4-8", "claude-opus-4-7",
-			"claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6", "claude-fable-5", "claude-mythos-5");
+			"claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6", "claude-fable-5", "claude-mythos-5",
+			"claude-haiku-5");
 
-	/** Families that accept server-side refusal fallbacks ({@code fallbacks: "default"}). */
-	private static final List<String> FALLBACK = List.of("claude-opus-5", "claude-fable-5", "claude-mythos-5");
+	/**
+	 * Families that accept server-side refusal fallbacks ({@code fallbacks: "default"}); of the Sonnet models
+	 * only Claude Sonnet 5.5.
+	 */
+	private static final List<String> FALLBACK = List.of("claude-opus-5", "claude-fable-5", "claude-mythos-5",
+			"claude-sonnet-5-5");
 
 	/** Families with the tool search tool; Claude Haiku 4.5 has none, Claude Haiku 5.5 has it. */
 	private static final List<String> TOOL_SEARCH = List.of("claude-fable-5", "claude-mythos-5", "claude-opus-5",
