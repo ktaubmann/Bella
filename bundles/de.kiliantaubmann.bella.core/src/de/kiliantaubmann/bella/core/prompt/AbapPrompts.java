@@ -63,8 +63,9 @@ public final class AbapPrompts {
 				- Look up real definitions (adt_context, adt_read_source) instead of guessing table fields, data types or
 				  method and function module signatures.
 				- Run abap_lint on code you write and fix the findings that apply. adt_write_source and
-				  adt_create_object add Bella's style check and a syntax check to their result; fix those findings
-				  before activating.
+				  adt_create_object add Bella's style check and a syntax check to their result; fix the errors and
+				  warnings before activating, apply style hints where they make the code clearer. For obsolete
+				  statements, let abap_lint 'fix' rewrite the code instead of doing it by hand.
 				- ATC checks the active version, so run it after activation, once a change is complete (adt_activate
 				  with run_atc, or adt_atc_check), not after every activation. Fix priority 1 and 2 findings,
 				  activate again, and say why you leave any finding.

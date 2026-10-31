@@ -3067,7 +3067,8 @@ public final class AdtToolProvider implements ToolProvider {
 		if (!lint.isEmpty()) {
 			sb.append("\n\nBella's style check of the code written")
 					.append(methodBody ? " (line numbers count within the method body)" : "")
-					.append("; fix the findings that apply before activating:\n").append(AbapLint.format(lint));
+					.append("; fix the findings that apply before activating:\n").append(AbapLint.format(lint))
+					.append(AbapLint.fixHint(written, target));
 		}
 		try {
 			// the check before writing ran on exactly the saved source; no need to ask SAP again

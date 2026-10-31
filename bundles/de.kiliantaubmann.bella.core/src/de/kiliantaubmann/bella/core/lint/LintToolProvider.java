@@ -55,6 +55,12 @@ public final class LintToolProvider implements ToolProvider {
 		cloud.addProperty("description", "true for ABAP Cloud: classic statements, lists, dynpros and non-strict SQL "
 				+ "become errors.");
 		props.add("cloud", cloud);
+		JsonObject fix = new JsonObject();
+		fix.addProperty("type", "boolean");
+		fix.addProperty("description", "true to also return the code with the mechanical fixes applied (MOVE, COMPUTE, "
+				+ "ADD …, REFRESH, CALL METHOD, CREATE OBJECT, DESCRIBE TABLE … LINES, trailing spaces); write it back "
+				+ "yourself.");
+		props.add("fix", fix);
 		JsonObject schema = new JsonObject();
 		schema.addProperty("type", "object");
 		schema.add("properties", props);
@@ -73,8 +79,9 @@ public final class LintToolProvider implements ToolProvider {
 						+ "private methods and local types, empty CATCH of a cast, commented-out code, the "
 						+ "project's naming rules and modern forms (xsdbool, line_exists, CORRESPONDING, "
 						+ "RAISE EXCEPTION NEW). With 'release' or 'cloud' also syntax the target system does not have. "
-						+ "CDS data definitions get CDS rules (obsolete DDIC-based views, association names). Run it on code "
-						+ "you write and fix the findings that apply.",
+						+ "CDS data definitions get CDS rules (obsolete DDIC-based views, association names). Errors and "
+						+ "warnings come first, style hints after them. Run it on code you write and fix the findings that "
+						+ "apply; with 'fix' Bella applies the mechanical fixes itself.",
 				schema, null, ToolSpec.Kind.READ));
 	}
 
@@ -87,8 +94,21 @@ public final class LintToolProvider implements ToolProvider {
 		if (source == null || source.isBlank()) {
 			return ToolResult.error("No source given.");
 		}
-		boolean cloud = input.has("cloud") && input.get("cloud").isJsonPrimitive() && input.get("cloud").getAsBoolean();
-		return ToolResult.ok(AbapLint.format(AbapLint.check(source, naming.get(),
-				AbapLint.Target.of(Json.str(input, "release"), cloud))));
+		AbapLint.Target target = AbapLint.Target.of(Json.str(input, "release"), flag(input, "cloud"));
+		if (!flag(input, "fix")) {
+			return ToolResult.ok(AbapLint.format(AbapLint.check(source, naming.get(), target)));
+		}
+		AbapLintFix.Result fixed = AbapLintFix.fix(source, target);
+		if (fixed.applied().isEmpty()) {
+			return ToolResult.ok("Nothing to fix mechanically.\n\n" + AbapLint.format(AbapLint.check(source, naming.get(),
+					target)));
+		}
+		return ToolResult.ok("Fixed " + fixed.applied().size() + " findings (not saved; write the code back yourself):\n"
+				+ String.join("\n", fixed.applied()) + "\n\n```abap\n" + fixed.source() + "\n```\n\nRemaining findings:\n"
+				+ AbapLint.format(AbapLint.check(fixed.source(), naming.get(), target)));
+	}
+
+	private static boolean flag(JsonObject input, String name) {
+		return input.has(name) && input.get(name).isJsonPrimitive() && input.get(name).getAsBoolean();
 	}
 }

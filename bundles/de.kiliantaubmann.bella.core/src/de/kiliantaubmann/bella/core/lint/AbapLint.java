@@ -1242,15 +1242,37 @@ public final class AbapLint {
 		return lo + 1;
 	}
 
-	/** Findings as text for the model or the user; {@code "No findings."} when clean. */
+	/**
+	 * Findings as text for the model or the user, errors and warnings first, then the style hints;
+	 * {@code "No findings."} when clean.
+	 */
 	public static String format(List<Finding> findings) {
 		if (findings.isEmpty()) {
 			return "No findings.";
 		}
+		List<Finding> problems = findings.stream().filter(f -> f.severity() != Severity.INFO).toList();
+		List<Finding> hints = findings.stream().filter(f -> f.severity() == Severity.INFO).toList();
 		StringBuilder sb = new StringBuilder();
-		for (Finding f : findings) {
-			sb.append(f.format()).append('\n');
+		if (!problems.isEmpty()) {
+			sb.append("Errors and warnings (fix them):\n");
+			problems.forEach(f -> sb.append(f.format()).append('\n'));
+		}
+		if (!hints.isEmpty()) {
+			sb.append(problems.isEmpty() ? "" : "\n")
+					.append("Hints (style; apply them where they make the code clearer, do not rework working code "
+							+ "just for them):\n");
+			hints.forEach(f -> sb.append(f.format()).append('\n'));
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * A note for the model when {@link AbapLintFix} can fix some of the findings in {@code source};
+	 * empty otherwise.
+	 */
+	public static String fixHint(String source, Target target) {
+		int fixable = AbapLintFix.fix(source, target).applied().size();
+		return fixable == 0 ? ""
+				: fixable + " of them can be fixed mechanically: abap_lint with 'fix' true returns the corrected code.\n";
 	}
 }

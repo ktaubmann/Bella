@@ -125,6 +125,75 @@ class AbapLintTest {
 		assertEquals(4, AbapLint.importingCount("METHODS M IMPORTING A TYPE I B TYPE I C TYPE STRING D TYPE REF TO ZCL_X"));
 	}
 
+	private static String fixed(String source, AbapLint.Target target) {
+		return AbapLintFix.fix(source, target).source();
+	}
+
+	@Test
+	void mechanicalFixes() {
+		AbapLint.Target unknown = AbapLint.Target.UNKNOWN;
+		AbapLint.Target r758 = AbapLint.Target.of("758", false);
+		assertEquals("b = a.", fixed("MOVE a TO b.", unknown));
+		assertEquals("lo_y ?= lo_x.", fixed("MOVE lo_x ?TO lo_y.", unknown));
+		assertEquals("x = a + b.", fixed("COMPUTE x = a + b.", unknown));
+		assertEquals("b = b + a.", fixed("ADD a TO b.", unknown));
+		assertEquals("b += a.", fixed("ADD a TO b.", r758));
+		assertEquals("b -= a.", fixed("SUBTRACT a FROM b.", r758));
+		assertEquals("b *= 2.", fixed("MULTIPLY b BY 2.", r758));
+		assertEquals("b = b / 2.", fixed("DIVIDE b BY 2.", AbapLint.Target.of("750", false)));
+		assertEquals("CLEAR lt_rows.", fixed("REFRESH lt_rows.", unknown));
+		assertEquals("lv_count = lines( lt_rows ).", fixed("DESCRIBE TABLE lt_rows LINES lv_count.", unknown));
+		assertEquals("lo_app->run( ).", fixed("CALL METHOD lo_app->run.", unknown));
+		assertEquals("lo_app->run(\n    EXPORTING iv_a = 1 ).",
+				fixed("CALL METHOD lo_app->run\n    EXPORTING iv_a = 1.", unknown));
+		assertEquals("lo_app = NEW #( ).", fixed("CREATE OBJECT lo_app.", unknown));
+		assertEquals("lo_app = NEW zcl_app( iv_a = 1 ).", fixed("CREATE OBJECT lo_app TYPE zcl_app EXPORTING iv_a = 1.",
+				unknown));
+		// indentation and the code around a fixed statement stay as they are
+		assertEquals("METHOD m.\n  b = a.\n  x = 1.\nENDMETHOD.", fixed("METHOD m.\n  MOVE a TO b.  \n  x = 1.\nENDMETHOD.",
+				unknown));
+	}
+
+	@Test
+	void mechanicalFixesLeaveUnclearCasesAlone() {
+		AbapLint.Target unknown = AbapLint.Target.UNKNOWN;
+		for (String keep : List.of("MOVE: a TO b, c TO d.", "MOVE 'X' TO b.", "MOVE EXACT a TO b.",
+				"COMPUTE EXACT x = a + b.", "CALL METHOD (lv_name).", "CALL METHOD lo->(lv_name).",
+				"CALL METHOD lo->get RECEIVING rv_x = lv_x.", "CALL METHOD OF lo_ole 'Open'.",
+				"CREATE OBJECT lo TYPE (lv_class).", "CREATE OBJECT lo EXCEPTIONS failed = 1.",
+				"MOVE a \" comment\n TO b.", "ADD 1 THEN a UNTIL b GIVING c.")) {
+			assertEquals(keep, fixed(keep, unknown), keep);
+		}
+		// with header lines REFRESH and CLEAR differ
+		String headerLine = "DATA lt_rows TYPE TABLE OF i WITH HEADER LINE.\nREFRESH lt_rows.";
+		assertEquals(headerLine, fixed(headerLine, unknown));
+		assertEquals("CREATE OBJECT lo.", fixed("CREATE OBJECT lo.", AbapLint.Target.of("702", false)));
+		assertEquals(List.of(), AbapLintFix.fix("x = 1.", unknown).applied());
+	}
+
+	@Test
+	void findingsAreGroupedBySeverity() {
+		String text = AbapLint.format(AbapLint.check("CONCATENATE a b INTO c.\nMOVE a TO b.\nBREAK-POINT."));
+		assertTrue(text.startsWith("Errors and warnings"), text);
+		assertTrue(text.indexOf("break_point") < text.indexOf("Hints (style")
+				&& text.indexOf("obsolete_move") < text.indexOf("Hints (style")
+				&& text.indexOf("Hints (style") < text.indexOf("concatenate"), text);
+		assertTrue(AbapLint.format(AbapLint.check("CONCATENATE a b INTO c.")).startsWith("Hints (style"));
+		assertTrue(AbapLint.fixHint("MOVE a TO b.", AbapLint.Target.UNKNOWN).startsWith("1 of them"));
+		assertEquals("", AbapLint.fixHint("x = 1.", AbapLint.Target.UNKNOWN));
+	}
+
+	@Test
+	void toolAppliesFixes() {
+		LintToolProvider p = new LintToolProvider();
+		ToolResult r = p.call("abap_lint", Json.parseObject("{\"source\":\"MOVE a TO b.\",\"fix\":true}"),
+				CancelToken.NONE);
+		assertTrue(r.content().contains("Line 1 obsolete_move") && r.content().contains("b = a."), r.content());
+		assertTrue(r.content().contains("Remaining findings:\nNo findings."), r.content());
+		assertTrue(p.call("abap_lint", Json.parseObject("{\"source\":\"x = 1.\",\"fix\":true}"), CancelToken.NONE)
+				.content().startsWith("Nothing to fix"));
+	}
+
 	@Test
 	void complexCondition() {
 		assertEquals(List.of("complex_condition"), rules("IF a = 1 AND b = 2 OR c = 3 AND d = 4.\nENDIF."));
