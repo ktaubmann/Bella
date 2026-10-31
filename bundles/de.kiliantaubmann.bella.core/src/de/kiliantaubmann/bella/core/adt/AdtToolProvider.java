@@ -174,7 +174,8 @@ public final class AdtToolProvider implements ToolProvider {
 	 */
 	static final List<String> DEFERRED = List.of("adt_git", "adt_git_write", "adt_ui5", "adt_trace_control",
 			"adt_http_send", "adt_format_settings", "adt_transport_manage", "adt_transport_review",
-			"adt_package_manage", "adt_rap", "adt_quickfix", "adt_text_elements", "adt_write_text_elements");
+			"adt_package_manage", "adt_rap", "adt_quickfix", "adt_text_elements", "adt_write_text_elements",
+			"adt_flp_manage");
 
 	private static final String CREATE_TYPE_DESC = "CLAS, INTF, PROG, INCL, FUGR (function group), FUNC (function "
 			+ "module, needs 'group'), MSAG (message class), DTEL, DOMA, TTYP, TABL/DT (table), TABL/DS (structure), "
@@ -272,6 +273,27 @@ public final class AdtToolProvider implements ToolProvider {
 			"Instead of 'name': run over the objects of this package.", "include_subpackages", "boolean",
 			"With 'package': also the objects of its subpackages (default false)." };
 
+	private static JsonObject tableSchema() {
+		JsonObject sc = schema(new String[0], "action", "string", "rows (default), long_text or application_log.",
+				"table", "string", "Table or CDS view, e.g. MARA or T000.", "columns", "string",
+				"Comma separated columns, default all, e.g. matnr, mtart.", "where", "string",
+				"ABAP SQL condition without WHERE, e.g. mtart = 'FERT' AND ersda >= '20240101'.", "sql",
+				"string", "Instead of table/columns/where: a complete ABAP SQL SELECT statement.", "max_rows",
+				"integer", "Default 100, at most " + TABLE_MAX_ROWS + ".", "mode", "string",
+				"long_text: discover, read or search.", "object", "string",
+				"long_text discover: text object, e.g. TEXT (SO10) or VBBK; never guess it.", "name_prefix", "string",
+				"long_text discover: start of the text name; blanks count.", "id", "string",
+				"long_text discover: text ID, e.g. ST.", "language", "string",
+				"long_text discover: one-character SAP language key, e.g. E or D.", "phrase", "string",
+				"long_text search: text to find.", "log_number", "string",
+				"application_log: the 20-digit log number.", "offset", "integer",
+				"application_log: first message (default 0).", "system", "string", SYSTEM_DESC);
+		sc.getAsJsonObject("properties").add("keys", arrayOf("long_text read and search: exact keys from discover, "
+				+ "as {object, name, id, language}.", "object", "string", "name", "string", "id", "string", "language",
+				"string"));
+		return sc;
+	}
+
 	private static String[] withPackage(String... extra) {
 		List<String> p = new ArrayList<>(List.of(PACKAGE_PROPS));
 		p.addAll(List.of(extra));
@@ -313,10 +335,13 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "of customer objects; to see what a package holds, give 'package'. A cut list says so. "
 						+ "With 'search_in' 'source' it searches the text of ABAP sources instead "
 						+ "(e.g. a literal, a field or a statement) and returns the objects with their matching lines; "
-						+ "narrow it with 'package' and 'type'.",
+						+ "narrow it with 'package' and 'type'. With 'search_in' 'tadir' it looks up exact names (comma "
+						+ "separated in 'query') both through ADT and in the object directory TADIR, and names objects "
+						+ "only one of them knows (e.g. a TADIR entry left by an aborted create).",
 				schema(new String[] { "query" }, "query", "string",
-						"Name pattern with * as wildcard, or with search_in 'source' the text to find.", "search_in",
-						"string", "names (default) or source.", "type", "string",
+						"Name pattern with * as wildcard, with search_in 'source' the text to find, with 'tadir' "
+								+ "exact names separated by commas.", "search_in",
+						"string", "names (default), source or tadir.", "type", "string",
 						"Optional object type filter, e.g. CLAS.", "package", "string",
 						"Only objects of this package.", "max_results", "integer",
 						"Default 50 (objects).", "system", "string", SYSTEM_DESC),
@@ -366,15 +391,24 @@ public final class AdtToolProvider implements ToolProvider {
 		t.add(ToolSpec.of("adt_run_unit_tests",
 				"Run the ABAP Unit tests of an object ('name') or of all classes, programs and function groups of a "
 						+ "package ('package', with 'include_subpackages' also its subpackages) and report failures. "
-						+ "A package run can take minutes; use it to check a whole development, not after every change.",
-				schema(new String[0], objectProps(PACKAGE_PROPS)), Capability.UNIT_TEST, ToolSpec.Kind.READ));
+						+ "A package run can take minutes; use it to check a whole development, not after every change. "
+						+ "'format' 'junit' runs the harmless tests through SAP's CI API and returns a pass/fail verdict "
+						+ "and, with 'include_report', SAP's JUnit XML, e.g. for a pipeline.",
+				schema(new String[0], objectProps(withPackage("format", "string",
+						"junit for the CI API and a JUnit report; omit for the usual result.", "include_report",
+						"boolean", "format junit: add the JUnit XML (default false)."))),
+				Capability.UNIT_TEST, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_atc_check",
 				"Run ATC (ABAP Test Cockpit) checks on an object ('name') or on all objects of a package ('package', "
 						+ "with 'include_subpackages' also its subpackages) and list the findings by priority. ATC checks the "
 						+ "active version: activate first (or activate with run_atc, which runs ATC after a successful activation). "
 						+ "A package run can take minutes.",
 				schema(new String[0], objectProps(withPackage("check_variant", "string",
-						"ATC check variant; omit for the one set in Bella's preferences, else the system default."))),
+						"ATC check variant; omit for the one set in Bella's preferences, else the system default.",
+						"format", "string", "checkstyle: run over 'package' through SAP's ATC CI API with a pass/fail "
+								+ "verdict; omit for the usual result.",
+						"fail_on", "string", "format checkstyle: error (default), warning or info.", "include_report",
+						"boolean", "format checkstyle: add the Checkstyle XML (default false)."))),
 				Capability.ATC, ToolSpec.Kind.READ));
 		t.add(ToolSpec.of("adt_quickfix",
 				"SAP's quick fixes (Ctrl+1 in ADT) for a syntax or ATC finding. action 'list' shows the fixes for a "
@@ -460,13 +494,31 @@ public final class AdtToolProvider implements ToolProvider {
 		t.add(ToolSpec.of("adt_table_contents",
 				"Read rows of a database table or CDS view (data preview, like SE16 or ADT's SQL console). Give 'table' with "
 						+ "optional 'columns' and 'where', or a complete ABAP SQL SELECT in 'sql' (joins, aggregates). "
-						+ "Read only. Use it to understand data or to check what a program wrote.",
-				schema(new String[0], "table", "string", "Table or CDS view, e.g. MARA or T000.", "columns", "string",
-						"Comma separated columns, default all, e.g. matnr, mtart.", "where", "string",
-						"ABAP SQL condition without WHERE, e.g. mtart = 'FERT' AND ersda >= '20240101'.", "sql",
-						"string", "Instead of table/columns/where: a complete ABAP SQL SELECT statement.", "max_rows",
-						"integer", "Default 100, at most " + TABLE_MAX_ROWS + ".", "system", "string", SYSTEM_DESC),
-				Capability.TABLE_CONTENTS, ToolSpec.Kind.READ));
+						+ "Read only. Use it to understand data or to check what a program wrote. 'action' "
+						+ "'long_text' reads saved SAPscript long texts (SO10, READ_TEXT): 'mode' 'discover' lists texts "
+						+ "of 'object' (e.g. TEXT) whose name starts with 'name_prefix' (optional 'id', 'language', "
+						+ "'max_rows' up to 50); 'read' returns the lines of up to 25 exact 'keys'; 'search' finds "
+						+ "'phrase' (case-sensitive) in them. 'action' 'application_log' reads one saved application log "
+						+ "(SLG1) by its 20-digit 'log_number', 'max_rows' up to 100 messages from 'offset'.",
+				tableSchema(), Capability.TABLE_CONTENTS, ToolSpec.Kind.READ));
+		t.add(ToolSpec.of("adt_flp_manage",
+				"Change the Fiori launchpad customizing (page builder, client-wide); Bella always asks first. "
+						+ "'create_catalog' ('catalog' id, 'title'), 'create_group' ('group' id, 'title'), "
+						+ "'create_tile' (a static app launcher in 'catalog': 'title', 'semantic_object', "
+						+ "'semantic_action', optional 'icon', 'url', 'subtitle', 'info', 'tile_id'), "
+						+ "'add_tile_to_group' ('group', 'catalog', 'tile_instance_id' from adt_ui5 'flp_tiles'), "
+						+ "'delete_catalog' ('catalog'). Read with adt_ui5 'flp_catalogs', 'flp_groups', 'flp_tiles'.",
+				schema(new String[] { "action" }, "action", "string", "See above.", "catalog", "string",
+						"Catalog id, e.g. ZSALES (with or without X-SAP-UI2-CATALOGPAGE:).", "group", "string",
+						"Group id.", "title", "string", "Title.", "semantic_object", "string",
+						"create_tile: semantic object, e.g. SalesOrder.", "semantic_action", "string",
+						"create_tile: action, e.g. display.", "icon", "string", "create_tile: e.g. sap-icon://sales-order.",
+						"url", "string", "create_tile: target URL.", "subtitle", "string", "create_tile: subtitle.",
+						"info", "string", "create_tile: info text.", "tile_id", "string",
+						"create_tile: id inside the tile configuration (default generated).", "tile_instance_id",
+						"string", "add_tile_to_group: instanceId of the tile in its catalog.", "system", "string",
+						SYSTEM_DESC),
+				null, ToolSpec.Kind.WRITE));
 		t.add(ToolSpec.of("adt_write_source",
 				"Replace the complete source of an object (main source or a class include), or with 'method' only the body of one method. "
 						+ "Works for ABAP (classes, interfaces, programs, includes, function modules) and for CDS views (DDLS), "
@@ -567,8 +619,12 @@ public final class AdtToolProvider implements ToolProvider {
 						+ "'only_failures'), 'atc_variants' ('filter'), 'odata_request' (experimental; GET of an OData service to test "
 						+ "it: 'url' host-relative, e.g. /sap/opu/odata/sap/<SRV>/$metadata or <EntitySet>?$top=5&$format=json, "
 						+ "encode blanks as %20; returns status, answer and the sap-statistics timing split with a verdict "
-						+ "where the time goes).",
-				schema(new String[] { "action" }, "action", "string", "One of the actions above.", "id", "string",
+						+ "where the time goes), 'cds_testcases' ('name' a CDS view; SAP's suggested ABAP Unit test cases, "
+						+ "from SAP_BASIS 8.16), 'cds_sql' ('name'; the native SQL CREATE statements of a CDS view), "
+						+ "'inactive_objects' (the developer's saved but not activated objects with their requests), "
+						+ "'components' (installed software components with release and support package).",
+				schema(new String[] { "action" }, "action", "string", "One of the actions above.", "name", "string",
+						"cds_testcases, cds_sql: the CDS view.", "id", "string",
 						"Entry id from a list.", "part", "string", "traces: hitlist (default), statements or db_accesses.",
 						"user", "string", "User filter.", "auth_object", "string", "authorization_trace: object, e.g. S_TCODE.",
 						"only_failures", "boolean", "authorization_trace: only failed checks.", "filter", "string",
@@ -824,7 +880,7 @@ public final class AdtToolProvider implements ToolProvider {
 	/** Tools whose 'name' is a repository object they read. */
 	private static final List<String> READS_OBJECT = List.of("adt_read_source", "adt_context", "adt_syntax_check",
 			"adt_run_unit_tests", "adt_atc_check", "adt_quickfix", "adt_format", "adt_object_info", "adt_navigate",
-			"adt_text_elements", "adt_transports");
+			"adt_text_elements", "adt_transports", "adt_diagnose");
 
 	/** Writes that record their change in a transport request ('transport'). */
 	private static final List<String> TRANSPORTED = List.of("adt_write_source", "adt_create_object",
@@ -1264,6 +1320,7 @@ public final class AdtToolProvider implements ToolProvider {
 			case "adt_git_write" -> gitWrite(in, cancel);
 			case "adt_rap" -> rap(in, cancel);
 			case "adt_ui5" -> ui5(in, cancel);
+			case "adt_flp_manage" -> flpManage(in, cancel);
 			case "adt_format" -> format(in, cancel);
 			case "adt_format_settings" -> writeSettings(in, cancel);
 			case "adt_write_text_elements" -> writeTextElements(in, cancel);
@@ -1359,8 +1416,11 @@ public final class AdtToolProvider implements ToolProvider {
 			return searchSource(c, in, max, scope == null || scope.readsEveryPackage(sys.destinationId()) ? Optional.empty()
 					: Optional.ofNullable(scopePackage(sys, c, cancel)).or(() -> Optional.of("")), cancel);
 		}
+		if (searchIn != null && searchIn.trim().equalsIgnoreCase("tadir")) {
+			return tadirLookup(sys, c, in, max, cancel);
+		}
 		if (searchIn != null && !searchIn.isBlank() && !searchIn.trim().equalsIgnoreCase("names")) {
-			return ToolResult.error("search_in is names or source.");
+			return ToolResult.error("search_in is names, source or tadir.");
 		}
 		String query = Json.str(in, "query");
 		String pkg = Json.str(in, "package");
@@ -1409,6 +1469,75 @@ public final class AdtToolProvider implements ToolProvider {
 			sb.append('\n');
 		}
 		return ToolResult.ok(sb.append(hiddenNote).toString());
+	}
+
+	/**
+	 * Exact names looked up through ADT and in TADIR, side by side; an object
+	 * only one of them knows is named (ARC-1 {@code tadir_lookup} with source
+	 * {@code both}). Customer objects outside the development package are
+	 * left out, as in the name search.
+	 */
+	private ToolResult tadirLookup(AdtSystem sys, AdtClient c, JsonObject in, int max, CancelToken cancel)
+			throws IOException {
+		String query = Json.str(in, "query");
+		List<String> names = new ArrayList<>();
+		for (String n : (query == null ? "" : query).split("[,;\\s]+")) {
+			String name = n.trim().toUpperCase(Locale.ROOT);
+			if (!name.isEmpty() && !names.contains(name)) {
+				names.add(name);
+			}
+		}
+		if (names.isEmpty() || names.size() > 20) {
+			return ToolResult.error("Give 1 to 20 exact names in 'query', separated by commas.");
+		}
+		if (names.stream().anyMatch(n -> !n.matches("[A-Z0-9_/$~-]{1,120}"))) {
+			return ToolResult.error("Exact names only: letters, digits, _, /, $, ~ and -; no wildcards.");
+		}
+		String type = Json.str(in, "type");
+		String baseType = type == null || type.isBlank() ? null
+				: type.trim().toUpperCase(Locale.ROOT).replaceFirst("/.*", "");
+		if (baseType != null && !baseType.matches("[A-Z0-9]{1,4}")) {
+			return ToolResult.error("'type' is an object type such as CLAS.");
+		}
+		String sql = "SELECT pgmid, object, obj_name, devclass, author, srcsystem, delflag FROM tadir WHERE obj_name IN ("
+				+ String.join(", ", names.stream().map(n -> "'" + n + "'").toList()) + ")"
+				+ (baseType == null ? "" : " AND object = '" + baseType + "'");
+		AdtClient.TableData rows = c.tableContents(sql, Math.min(TABLE_MAX_ROWS, max * names.size()), cancel);
+		boolean scoped = scope != null && !scope.readsEveryPackage(sys.destinationId());
+		String dev = scoped ? scopePackage(sys, c, cancel) : null;
+		StringBuilder sb = new StringBuilder();
+		for (String name : names) {
+			List<String> adt = new ArrayList<>();
+			for (AdtObjectRef r : c.search(name, type, null, max, cancel)) {
+				if (r.name().equalsIgnoreCase(name)) {
+					adt.add(r.type().replaceFirst("/.*", "").toUpperCase(Locale.ROOT) + " package " + r.packageName());
+				}
+			}
+			List<String> tadir = new ArrayList<>();
+			String tadirPackage = "";
+			for (List<String> r : rows.rows()) {
+				if (r.size() >= 7 && r.get(2).trim().equalsIgnoreCase(name)) {
+					tadirPackage = r.get(3).trim();
+					tadir.add(r.get(0).trim() + " " + r.get(1).trim() + " package " + tadirPackage + ", author "
+							+ r.get(4).trim() + ", source system " + r.get(5).trim()
+							+ (r.get(6).isBlank() ? "" : ", deletion flag " + r.get(6).trim()));
+				}
+			}
+			String pkg = adt.isEmpty() ? tadirPackage : adt.get(0).replaceFirst(".* package ", "");
+			if (scoped && DevScope.customer(name) && !(dev != null && pkg.equalsIgnoreCase(dev))) {
+				sb.append(name).append(": a customer object outside the development package, ignored.\n");
+				continue;
+			}
+			sb.append(name).append(":\n  ADT: ").append(adt.isEmpty() ? "not found" : String.join("; ", adt))
+					.append("\n  TADIR: ").append(tadir.isEmpty() ? "no entry" : String.join("; ", tadir)).append('\n');
+			if (adt.isEmpty() && !tadir.isEmpty()) {
+				sb.append("  Only in TADIR: likely an entry left by an aborted create or delete; check it in SE03 "
+						+ "before creating an object of that name.\n");
+			} else if (!adt.isEmpty() && tadir.isEmpty()) {
+				sb.append("  Only through ADT: the TADIR entry is missing or excluded by 'type'.\n");
+			}
+		}
+		return ToolResult.ok(sb.toString());
 	}
 
 	/**
@@ -1616,6 +1745,9 @@ public final class AdtToolProvider implements ToolProvider {
 		if (target.isPresent()) {
 			return target.get();
 		}
+		if (ciFormat(in, "junit")) {
+			return ToolResult.ok(AdtCi.unitTests(c, ciTarget(c, in, cancel), flag(in, "include_report", false), cancel));
+		}
 		String pkg = Json.str(in, "package");
 		if (pkg != null && !pkg.isBlank()) {
 			PackageRuns.Selection s = PackageRuns.forUnitTests(c, pkg, flag(in, "include_subpackages", false),
@@ -1663,6 +1795,13 @@ public final class AdtToolProvider implements ToolProvider {
 		if (target.isPresent()) {
 			return target.get();
 		}
+		if (ciFormat(in, "checkstyle")) {
+			if (Json.str(in, "package") == null || Json.str(in, "package").isBlank()) {
+				return ToolResult.error("SAP's ATC CI API checks packages: give 'package' instead of 'name'.");
+			}
+			return ToolResult.ok(AdtCi.atc(c, ciTarget(c, in, cancel), c.checkVariant(Json.str(in, "check_variant"), cancel),
+					Json.str(in, "fail_on"), flag(in, "include_report", false), cancel));
+		}
 		String pkg = Json.str(in, "package");
 		if (pkg != null && !pkg.isBlank()) {
 			PackageRuns.Selection s = PackageRuns.forAtc(c, pkg, flag(in, "include_subpackages", false),
@@ -1674,6 +1813,40 @@ public final class AdtToolProvider implements ToolProvider {
 				cancel);
 		String note = c.atcNote().isEmpty() ? "" : c.atcNote() + "\n\n";
 		return ToolResult.ok(note + (msgs.isEmpty() ? "No ATC findings." : formatAtc(msgs, false)));
+	}
+
+	/**
+	 * Whether the call asks for the CI format {@code wanted}.
+	 *
+	 * @throws IllegalArgumentException for another format
+	 */
+	private static boolean ciFormat(JsonObject in, String wanted) {
+		String f = Json.str(in, "format");
+		if (f == null || f.isBlank()) {
+			return false;
+		}
+		if (!f.trim().equalsIgnoreCase(wanted)) {
+			throw new IllegalArgumentException("'format' is " + wanted + " or omitted.");
+		}
+		return true;
+	}
+
+	/** The object set of a CI run: the package (checked to exist) or the object. */
+	private AdtCi.Target ciTarget(AdtClient c, JsonObject in, CancelToken cancel) throws IOException {
+		String pkg = Json.str(in, "package");
+		if (pkg != null && !pkg.isBlank()) {
+			String p = pkg.trim().toUpperCase(Locale.ROOT);
+			AdtResponse r = c.exchange(AdtRequest.get("/sap/bc/adt/packages/" + AdtClient.enc(p), "application/*"), cancel);
+			if (!r.ok()) {
+				throw new AdtException(r.status(), r.status() == 404 ? "There is no package " + p + "; nothing was run."
+						: "Package " + p + " could not be checked: " + AdtErrors.message(r));
+			}
+			return new AdtCi.Target("DEVC", p, flag(in, "include_subpackages", false));
+		}
+		AdtObjectRef ref = resolve(c, in, cancel);
+		String type = ref.type() == null ? "" : ref.type().toUpperCase(Locale.ROOT);
+		return new AdtCi.Target(type.contains("/") ? type.substring(0, type.indexOf('/')) : type,
+				ref.name().toUpperCase(Locale.ROOT), false);
 	}
 
 	/** ATC findings by priority (1 = error, 2 = warning, 3 = information), with the object when several were checked. */
@@ -2326,6 +2499,20 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		case "odata_request" -> {
 			return ToolResult.ok(AdtHttp.odataRequest(c, Json.str(in, "url"), AdtHttp.headers(in), cancel));
+		}
+		case "cds_testcases", "cds_sql" -> {
+			String cds = Json.str(in, "name");
+			if (cds == null || cds.isBlank()) {
+				return ToolResult.error("Give 'name', the CDS view.");
+			}
+			return ToolResult.ok(action(in).equals("cds_sql") ? AdtDiagnostics.cdsSql(c, cds, cancel)
+					: AdtDiagnostics.cdsTestCases(c, cds, cancel));
+		}
+		case "inactive_objects" -> {
+			return ToolResult.ok(AdtDiagnostics.inactiveObjects(c, cancel));
+		}
+		case "components" -> {
+			return ToolResult.ok(AdtDiagnostics.components(c, cancel));
 		}
 		default -> {
 			return ToolResult.error("Unknown action; see the tool description.");
@@ -3897,6 +4084,21 @@ public final class AdtToolProvider implements ToolProvider {
 			"\\*|[A-Za-z/][A-Za-z0-9_/]*(?:~[A-Za-z0-9_/]+)?(?:\\s*,\\s*[A-Za-z/][A-Za-z0-9_/]*(?:~[A-Za-z0-9_/]+)?)*");
 
 	private ToolResult tableContents(JsonObject in, CancelToken cancel) throws IOException {
+		switch (action(in)) {
+		case "", "rows" -> {
+			// below
+		}
+		case "long_text" -> {
+			return longText(in, cancel);
+		}
+		case "application_log" -> {
+			return ToolResult.ok(AdtAppLog.read(client(system(in)), Json.str(in, "log_number"),
+					Json.integer(in, "max_rows", 50), Json.integer(in, "offset", 0), cancel));
+		}
+		default -> {
+			return ToolResult.error("action is rows (default), long_text or application_log.");
+		}
+		}
 		String sql = Json.str(in, "sql");
 		if (sql == null || sql.isBlank()) {
 			String table = Json.str(in, "table");
@@ -3917,6 +4119,118 @@ public final class AdtToolProvider implements ToolProvider {
 		AdtSystem s = system(in);
 		AdtClient.TableData data = client(s).tableContents(sql, max, cancel);
 		return ToolResult.ok(formatTable(data, s.label()));
+	}
+
+	/** Saved SAPscript long texts: discover keys, read texts or search a phrase in them. */
+	private ToolResult longText(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		AdtClient c = client(s);
+		AdtClient.SystemInfo info = AdtSystemInfo.of(s.destinationId(), c, cancel).orElse(null);
+		if (info != null && info.cloud()) {
+			return ToolResult.error("Classic long texts are not read on ABAP Cloud systems; use a released API.");
+		}
+		String mode = Json.str(in, "mode") == null ? "" : Json.str(in, "mode").trim().toLowerCase(Locale.ROOT);
+		try {
+			AdtStoredText.Session session = new AdtStoredText.Session(c, s.client(), cancel);
+			if (mode.equals("discover")) {
+				String object = Json.str(in, "object");
+				if (object == null || object.isBlank()) {
+					return ToolResult.error("Give 'object' (the text object, e.g. TEXT) and 'name_prefix'.");
+				}
+				int limit = Math.max(1, Math.min(50, Json.integer(in, "max_rows", 20)));
+				List<AdtStoredText.Header> found = session.discover(object, Json.str(in, "name_prefix"),
+						blankToNull(Json.str(in, "id")), blankToNull(Json.str(in, "language")), limit);
+				if (found.isEmpty()) {
+					return ToolResult.ok("No saved long texts of object " + object.trim() + " start with that name.");
+				}
+				StringBuilder sb = new StringBuilder("Saved long texts (object / name / ID / language):\n");
+				found.stream().limit(limit).forEach(h -> sb.append("- ").append(h.key().describe())
+						.append(AdtStoredText.unpad(h.title()).isEmpty() ? "" : " – " + AdtStoredText.unpad(h.title()))
+						.append(", ").append(h.storedLines()).append(" lines")
+						.append(h.reference() == null ? "" : ", refers to " + h.reference().describe()).append('\n'));
+				sb.append(found.size() > limit ? "There are more; give a longer 'name_prefix'."
+						: "Read them with mode 'read' and these keys.");
+				return ToolResult.ok(sb.toString());
+			}
+			if (!mode.equals("read") && !mode.equals("search")) {
+				return ToolResult.error("'mode' is discover, read or search.");
+			}
+			JsonArray keys = Json.arr(in, "keys");
+			if (keys == null || keys.isEmpty() || keys.size() > AdtStoredText.MAX_KEYS) {
+				return ToolResult.error("Give 1 to " + AdtStoredText.MAX_KEYS + " 'keys' as {object, name, id, language}.");
+			}
+			String phrase = Json.str(in, "phrase");
+			if (mode.equals("search") && (phrase == null || phrase.isEmpty() || phrase.length() > 200)) {
+				return ToolResult.error("Give 'phrase' (1 to 200 characters).");
+			}
+			StringBuilder sb = new StringBuilder();
+			int lines = 0;
+			int matches = 0;
+			for (JsonElement e : keys) {
+				if (!e.isJsonObject()) {
+					return ToolResult.error("Each key is {object, name, id, language}.");
+				}
+				JsonObject k = e.getAsJsonObject();
+				AdtStoredText.Text text;
+				try {
+					AdtStoredText.Key key = AdtStoredText.key(Json.str(k, "object"), Json.str(k, "name"),
+							Json.str(k, "id"), Json.str(k, "language"));
+					text = session.read(key);
+				} catch (AdtStoredText.TextReadException ex) {
+					if (ex.code == AdtStoredText.Code.LIMIT_EXCEEDED) {
+						throw ex;
+					}
+					sb.append(Json.str(k, "object")).append(" / ").append(Json.str(k, "name")).append(" / ")
+							.append(Json.str(k, "id")).append(" / ").append(Json.str(k, "language")).append(": ")
+							.append(ex.code).append(", ").append(ex.getMessage()).append(". ").append(ex.code.hint)
+							.append("\n\n");
+					continue;
+				}
+				lines += text.lines().size();
+				if (lines > AdtStoredText.MAX_LINES) {
+					return ToolResult.error("More than " + AdtStoredText.MAX_LINES + " lines; ask for fewer texts.");
+				}
+				if (mode.equals("read")) {
+					sb.append(AdtStoredText.format(text)).append('\n');
+					continue;
+				}
+				for (int i = 0; i < text.lines().size() && matches < 50; i++) {
+					AdtStoredText.Line l = text.lines().get(i);
+					if (l.text().contains(phrase)) {
+						matches++;
+						sb.append(text.requested().describe()).append(" line ").append(i + 1).append(": ")
+								.append(l.format()).append("| ").append(l.text()).append('\n');
+					}
+				}
+			}
+			if (mode.equals("search")) {
+				sb.insert(0, matches == 0 ? "'" + phrase + "' is in none of the given texts (literal, case-sensitive).\n"
+						: matches + (matches == 50 ? "+" : "") + " lines with '" + phrase + "':\n");
+			}
+			return ToolResult.ok(sb.toString().strip());
+		} catch (AdtStoredText.TextReadException e) {
+			return ToolResult.error(e.code + ": " + e.getMessage() + ". " + e.code.hint);
+		} catch (AdtException e) {
+			if (e.status() == 404) {
+				return ToolResult.error("This system's data preview cannot run the long-text query (HTTP 404); "
+						+ "there is no other route. This does not mean the text is missing.");
+			}
+			throw e;
+		}
+	}
+
+	private static String blankToNull(String s) {
+		return s == null || s.isBlank() ? null : s;
+	}
+
+	/** Launchpad customizing: one request per call in one session. */
+	private ToolResult flpManage(JsonObject in, CancelToken cancel) throws IOException {
+		AdtSystem s = system(in);
+		String action = action(in);
+		AdtFlp.request(action, in); // checks the fields before a session is opened
+		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
+			return ToolResult.ok(AdtFlp.send(session, action, in, cancel));
+		}
 	}
 
 	/** Markdown table with cells cut and pipes escaped, and how many rows the statement found. */

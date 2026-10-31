@@ -1553,6 +1553,14 @@ public final class AdtClient {
 		return "run".equals(root.getLocalName()) ? AdtXml.attr(root, "status").trim() : "";
 	}
 
+	/** The check variant of a run: the given one, else the one of Bella's preferences, else the system's. */
+	String checkVariant(String given, CancelToken cancel) {
+		if (given != null && !given.isBlank()) {
+			return given.trim().toUpperCase(Locale.ROOT);
+		}
+		return atcVariant.isEmpty() ? atcDefaultVariant(cancel) : atcVariant;
+	}
+
 	private String atcDefaultVariant(CancelToken cancel) {
 		try {
 			AdtResponse r = exchange(transport, AdtRequest.get("/sap/bc/adt/atc/customizing", "application/xml"), cancel);

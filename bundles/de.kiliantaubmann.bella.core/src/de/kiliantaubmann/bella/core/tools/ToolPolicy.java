@@ -81,6 +81,8 @@ public final class ToolPolicy {
 			new Rule("adt_trace_control", Decision.ASK),
 			new Rule("adt_http_send", Decision.ASK),
 			new Rule("adt_format_settings", Decision.ASK),
+			// client-wide launchpad content
+			new Rule("adt_flp_manage", Decision.ASK),
 			// the developer names package and transport request; the call shows what the model understood
 			new Rule("adt_dev_package:set", Decision.ASK),
 			// stepping on may run COMMIT WORK in the developer's session

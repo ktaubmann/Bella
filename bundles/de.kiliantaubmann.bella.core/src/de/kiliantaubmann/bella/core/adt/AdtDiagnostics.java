@@ -305,4 +305,161 @@ final class AdtDiagnostics {
 		}
 		return out;
 	}
+
+	// ---- CDS, inactive objects, components ---------------------------------------------
+
+	static final String CDS_TESTCASES = "/sap/bc/adt/aunit/dbtestdoubles/cds/testcases";
+
+	/**
+	 * SAP's suggested ABAP Unit test cases for a CDS view (CDS Test Double
+	 * Framework): one per testable semantic (the view, each calculated field,
+	 * each CAST or CASE). From SAP_BASIS 8.16 (ARC-1 {@code getCdsTestCases}).
+	 */
+	static String cdsTestCases(AdtClient c, String name, CancelToken cancel) throws IOException {
+		String cds = name.trim().toUpperCase(Locale.ROOT);
+		AdtResponse r = c.exchange(AdtRequest.get(CDS_TESTCASES + "?ddlsourceName=" + AdtClient.enc(cds),
+				"application/vnd.sap.adt.aunit.dbtestdoubles.cds.testcases.v1+xml"), cancel);
+		if (r.status() == 404) {
+			throw new AdtException(404, "This system suggests no CDS test cases (the service comes with SAP_BASIS 8.16).");
+		}
+		if (!r.ok()) {
+			throw new AdtException(r.status(), AdtErrors.message(r));
+		}
+		return formatCdsTestCases(cds, r.body());
+	}
+
+	static String formatCdsTestCases(String cds, String xml) throws IOException {
+		List<Element> cases = AdtXml.elements(AdtXml.parse(xml), "testCase");
+		if (cases.isEmpty()) {
+			return "SAP suggests no test cases for " + cds + ".";
+		}
+		StringBuilder sb = new StringBuilder("SAP's suggested test cases for ").append(cds).append(" (").append(cases.size())
+				.append("; methods for a test class with the CDS Test Double Framework):\n");
+		for (Element e : cases) {
+			sb.append("- ").append(child(e, "testMethod"));
+			String title = child(e, "title");
+			String type = child(e, "semanticType");
+			String field = child(e, "calculatedField");
+			String scenario = child(e, "conditionScenario");
+			sb.append(title.isEmpty() ? "" : " – " + title).append(type.isEmpty() ? "" : " [" + type + "]")
+					.append(field.isEmpty() ? "" : ", field " + field).append(scenario.isEmpty() ? "" : ", " + scenario)
+					.append('\n');
+			String description = child(e, "description");
+			if (!description.isEmpty()) {
+				sb.append("  ").append(description.replaceAll("\\s+", " ")).append('\n');
+			}
+		}
+		return sb.toString();
+	}
+
+	/** The native SQL CREATE statements a CDS view generates (ADT's "Show SQL CREATE Statement"; ARC-1 {@code cds_sql}). */
+	static String cdsSql(AdtClient c, String name, CancelToken cancel) throws IOException {
+		String cds = name.trim().toUpperCase(Locale.ROOT);
+		AdtResponse r = c.exchange(AdtRequest.post("/sap/bc/adt/ddic/ddl/createstatements/" + AdtClient.enc(cds),
+				"application/vnd.sap.adt.ddl.createStatements+xml", "", null), cancel);
+		if (r.status() == 404 || r.status() == 405) {
+			throw new AdtException(r.status(), "No SQL statements for " + cds + ": either it is no active CDS view, or "
+					+ "the system has no such service (7.50).");
+		}
+		if (!r.ok()) {
+			throw new AdtException(r.status(), AdtErrors.message(r));
+		}
+		return formatCdsSql(cds, r.body());
+	}
+
+	static String formatCdsSql(String cds, String xml) throws IOException {
+		StringBuilder sb = new StringBuilder();
+		for (Element e : AdtXml.elements(AdtXml.parse(xml), "createStatement")) {
+			StringBuilder sql = new StringBuilder();
+			for (Element st : AdtXml.elements(e, "statement")) {
+				String text = st.getTextContent() == null ? "" : st.getTextContent().strip();
+				if (!text.isEmpty()) {
+					sql.append(sql.isEmpty() ? "" : "\n").append(text);
+				}
+			}
+			if (sql.isEmpty()) {
+				continue;
+			}
+			String name = AdtXml.attr(e, "name");
+			String type = AdtXml.attr(e, "type");
+			String state = AdtXml.attr(e, "state");
+			sb.append("-- ").append(name.isEmpty() ? cds : name).append(type.isEmpty() ? "" : " (" + type + ")")
+					.append(state.isEmpty() ? "" : ", " + state).append('\n').append(sql).append("\n\n");
+		}
+		return sb.isEmpty() ? "SAP returned no SQL statements for " + cds + "." : cut(sb.toString().strip());
+	}
+
+	/**
+	 * The developer's inactive objects, as ADT's "Inactive Objects" view shows
+	 * them: name, type, description, the user and the transport request.
+	 */
+	static String inactiveObjects(AdtClient c, CancelToken cancel) throws IOException {
+		return formatInactive(get(c, "/sap/bc/adt/activation/inactiveobjects",
+				"application/vnd.sap.adt.inactivectsobjects.v1+xml, application/xml;q=0.5", cancel));
+	}
+
+	static String formatInactive(String xml) throws IOException {
+		List<String> lines = new ArrayList<>();
+		if (!xml.isBlank()) {
+			org.w3c.dom.Document doc = AdtXml.parse(xml);
+			List<Element> entries = AdtXml.elements(doc, "entry");
+			boolean rich = entries.stream().anyMatch(en -> AdtXml.elements(en, "object").stream()
+					.anyMatch(o -> !AdtXml.elements(o, "ref").isEmpty()));
+			for (Element entry : entries) {
+				if (!rich) {
+					break;
+				}
+				String transport = "";
+				List<Element> tr = AdtXml.elements(entry, "transport");
+				if (!tr.isEmpty() && !AdtXml.elements(tr.get(0), "ref").isEmpty()) {
+					transport = AdtXml.attr(AdtXml.elements(tr.get(0), "ref").get(0), "name");
+				}
+				for (Element o : AdtXml.elements(entry, "object")) {
+					List<Element> refs = AdtXml.elements(o, "ref");
+					if (refs.isEmpty()) {
+						continue;
+					}
+					lines.add(inactiveLine(refs.get(0), AdtXml.attr(o, "user"), "true".equalsIgnoreCase(AdtXml.attr(o,
+							"deleted")), transport));
+				}
+			}
+			if (!rich) {
+				for (Element ref : AdtXml.elements(doc, "objectReference")) {
+					lines.add(inactiveLine(ref, "", false, ""));
+				}
+			}
+		}
+		if (lines.isEmpty()) {
+			return "No inactive objects.";
+		}
+		return "Inactive objects (" + lines.size() + "; saved, not activated):\n" + String.join("\n", lines);
+	}
+
+	private static String inactiveLine(Element ref, String user, boolean deleted, String transport) {
+		String description = AdtXml.attr(ref, "description");
+		return "- " + AdtXml.attr(ref, "name") + " (" + AdtXml.attr(ref, "type") + ")"
+				+ (description.isEmpty() ? "" : " – " + description) + (user.isEmpty() ? "" : ", user " + user)
+				+ (transport.isEmpty() ? "" : ", request " + transport) + (deleted ? ", deletion pending" : "");
+	}
+
+	/** The installed software components with release and support package. */
+	static String components(AdtClient c, CancelToken cancel) throws IOException {
+		return formatComponents(get(c, "/sap/bc/adt/system/components", FEED, cancel));
+	}
+
+	static String formatComponents(String xml) throws IOException {
+		StringBuilder sb = new StringBuilder("Installed software components (release, support package):\n");
+		int n = 0;
+		for (Element entry : AdtXml.elements(AdtXml.parse(xml), "entry")) {
+			String id = child(entry, "id");
+			String[] parts = child(entry, "title").split(";", -1);
+			String release = parts[0].trim();
+			String sp = parts.length > 2 ? parts[1].trim() + (parts[2].isBlank() ? "" : " " + parts[2].trim()) : "";
+			String description = parts.length > 3 ? parts[3].trim() : "";
+			sb.append("- ").append(id).append(' ').append(release).append(sp.isBlank() ? "" : ", " + sp)
+					.append(description.isEmpty() ? "" : " – " + description).append('\n');
+			n++;
+		}
+		return n == 0 ? "The system lists no software components." : sb.toString();
+	}
 }
