@@ -58,8 +58,9 @@ public final class LintToolProvider implements ToolProvider {
 		JsonObject fix = new JsonObject();
 		fix.addProperty("type", "boolean");
 		fix.addProperty("description", "true to also return the code with the mechanical fixes applied (MOVE, COMPUTE, "
-				+ "ADD …, REFRESH, CALL METHOD, CREATE OBJECT, DESCRIBE TABLE … LINES, trailing spaces); write it back "
-				+ "yourself.");
+				+ "ADD …, REFRESH, CALL METHOD, CREATE OBJECT, DESCRIBE TABLE … LINES, NOT … IS, RECEIVING, omittable "
+				+ "EXPORTING, IF … abap_true/abap_false as xsdbool( ), ELSE after RETURN, one statement per line, "
+				+ "blanks before the period, empty lines in statements, trailing spaces); write it back yourself.");
 		props.add("fix", fix);
 		JsonObject schema = new JsonObject();
 		schema.addProperty("type", "object");
@@ -78,7 +79,13 @@ public final class LintToolProvider implements ToolProvider {
 						+ "INTO not last in strict SQL, EXIT/CHECK outside loops, EXPORTING instead of RETURNING, unused "
 						+ "private methods and local types, empty CATCH of a cast, commented-out code, the "
 						+ "project's naming rules and modern forms (xsdbool, line_exists, CORRESPONDING, "
-						+ "RAISE EXCEPTION NEW). With 'release' or 'cloud' also syntax the target system does not have. "
+						+ "RAISE EXCEPTION NEW). Also after abaplint: CALL TRANSACTION without authority check, dynamic "
+						+ "SQL and generated code, RFC without system_failure/communication_failure, ambiguous "
+						+ "DELETE/MODIFY, IS ASSIGNED in loops, index 0, WHEN OTHERS not last, TRY without CATCH, changed "
+						+ "sy fields, CATCH that only re-raises, empty blocks, ELSE IF, Yoda conditions, chained "
+						+ "assignments, needless loop guards, macros, classic exceptions, RETURNING mixed with EXPORTING, "
+						+ "test classes without RISK LEVEL/DURATION and function modules with a successor. "
+						+ "With 'release' or 'cloud' also syntax the target system does not have. "
 						+ "CDS data definitions get CDS rules (obsolete DDIC-based views, association names). Errors and "
 						+ "warnings come first, style hints after them. Run it on code you write and fix the findings that "
 						+ "apply; with 'fix' Bella applies the mechanical fixes itself.",

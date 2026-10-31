@@ -15,8 +15,9 @@ import de.kiliantaubmann.bella.core.util.Json;
 
 class AbapLintTest {
 
+	/** The rules found; empty_structure is left out, as the short examples leave blocks empty on purpose. */
 	private static List<String> rules(String source) {
-		return AbapLint.check(source).stream().map(Finding::rule).toList();
+		return AbapLint.check(source).stream().map(Finding::rule).filter(r -> !r.equals("empty_structure")).toList();
 	}
 
 	@Test
@@ -41,6 +42,7 @@ class AbapLintTest {
 				      MESSAGE lx TYPE 'E'.
 				  ENDTRY.
 				  IF line_exists( lt_mara[ matnr = iv_matnr ] ).
+				    rv_found = abap_true.
 				  ENDIF.
 				ENDMETHOD.
 				""";
@@ -107,7 +109,9 @@ class AbapLintTest {
 		assertEquals(List.of(), rules("SELECT COUNT( * ) FROM mara INTO @DATA(n)."));
 		assertEquals(List.of("commit_in_loop"), rules("LOOP AT lt INTO DATA(ls).\n  COMMIT WORK.\nENDLOOP."));
 		assertEquals(List.of("rfc_in_loop"),
-				rules("LOOP AT lt INTO DATA(ls).\n  CALL FUNCTION 'Z_X' DESTINATION lv_dest.\nENDLOOP."));
+				rules("LOOP AT lt INTO DATA(ls).\n  CALL FUNCTION 'Z_X' DESTINATION lv_dest\n"
+						+ "    EXCEPTIONS system_failure = 1 communication_failure = 2.\n  IF sy-subrc <> 0.\n  ENDIF.\n"
+						+ "ENDLOOP."));
 		assertEquals(List.of("nested_loop_where"),
 				rules("LOOP AT lt INTO DATA(ls).\n  LOOP AT lt2 INTO DATA(ls2) WHERE k = ls-k.\n  ENDLOOP.\nENDLOOP."));
 		assertEquals(List.of(), rules("LOOP AT lt INTO DATA(ls).\nENDLOOP.\nLOOP AT lt2 INTO DATA(ls2) WHERE k = 1.\nENDLOOP."));
@@ -144,7 +148,7 @@ class AbapLintTest {
 		assertEquals("CLEAR lt_rows.", fixed("REFRESH lt_rows.", unknown));
 		assertEquals("lv_count = lines( lt_rows ).", fixed("DESCRIBE TABLE lt_rows LINES lv_count.", unknown));
 		assertEquals("lo_app->run( ).", fixed("CALL METHOD lo_app->run.", unknown));
-		assertEquals("lo_app->run(\n    EXPORTING iv_a = 1 ).",
+		assertEquals("lo_app->run(\n    iv_a = 1 ).",
 				fixed("CALL METHOD lo_app->run\n    EXPORTING iv_a = 1.", unknown));
 		assertEquals("lo_app = NEW #( ).", fixed("CREATE OBJECT lo_app.", unknown));
 		assertEquals("lo_app = NEW zcl_app( iv_a = 1 ).", fixed("CREATE OBJECT lo_app TYPE zcl_app EXPORTING iv_a = 1.",
@@ -157,9 +161,9 @@ class AbapLintTest {
 	@Test
 	void mechanicalFixesLeaveUnclearCasesAlone() {
 		AbapLint.Target unknown = AbapLint.Target.UNKNOWN;
-		for (String keep : List.of("MOVE: a TO b, c TO d.", "MOVE 'X' TO b.", "MOVE EXACT a TO b.",
+		for (String keep : List.of("MOVE: a TO b, c TO d.", "MOVE EXACT a TO b.",
 				"COMPUTE EXACT x = a + b.", "CALL METHOD (lv_name).", "CALL METHOD lo->(lv_name).",
-				"CALL METHOD lo->get RECEIVING rv_x = lv_x.", "CALL METHOD OF lo_ole 'Open'.",
+"CALL METHOD OF lo_ole 'Open'.",
 				"CREATE OBJECT lo TYPE (lv_class).", "CREATE OBJECT lo EXCEPTIONS failed = 1.",
 				"MOVE a \" comment\n TO b.", "ADD 1 THEN a UNTIL b GIVING c.")) {
 			assertEquals(keep, fixed(keep, unknown), keep);

@@ -402,6 +402,7 @@ public final class AbapLint {
 		structureRules(statements, lineStarts, out);
 		unusedMethods(statements, lineStarts, out);
 		commentedCode(source, out);
+		AbaplintRules.apply(source, statements, codes, lineStarts, target, out);
 		ReleaseRules.apply(statements, codes, lineStarts, target, out);
 		lineRules(source, out);
 		out.addAll(NamingCheck.check(source, naming, lineStarts));
@@ -557,7 +558,7 @@ public final class AbapLint {
 		return words.isEmpty() ? "" : words.get(0).replaceAll("[.:]$", "");
 	}
 
-	private static boolean terminates(String[] w) {
+	static boolean terminates(String[] w) {
 		String first = w[0];
 		if (TERMINATORS.contains(first) && w.length == 1) {
 			return true;
@@ -727,7 +728,7 @@ public final class AbapLint {
 	}
 
 	/** Parts of a chained declaration, split at commas outside parentheses. */
-	private static List<String> topLevelParts(String s) {
+	static List<String> topLevelParts(String s) {
 		List<String> parts = new ArrayList<>();
 		int depth = 0;
 		int from = 0;
