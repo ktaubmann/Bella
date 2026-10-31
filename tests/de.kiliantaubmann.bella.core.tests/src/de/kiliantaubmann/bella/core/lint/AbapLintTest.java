@@ -126,6 +126,16 @@ class AbapLintTest {
 	}
 
 	@Test
+	void complexCondition() {
+		assertEquals(List.of("complex_condition"), rules("IF a = 1 AND b = 2 OR c = 3 AND d = 4.\nENDIF."));
+		assertEquals(List.of("complex_condition"), rules("CHECK a = 1 AND b = 2 AND c = 3 AND d = 4."));
+		assertEquals(List.of(), rules("IF a = 1 AND b = 2 AND c = 3.\nENDIF."));
+		// the AND of BETWEEN and AND inside literals do not count
+		assertEquals(List.of(), rules("IF a BETWEEN 1 AND 5 AND b = 'X AND Y' AND c = 3.\nENDIF."));
+		assertEquals(List.of(), rules("lv_ok = xsdbool( a = 1 AND b = 2 AND c = 3 AND d = 4 )."));
+	}
+
+	@Test
 	void errorHandlingAndDebugging() {
 		assertEquals(List.of("catch_cx_root"), rules("TRY.\n x( ).\nCATCH cx_root INTO DATA(e).\n log( e ).\nENDTRY."));
 		assertEquals(List.of("empty_catch"), rules("TRY.\n x( ).\nCATCH zcx_a.\nENDTRY."));

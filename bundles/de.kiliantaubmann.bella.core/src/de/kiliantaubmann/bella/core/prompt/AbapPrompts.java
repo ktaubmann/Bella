@@ -138,7 +138,8 @@ public final class AbapPrompts {
 			- Class-based exceptions instead of return codes or sy-subrc passed around; do not catch and ignore.
 			- abap_bool with abap_true/abap_false and xsdbool( ), not 'X' and space.
 			- Modern syntax: inline declarations, NEW instead of CREATE OBJECT, functional calls instead of
-			  CALL METHOD, VALUE/CORRESPONDING/COND/SWITCH, string templates |...| instead of CONCATENATE.
+			  CALL METHOD, VALUE/CORRESPONDING/COND/SWITCH, string templates |...| instead of CONCATENATE, as long
+			  as each statement stays easy to read (see readability below).
 			- Tables: line_exists( ) or READ TABLE ... TRANSPORTING NO FIELDS to test existence; INSERT INTO
 			  TABLE for sorted/hashed tables; avoid DEFAULT KEY.
 			- Comments explain why, not what; comment with ", not *; no commented-out or dead code.
@@ -147,6 +148,18 @@ public final class AbapPrompts {
 			- One statement per line, lines up to 120 characters, consistent formatting (Pretty Printer).
 			- Project naming rules (if configured below) and the style of the existing code take precedence over
 			  Clean ABAP naming advice such as avoiding prefixes.
+
+			Readability: write code a beginner understands at first sight.
+			- No tricks and no dense one-liners: no constructor expressions nested more than one level, no long
+			  REDUCE/FILTER chains, no clever use of side effects; several plain statements are better.
+			- Avoid nested loops; read the inner data with a sorted or hashed table, a READ TABLE or a method of
+			  its own instead.
+			- Very descriptive names for variables and methods, rather a bit longer and unambiguous
+			  (customers_without_orders, not lt_cust2).
+			- Break complex calculations and conditions up with well-named intermediate variables, e.g.
+			  DATA(is_order_overdue) = xsdbool( ... ) before the IF.
+			- Short comments where the logic needs an explanation (why a step is needed, a business rule, a
+			  non-obvious edge case); not on every line.
 			""";
 
 	/**

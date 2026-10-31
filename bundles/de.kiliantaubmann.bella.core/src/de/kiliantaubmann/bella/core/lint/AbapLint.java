@@ -271,6 +271,11 @@ public final class AbapLint {
 				out.add(new Finding(line, "too_many_importing", Severity.INFO, "Method has " + importingCount(code)
 						+ " IMPORTING parameters; aim for at most 3 (Clean ABAP), e.g. pass a structure or split the method."));
 			}
+			if (List.of("IF", "ELSEIF", "WHILE", "CHECK").contains(first) && logicalOperators(code) > MAX_CONDITION_OPERATORS) {
+				out.add(new Finding(line, "complex_condition", Severity.INFO, "Condition joins " + (logicalOperators(code) + 1)
+						+ " parts with AND/OR; split it into well-named intermediate variables such as"
+						+ " DATA(is_valid) = xsdbool( … ) (Clean ABAP)."));
+			}
 
 			// ---- obsolete statements
 			if (first.equals("MOVE") && code.contains(" TO ")) {
@@ -407,6 +412,10 @@ public final class AbapLint {
 	// ---- rules on blocks and routines (after abaplint's rule set, without a parser)
 
 	private static final int MAX_NESTING = 6;
+	/** More AND/OR in one condition than a reader keeps in mind at once. */
+	private static final int MAX_CONDITION_OPERATORS = 2;
+	private static final Pattern LOGICAL_OPERATOR = Pattern.compile("\\b(?:AND|OR|EQUIV)\\b");
+	private static final Pattern BETWEEN = Pattern.compile("\\bBETWEEN\\b");
 	private static final int MAX_METHOD_STATEMENTS = 110;
 	private static final int MAX_COMPLEXITY = 25;
 	private static final int MAX_LINE = 120;
@@ -831,6 +840,11 @@ public final class AbapLint {
 	}
 
 	/** Statement text upper-cased, literals blanked, without the final period. */
+	/** AND, OR and EQUIV in a normalized statement; the AND of BETWEEN … AND … does not count. */
+	static int logicalOperators(String code) {
+		return (int) (LOGICAL_OPERATOR.matcher(code).results().count() - BETWEEN.matcher(code).results().count());
+	}
+
 	static String normalized(Statement st) {
 		String code = LITERAL.matcher(st.text()).replaceAll("''").trim().toUpperCase(Locale.ROOT);
 		return code.endsWith(".") ? code.substring(0, code.length() - 1).trim() : code;

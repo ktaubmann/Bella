@@ -105,6 +105,8 @@ class PromptsTest {
 		String system = new AbapPrompts(null, null).chatSystem();
 		assertTrue(system.contains("Clean ABAP"), system);
 		assertTrue(system.contains("NEW instead of CREATE OBJECT"), system);
+		assertTrue(system.contains("write code a beginner understands"), system);
+		assertTrue(system.contains("intermediate variables"), system);
 		assertTrue(system.contains("Project naming rules (if configured below) and the style of the existing code take"),
 				system);
 		assertFalse(AbapPrompts.completion("DATA lv", "", "ZREP").system().contains("Clean ABAP"));
