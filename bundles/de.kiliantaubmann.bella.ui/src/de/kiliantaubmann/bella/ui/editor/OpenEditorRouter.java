@@ -186,7 +186,8 @@ public final class OpenEditorRouter implements WriteGuard {
 			return "";
 		}
 		return "\n\nBella's style check of the code written" + (methodBody ? " (line numbers count within the method body)" : "")
-				+ "; fix the findings that apply:\n" + AbapLint.format(findings) + AbapLint.fixHint(written, target);
+				+ "; fix the findings that apply:\n" + AbapLint.format(findings)
+				+ AbapLint.fixHint(written, target, findings);
 	}
 
 	/**

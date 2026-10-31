@@ -1,8 +1,10 @@
 package de.kiliantaubmann.bella.core.lint;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,6 +30,12 @@ public final class AbapLintFix {
 	public record Result(String source, List<String> applied) {
 	}
 
+	/** The rules whose findings {@link #fix} can correct. */
+	static final Set<String> RULES = Set.of("obsolete_move", "obsolete_compute", "obsolete_arithmetic",
+			"obsolete_refresh", "describe_lines", "call_method", "create_object", "prefer_is_not", "omit_receiving",
+			"exporting", "use_bool_expression", "else_after_all_returns", "max_one_statement", "space_before_dot",
+			"empty_line_in_statement", "whitespace_end");
+
 	private static final int FLAGS = Pattern.CASE_INSENSITIVE | Pattern.DOTALL;
 	private static final Pattern MOVE = Pattern.compile("MOVE\\s+(?!EXACT\\b)(\\S+)\\s+(\\??TO)\\s+(\\S+)\\.", FLAGS);
 	private static final Pattern COMPUTE = Pattern.compile("COMPUTE\\s+(?!EXACT\\b)(.+)", FLAGS);
@@ -47,9 +55,12 @@ public final class AbapLintFix {
 			"CREATE\\s+OBJECT\\s+([^\\s.]+)(?:\\s+TYPE\\s+([^\\s.(]+))?(?:\\s+EXPORTING(\\s.*))?\\.", FLAGS);
 	private static final Pattern OTHER_PARAMETERS = Pattern.compile("(?s).*\\b(?:IMPORTING|CHANGING|EXCEPTIONS)\\b.*",
 			Pattern.CASE_INSENSITIVE);
-	/** Tables with a header line, where REFRESH, CLEAR and lines( ) mean different things. */
-	private static final Pattern HEADER_LINE = Pattern.compile("(?i)\\bOCCURS\\b|\\bWITH\\s+HEADER\\s+LINE\\b|^\\s*TABLES\\b",
-			Pattern.MULTILINE);
+	/** Statements that declare tables with a header line, where REFRESH, CLEAR and lines( ) mean different things. */
+	private static final Pattern HEADER_LINE = Pattern.compile(
+			"\\bOCCURS\\b|\\bWITH\\s+HEADER\\s+LINE\\b|^(?:TABLES|SELECT-OPTIONS|RANGES)\\b|\\sTABLES\\s");
+	private static final Pattern DECLARED = Pattern.compile("(?:^|[\\s,:(])([A-Z0-9_/<>]+)\\s+(?:TYPE|LIKE)\\b"
+			+ "|\\b(?:DATA|FINAL|FIELD-SYMBOL)\\(\\s*([A-Z0-9_/<>]+)\\s*\\)");
+	private static final Pattern WORD = Pattern.compile("[A-Z0-9_/<>]+");
 
 	private AbapLintFix() {
 	}
@@ -140,18 +151,19 @@ public final class AbapLintFix {
 	// ---- fixes of single statements
 
 	private static String statementFixes(String source, Target t, List<String> applied, List<int[]> moved) {
-		boolean headerLines = HEADER_LINE.matcher(source).find();
 		int[] lineStarts = AbapLint.lineStarts(source);
 		String mask = mask(source);
+		String newline = source.contains("\r\n") ? "\r\n" : "\n";
 		StringBuilder out = new StringBuilder(source);
 		List<Statement> statements = AbapStructureScanner.statements(source);
+		Set<String> plainTables = plainTables(statements.stream().map(AbapLint::normalized).toList());
 		// from the end, so the offsets of earlier statements stay valid
 		for (int i = statements.size() - 1; i >= 0; i--) {
 			Statement st = statements.get(i);
 			int line = original(AbapLint.lineOf(lineStarts, st.start()), moved);
 			if (i + 1 < statements.size() && AbaplintRules.sameLine(source, st, statements.get(i + 1))
 					&& !hasComment(mask, st.start(), statements.get(i + 1).end())) {
-				out.replace(st.end(), statements.get(i + 1).start(), "\n" + indentOf(lineOf(source, st.start())));
+				out.replace(st.end(), statements.get(i + 1).start(), newline + indentOf(lineOf(source, st.start())));
 				applied.add("Line " + line + " max_one_statement");
 			}
 			String slice = source.substring(st.start(), st.end());
@@ -160,7 +172,7 @@ public final class AbapLintFix {
 				continue;
 			}
 			String text = slice;
-			Fix f = fixStatement(text, sliceMask, t, headerLines);
+			Fix f = fixStatement(text, sliceMask, t, plainTables);
 			if (f != null) {
 				text = f.text();
 				applied.add("Line " + line + " " + f.rule());
@@ -191,7 +203,7 @@ public final class AbapLintFix {
 	}
 
 	/** One statement in its modern form, or null. Patterns run on the mask, the result is built from the text. */
-	private static Fix fixStatement(String s, String m, Target t, boolean headerLines) {
+	private static Fix fixStatement(String s, String m, Target t, Set<String> plainTables) {
 		String first = m.split("\\s+", 2)[0].toUpperCase(Locale.ROOT);
 		boolean compoundAssignment = t.cloud() || t.release() >= 754;
 		return switch (first) {
@@ -202,10 +214,10 @@ public final class AbapLintFix {
 		case "SUBTRACT" -> match(SUBTRACT, s, m, g -> arithmetic(g.get(2), "-", g.get(1), compoundAssignment));
 		case "MULTIPLY", "DIVIDE" -> match(MULTIPLY_DIVIDE, s, m, g -> arithmetic(g.get(2),
 				g.get(1).equalsIgnoreCase("MULTIPLY") ? "*" : "/", g.get(3), compoundAssignment));
-		case "REFRESH" -> headerLines ? null
-				: match(REFRESH, s, m, g -> new Fix("obsolete_refresh", "CLEAR " + g.get(1) + "."));
-		case "DESCRIBE" -> headerLines ? null
-				: match(DESCRIBE, s, m, g -> new Fix("describe_lines", g.get(2) + " = lines( " + g.get(1) + " )."));
+		case "REFRESH" -> match(REFRESH, s, m, g -> plain(plainTables, g.get(1))
+				? new Fix("obsolete_refresh", "CLEAR " + g.get(1) + ".") : null);
+		case "DESCRIBE" -> match(DESCRIBE, s, m, g -> plain(plainTables, g.get(1))
+				? new Fix("describe_lines", g.get(2) + " = lines( " + g.get(1) + " ).") : null);
 		case "CALL" -> {
 			Fix receiving = match(CALL_METHOD_RECEIVING, s, m, AbapLintFix::receiving);
 			yield receiving != null ? receiving : match(CALL_METHOD, s, m, AbapLintFix::callMethod);
@@ -213,6 +225,31 @@ public final class AbapLintFix {
 		case "CREATE" -> t.below(740) ? null : match(CREATE_OBJECT, s, m, AbapLintFix::createObject);
 		default -> match(FUNCTIONAL_RECEIVING, s, m, AbapLintFix::receiving);
 		};
+	}
+
+	/**
+	 * Names declared in the source without a header line. A table declared elsewhere (another include, a
+	 * function module's TABLES parameter) is not among them, so REFRESH and DESCRIBE stay as they are there.
+	 */
+	private static Set<String> plainTables(List<String> codes) {
+		Set<String> declared = new HashSet<>();
+		Set<String> headerLines = new HashSet<>();
+		for (String code : codes) {
+			if (HEADER_LINE.matcher(code).find()) {
+				WORD.matcher(code).results().forEach(r -> headerLines.add(r.group()));
+				continue;
+			}
+			Matcher d = DECLARED.matcher(code);
+			while (d.find()) {
+				declared.add(d.group(1) != null ? d.group(1) : d.group(2));
+			}
+		}
+		declared.removeAll(headerLines);
+		return declared;
+	}
+
+	private static boolean plain(Set<String> plainTables, String name) {
+		return plainTables.contains(name.toUpperCase(Locale.ROOT));
 	}
 
 	/** The groups of a match on the mask, read from the text. */
@@ -303,7 +340,7 @@ public final class AbapLintFix {
 			return text.replaceFirst("(?s)(\\S)[ \\t]+\\.$", "$1.");
 		}
 		case "empty_line_in_statement" -> {
-			return text.replaceAll("\\n[ \\t]*(?=\\r?\\n)", "");
+			return text.replaceAll("\\r?\\n[ \\t]*(?=\\r?\\n)", "");
 		}
 		default -> {
 			return text;

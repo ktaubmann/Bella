@@ -271,8 +271,9 @@ public final class AbapLint {
 				out.add(new Finding(line, "too_many_importing", Severity.INFO, "Method has " + importingCount(code)
 						+ " IMPORTING parameters; aim for at most 3 (Clean ABAP), e.g. pass a structure or split the method."));
 			}
-			if (List.of("IF", "ELSEIF", "WHILE", "CHECK").contains(first) && logicalOperators(code) > MAX_CONDITION_OPERATORS) {
-				out.add(new Finding(line, "complex_condition", Severity.INFO, "Condition joins " + (logicalOperators(code) + 1)
+			int operators = List.of("IF", "ELSEIF", "WHILE", "CHECK").contains(first) ? logicalOperators(code) : 0;
+			if (operators > MAX_CONDITION_OPERATORS) {
+				out.add(new Finding(line, "complex_condition", Severity.INFO, "Condition joins " + (operators + 1)
 						+ " parts with AND/OR; split it into well-named intermediate variables such as"
 						+ " DATA(is_valid) = xsdbool( … ) (Clean ABAP)."));
 			}
@@ -840,12 +841,12 @@ public final class AbapLint {
 		return false;
 	}
 
-	/** Statement text upper-cased, literals blanked, without the final period. */
 	/** AND, OR and EQUIV in a normalized statement; the AND of BETWEEN … AND … does not count. */
 	static int logicalOperators(String code) {
 		return (int) (LOGICAL_OPERATOR.matcher(code).results().count() - BETWEEN.matcher(code).results().count());
 	}
 
+	/** Statement text upper-cased, literals blanked, without the final period. */
 	static String normalized(Statement st) {
 		String code = LITERAL.matcher(st.text()).replaceAll("''").trim().toUpperCase(Locale.ROOT);
 		return code.endsWith(".") ? code.substring(0, code.length() - 1).trim() : code;
@@ -1268,11 +1269,18 @@ public final class AbapLint {
 	}
 
 	/**
-	 * A note for the model when {@link AbapLintFix} can fix some of the findings in {@code source};
-	 * empty otherwise.
+	 * A note for the model when {@link AbapLintFix} can fix some of {@code findings} of {@code source}; empty
+	 * otherwise. Fixes of things that are no finding (e.g. split lines) are not counted.
 	 */
-	public static String fixHint(String source, Target target) {
-		int fixable = AbapLintFix.fix(source, target).applied().size();
+	public static String fixHint(String source, Target target, List<Finding> findings) {
+		Set<String> rules = new HashSet<>();
+		findings.forEach(f -> rules.add(f.rule()));
+		rules.retainAll(AbapLintFix.RULES);
+		if (rules.isEmpty()) {
+			return "";
+		}
+		long fixable = AbapLintFix.fix(source, target).applied().stream()
+				.filter(a -> rules.contains(a.replaceFirst("^Line \\d+ ", "").replaceFirst(" .*", ""))).count();
 		return fixable == 0 ? ""
 				: fixable + " of them can be fixed mechanically: abap_lint with 'fix' true returns the corrected code.\n";
 	}

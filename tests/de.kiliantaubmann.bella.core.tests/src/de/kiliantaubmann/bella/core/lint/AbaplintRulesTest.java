@@ -128,6 +128,9 @@ class AbaplintRulesTest {
 		assertEquals("lo->run( iv_a = 'EXPORTING' ).", fixed("lo->run( EXPORTING iv_a = 'EXPORTING' )."));
 		assertEquals("x = 1.", fixed("x = 1 ."));
 		assertEquals("x = a +\n    b.", fixed("x = a +\n\n    b."));
+		// Windows line ends stay intact
+		assertEquals("x = a +\r\n    b.", fixed("x = a +\r\n\r\n    b."));
+		assertEquals("x = 1.\r\ny = 2.\r\n", fixed("x = 1. y = 2.\r\n"));
 		assertEquals("  x = 1.\n  y = 2.", fixed("  x = 1. y = 2."));
 		assertEquals("b = 'X TO Y'.", fixed("MOVE 'X TO Y' TO b."));
 		assertEquals("  lv_ok = xsdbool( a = 1 ).\nx = 1.",

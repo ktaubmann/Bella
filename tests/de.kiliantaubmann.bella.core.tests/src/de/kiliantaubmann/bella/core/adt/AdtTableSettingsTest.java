@@ -90,6 +90,12 @@ class AdtTableSettingsTest {
 		String nothing = p.call("adt_write_metadata", Json.parseObject("{\"name\":\"ZTEST\",\"type\":\"TABL/DTT\"}"),
 				CancelToken.NONE).content();
 		assertTrue(nothing.contains("Give at least one of"), nothing);
+		String missing = p.call("adt_write_metadata", Json.parseObject("{\"name\":\"ZTEST\",\"type\":\"TABL/DTT\","
+				+ "\"size_category\":null}"), CancelToken.NONE).content();
+		assertTrue(missing.contains("'size_category' needs a value"), missing);
+		String logging = p.call("adt_write_metadata", Json.parseObject("{\"name\":\"ZTEST\",\"type\":\"TABL/DTT\","
+				+ "\"logging\":\"yes\"}"), CancelToken.NONE).content();
+		assertTrue(logging.contains("logging is true or false"), logging);
 		assertTrue(puts.isEmpty());
 	}
 

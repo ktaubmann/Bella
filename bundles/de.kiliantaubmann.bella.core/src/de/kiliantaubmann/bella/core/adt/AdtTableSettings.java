@@ -103,6 +103,18 @@ final class AdtTableSettings {
 				"buffering_key_fields").stream().anyMatch(in::has);
 	}
 
+	/** The value of a field the call gives, null if it leaves it out; a field without a value is refused. */
+	private static String given(JsonObject in, String key) throws AdtException {
+		if (!in.has(key)) {
+			return null;
+		}
+		String v = Json.str(in, key);
+		if (v == null) {
+			throw new AdtException(400, "'" + key + "' needs a value; leave it out to keep SAP's setting.");
+		}
+		return v;
+	}
+
 	/**
 	 * SAP's document with the given fields replaced. SAP checks the values
 	 * only at activation (an unknown data class saves fine), so only their
@@ -115,24 +127,29 @@ final class AdtTableSettings {
 		Matcher root = Pattern.compile("<([A-Za-z_][\\w.-]*:)?tableSettings\\b").matcher(xml);
 		String prefix = root.find() && root.group(1) != null ? root.group(1) : "";
 		String out = xml;
-		String dataClass = Json.str(in, "data_class");
+		String dataClass = given(in, "data_class");
 		if (dataClass != null) {
 			out = replace(out, prefix, "dataClassCategory", check(dataClass.trim().toUpperCase(Locale.ROOT),
 					"[A-Z0-9_]{1,5}", "data_class is a data class such as APPL0, APPL1 or USER"));
 		}
-		if (in.has("size_category")) {
-			out = replace(out, prefix, "sizeCategory", check(Json.str(in, "size_category").trim(), "[0-9]",
-					"size_category is 0 to 9"));
+		String size = given(in, "size_category");
+		if (size != null) {
+			out = replace(out, prefix, "sizeCategory", check(size.trim(), "[0-9]", "size_category is 0 to 9"));
 		}
-		if (in.has("logging")) {
+		String logging = given(in, "logging") == null ? null : given(in, "logging").trim().toLowerCase(Locale.ROOT);
+		if (logging != null) {
+			if (!logging.equals("true") && !logging.equals("false")) {
+				throw new AdtException(400, "logging is true or false.");
+			}
 			if (parse(xml).logging() == null) {
 				throw new AdtException(400, "SAP shows no logging flag for this table, so Bella does not set it.");
 			}
-			out = replace(out, prefix, "loggingEnabled", String.valueOf(in.get("logging").getAsBoolean()));
+			out = replace(out, prefix, "loggingEnabled", logging);
 		}
-		String allowed = Json.str(in, "buffering_allowed");
-		String type = Json.str(in, "buffering_type");
-		boolean keys = in.has("buffering_key_fields");
+		String allowed = given(in, "buffering_allowed");
+		String type = given(in, "buffering_type");
+		String keyFields = given(in, "buffering_key_fields");
+		boolean keys = keyFields != null;
 		if (allowed != null || type != null || keys) {
 			Matcher m = Pattern.compile("<" + Pattern.quote(prefix) + "buffering(?:\\s[^>]*?)?>[\\s\\S]*?</"
 					+ Pattern.quote(prefix) + "buffering\\s*>").matcher(out);
@@ -154,7 +171,7 @@ final class AdtTableSettings {
 						"buffering_type is \"\" (none), P (single records), G (generic) or X (full)"));
 			}
 			if (keys) {
-				block = replace(block, prefix, "areaKeyFields", check(Json.str(in, "buffering_key_fields").trim(),
+				block = replace(block, prefix, "areaKeyFields", check(keyFields.trim(),
 						"\\d{1,3}", "buffering_key_fields is the number of key fields of generic buffering"));
 			}
 			out = out.substring(0, start) + block + out.substring(end);

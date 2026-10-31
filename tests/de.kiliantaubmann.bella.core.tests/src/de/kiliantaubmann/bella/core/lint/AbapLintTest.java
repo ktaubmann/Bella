@@ -145,8 +145,9 @@ class AbapLintTest {
 		assertEquals("b -= a.", fixed("SUBTRACT a FROM b.", r758));
 		assertEquals("b *= 2.", fixed("MULTIPLY b BY 2.", r758));
 		assertEquals("b = b / 2.", fixed("DIVIDE b BY 2.", AbapLint.Target.of("750", false)));
-		assertEquals("CLEAR lt_rows.", fixed("REFRESH lt_rows.", unknown));
-		assertEquals("lv_count = lines( lt_rows ).", fixed("DESCRIBE TABLE lt_rows LINES lv_count.", unknown));
+		String rows = "DATA lt_rows TYPE STANDARD TABLE OF i.\n";
+		assertEquals(rows + "CLEAR lt_rows.", fixed(rows + "REFRESH lt_rows.", unknown));
+		assertEquals(rows + "lv_count = lines( lt_rows ).", fixed(rows + "DESCRIBE TABLE lt_rows LINES lv_count.", unknown));
 		assertEquals("lo_app->run( ).", fixed("CALL METHOD lo_app->run.", unknown));
 		assertEquals("lo_app->run(\n    iv_a = 1 ).",
 				fixed("CALL METHOD lo_app->run\n    EXPORTING iv_a = 1.", unknown));
@@ -168,11 +169,22 @@ class AbapLintTest {
 				"MOVE a \" comment\n TO b.", "ADD 1 THEN a UNTIL b GIVING c.")) {
 			assertEquals(keep, fixed(keep, unknown), keep);
 		}
-		// with header lines REFRESH and CLEAR differ
-		String headerLine = "DATA lt_rows TYPE TABLE OF i WITH HEADER LINE.\nREFRESH lt_rows.";
-		assertEquals(headerLine, fixed(headerLine, unknown));
+		// with header lines REFRESH and CLEAR differ; tables declared elsewhere may have one
+		for (String headerLine : List.of("DATA lt_rows TYPE TABLE OF i WITH HEADER LINE.\nREFRESH lt_rows.",
+				"SELECT-OPTIONS s_matnr FOR mara-matnr.\nREFRESH s_matnr.", "RANGES r_x FOR mara-matnr.\nREFRESH r_x.",
+				"FORM f TABLES pt_rows STRUCTURE mara.\n  REFRESH pt_rows.\nENDFORM.", "REFRESH gt_global.",
+				"DESCRIBE TABLE gt_global LINES lv.")) {
+			assertEquals(headerLine, fixed(headerLine, unknown));
+		}
+		// a table declared without a header line in a program that also has one
+		assertEquals("DATA lt_a TYPE TABLE OF i WITH HEADER LINE.\nDATA lt_b TYPE TABLE OF i.\nCLEAR lt_b.",
+				fixed("DATA lt_a TYPE TABLE OF i WITH HEADER LINE.\nDATA lt_b TYPE TABLE OF i.\nREFRESH lt_b.", unknown));
 		assertEquals("CREATE OBJECT lo.", fixed("CREATE OBJECT lo.", AbapLint.Target.of("702", false)));
 		assertEquals(List.of(), AbapLintFix.fix("x = 1.", unknown).applied());
+	}
+
+	private static String hint(String source) {
+		return AbapLint.fixHint(source, AbapLint.Target.UNKNOWN, AbapLint.check(source));
 	}
 
 	@Test
@@ -183,8 +195,10 @@ class AbapLintTest {
 				&& text.indexOf("obsolete_move") < text.indexOf("Hints (style")
 				&& text.indexOf("Hints (style") < text.indexOf("concatenate"), text);
 		assertTrue(AbapLint.format(AbapLint.check("CONCATENATE a b INTO c.")).startsWith("Hints (style"));
-		assertTrue(AbapLint.fixHint("MOVE a TO b.", AbapLint.Target.UNKNOWN).startsWith("1 of them"));
-		assertEquals("", AbapLint.fixHint("x = 1.", AbapLint.Target.UNKNOWN));
+		assertTrue(hint("MOVE a TO b.").startsWith("1 of them"), hint("MOVE a TO b."));
+		assertEquals("", hint("x = 1."));
+		// splitting the second statement onto its own line is no finding of its own to count
+		assertTrue(hint("MOVE a TO b.\nCONCATENATE a b INTO c.").startsWith("1 of them"));
 	}
 
 	@Test

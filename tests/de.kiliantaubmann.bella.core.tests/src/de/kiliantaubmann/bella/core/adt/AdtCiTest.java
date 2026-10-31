@@ -131,6 +131,14 @@ class AdtCiTest {
 		assertEquals(3, j.tests());
 		assertFalse(j.passed());
 		assertThrows(IOException.class, () -> AdtCi.parseJUnit("<testsuite tests=\"0\"/>"));
+		// errors and skipped may be missing on the root; the test cases then give them
+		AdtCi.JUnit few = AdtCi.parseJUnit("<testsuites tests=\"2\" failures=\"1\"><testsuite><testcase name=\"a\"/>"
+				+ "<testcase name=\"b\"><failure message=\"m\"/></testcase></testsuite></testsuites>");
+		assertEquals(1, few.failures());
+		assertEquals(0, few.skipped());
+		assertThrows(IOException.class, () -> AdtCi.parseJUnit("<testsuites failures=\"0\"><testsuite/></testsuites>"));
+		assertThrows(IOException.class, () -> AdtCi.parseJUnit("<testsuites tests=\"1\" errors=\"x\"><testsuite>"
+				+ "<testcase name=\"a\"/></testsuite></testsuites>"));
 		assertThrows(IOException.class, () -> AdtCi.parseCheckstyle("<checkstyle><file name=\"x\"><error "
 				+ "severity=\"fatal\" message=\"m\"/></file></checkstyle>"));
 		assertEquals(2, AdtCi.parseCheckstyle(CHECKSTYLE).size());

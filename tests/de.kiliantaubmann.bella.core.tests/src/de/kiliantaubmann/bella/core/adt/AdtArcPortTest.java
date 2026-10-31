@@ -147,7 +147,13 @@ class AdtArcPortTest {
 		assertEquals(AdtFlp.SERVICE + "/Catalogs('X-SAP-UI2-CATALOGPAGE%3AZ%20O%27%27K')", sent.get(2).path());
 		assertTrue(call(adt, "adt_flp_manage", "{\"action\":\"create_group\",\"group\":\"ZG\"}").content()
 				.contains("Give 'title'"));
-		assertEquals(3, sent.size());
+		// the catalog id works with and without the catalog page prefix
+		call(adt, "adt_flp_manage", "{\"action\":\"delete_catalog\",\"catalog\":\"ZSALES\"}");
+		assertEquals(AdtFlp.SERVICE + "/Catalogs('X-SAP-UI2-CATALOGPAGE%3AZSALES')", sent.get(3).path());
+		call(adt, "adt_flp_manage", "{\"action\":\"create_catalog\",\"catalog\":\"X-SAP-UI2-CATALOGPAGE:ZSALES\","
+				+ "\"title\":\"Sales\"}");
+		assertEquals("ZSALES", Json.str(Json.parseObject(sent.get(4).body()), "domainId"));
+		assertEquals(5, sent.size());
 		// asks even in Automode
 		assertEquals(ToolPolicy.Decision.CONFIRM, new ToolPolicy(List.of(), ChatMode.AUTO).decide(ToolSpec.of(
 				"adt_flp_manage", "", new JsonObject(), null, ToolSpec.Kind.WRITE), new JsonObject()));

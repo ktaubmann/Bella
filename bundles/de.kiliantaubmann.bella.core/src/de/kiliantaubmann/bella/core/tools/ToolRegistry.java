@@ -32,8 +32,12 @@ public final class ToolRegistry {
 	/** The last tool list of each provider, used while it fails, so the list the model sees stays the same. */
 	private final Map<String, List<ToolSpec>> lastListed = new java.util.concurrent.ConcurrentHashMap<>();
 
+	/** Adds a provider; one with the same id is replaced, and the tools it listed are forgotten. */
 	public void addProvider(ToolProvider provider) {
-		providers.removeIf(p -> p.id().equals(provider.id()));
+		if (providers.removeIf(p -> p.id().equals(provider.id()) && p != provider)) {
+			lastListed.remove(provider.id());
+		}
+		providers.removeIf(p -> p == provider);
 		providers.add(provider);
 	}
 

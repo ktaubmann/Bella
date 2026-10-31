@@ -116,4 +116,23 @@ class AdtKtdTest {
 		assertEquals(envelope(b64("New"), ""), writes.get(0).body());
 		assertEquals(AdtKtd.TYPE, writes.get(0).headers().get("Accept"));
 	}
+
+	@Test
+	void writeReadsTheDocumentUnderTheLock() {
+		List<AdtRequest> writes = new ArrayList<>();
+		boolean[] locked = { false };
+		// someone documents the field after Bella's first read, before the lock
+		FakeAdt adt = adt(envelope("", ""), writes)
+				.route("GET " + URI + "/zi_order", r -> FakeAdt.ok(locked[0] ? envelope(b64("Old"), b64("Field"))
+						: envelope(b64("Old"), "")))
+				.route("POST " + URI + "/zi_order?_action=LOCK", r -> {
+					locked[0] = true;
+					return FakeAdt.ok("<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>");
+				});
+		ToolResult r = new AdtToolProvider(adt, () -> "dev").call("adt_write_source",
+				Json.parseObject("{\"name\":\"ZI_ORDER\",\"type\":\"SKTD\",\"source\":\"New\"}"), CancelToken.NONE);
+		// read under the lock, Bella sees two documented nodes and asks for headings instead of overwriting the field
+		assertTrue(r.isError() && r.content().contains("documents 2 nodes"), r.content());
+		assertTrue(writes.isEmpty());
+	}
 }

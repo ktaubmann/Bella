@@ -148,16 +148,19 @@ final class AdtCi {
 		return sb.append(report(junit, withReport, "JUnit")).toString();
 	}
 
-	/** Counters and test cases of a JUnit report; the counters must agree with the test cases. */
+	/**
+	 * Counters and test cases of a JUnit report; the counters must agree with the test cases. Only
+	 * {@code tests} is required: many producers leave out {@code errors} or {@code skipped} on the root.
+	 */
 	static JUnit parseJUnit(String xml) throws IOException {
 		Element root = AdtXml.parse(xml).getDocumentElement();
 		if (!"testsuites".equals(AdtDiagnostics.local(root))) {
 			throw new IOException("not a JUnit report");
 		}
 		int tests = count(root, "tests");
-		int failures = count(root, "failures");
-		int errors = count(root, "errors");
-		int skipped = count(root, "skipped");
+		Integer failures = optionalCount(root, "failures");
+		Integer errors = optionalCount(root, "errors");
+		Integer skipped = optionalCount(root, "skipped");
 		List<TestCase> cases = new ArrayList<>();
 		int f = 0;
 		int e = 0;
@@ -188,10 +191,16 @@ final class AdtCi {
 			}
 			cases.add(new TestCase(AdtXml.attr(tc, "classname"), AdtXml.attr(tc, "name"), outcome, message));
 		}
-		if (cases.size() != tests || f != failures || e != errors || s != skipped) {
+		if (cases.size() != tests || failures != null && f != failures || errors != null && e != errors
+				|| skipped != null && s != skipped) {
 			throw new IOException("its counters do not match its test cases");
 		}
-		return new JUnit(tests, failures, errors, skipped, cases);
+		return new JUnit(tests, f, e, s, cases);
+	}
+
+	/** A counter that may be missing (null); one that is there must be valid. */
+	private static Integer optionalCount(Element e, String attr) throws IOException {
+		return e.hasAttribute(attr) ? count(e, attr) : null;
 	}
 
 	private static int count(Element e, String attr) throws IOException {

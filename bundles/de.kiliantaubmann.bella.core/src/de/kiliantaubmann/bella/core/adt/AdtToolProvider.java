@@ -3068,7 +3068,7 @@ public final class AdtToolProvider implements ToolProvider {
 			sb.append("\n\nBella's style check of the code written")
 					.append(methodBody ? " (line numbers count within the method body)" : "")
 					.append("; fix the findings that apply before activating:\n").append(AbapLint.format(lint))
-					.append(AbapLint.fixHint(written, target));
+					.append(AbapLint.fixHint(written, target, lint));
 		}
 		try {
 			// the check before writing ran on exactly the saved source; no need to ask SAP again
@@ -3520,8 +3520,9 @@ public final class AdtToolProvider implements ToolProvider {
 			case "SKTD" -> {
 				if (source != null && !source.isBlank()) {
 					try {
-						AdtClient.writeMetadata(session, ref.uri(), AdtKtd.rewrite(c.readMetadata(ref.uri(), AdtKtd.TYPE,
-								cancel), source), AdtKtd.TYPE, transport, cancel);
+						String markdown = source;
+						AdtClient.writeLocked(session, ref.uri(), transport, cancel,
+								envelope -> AdtKtd.rewrite(envelope, markdown), ref.uri(), AdtKtd.TYPE);
 					} catch (AdtException e) {
 						return ToolResult.error("Created " + ref.name() + " (SKTD) on " + s.label() + ", but writing its "
 								+ "documentation failed, so it exists empty: " + e.getMessage() + "\nWrite it with "
@@ -3756,19 +3757,27 @@ public final class AdtToolProvider implements ToolProvider {
 						: "activate them with type TABL/DTT."));
 	}
 
+	/** Why the BAdI implementations of {@code stored} cannot be changed as asked, or null. */
+	private static String badiRefusal(String name, AdtBadi.Stored stored, JsonObject in) {
+		if (!stored.technology().isEmpty() && !stored.technology().equals("BADI_IMPL")) {
+			return name + " is a " + stored.technology() + " enhancement; Bella changes only BAdI implementations.";
+		}
+		String spotGiven = Json.str(in, "enhancement_spot");
+		if (spotGiven != null && !spotGiven.isBlank() && !spotGiven.trim().equalsIgnoreCase(stored.spot())) {
+			return "The enhancement spot of " + name + " is " + stored.spot() + " and cannot change; create a new "
+					+ "enhancement implementation for " + spotGiven.trim().toUpperCase(Locale.ROOT) + ".";
+		}
+		return null;
+	}
+
 	/** Adds, changes or removes BAdI implementations, keeping what SAP stores beyond the given fields. */
 	private ToolResult writeBadis(AdtSystem s, AdtClient c, JsonObject in, CancelToken cancel) throws IOException {
 		String name = requiredName(in).toUpperCase(Locale.ROOT);
 		String uri = AdtBadi.uri(name);
-		AdtBadi.Stored stored = AdtBadi.parse(c.readMetadata(uri, AdtBadi.ENHO_TYPE, cancel));
-		if (!stored.technology().isEmpty() && !stored.technology().equals("BADI_IMPL")) {
-			return ToolResult.error(name + " is a " + stored.technology() + " enhancement; Bella changes only BAdI "
-					+ "implementations.");
-		}
-		String spotGiven = Json.str(in, "enhancement_spot");
-		if (spotGiven != null && !spotGiven.isBlank() && !spotGiven.trim().equalsIgnoreCase(stored.spot())) {
-			return ToolResult.error("The enhancement spot of " + name + " is " + stored.spot() + " and cannot change; "
-					+ "create a new enhancement implementation for " + spotGiven.trim().toUpperCase(Locale.ROOT) + ".");
+		AdtBadi.Stored first = AdtBadi.parse(c.readMetadata(uri, AdtBadi.ENHO_TYPE, cancel));
+		String refused = badiRefusal(name, first, in);
+		if (refused != null) {
+			return ToolResult.error(refused);
 		}
 		List<AdtBadi.Input> inputs = AdtBadi.inputs(in);
 		List<String> remove = new ArrayList<>();
@@ -3782,21 +3791,33 @@ public final class AdtToolProvider implements ToolProvider {
 				remove.add(e.getAsString().trim().toUpperCase(Locale.ROOT));
 			}
 		}
-		List<AdtBadi.Entry> entries = inputs == null && remove.isEmpty() ? stored.entries()
-				: AdtBadi.merged(stored, inputs == null ? List.of() : inputs, remove,
-						inputs == null || inputs.isEmpty() ? new AdtBadi.Spot(stored.spot(), "", false, Map.of())
-								: spot(c, stored.spot(), cancel));
-		String description = Json.str(in, "description") == null ? stored.description() : Json.str(in, "description");
-		String body = AdtBadi.xml(name, description, stored.pkg(),
-				AdtDdic.language(stored.language().isEmpty() ? s.language() : stored.language()), null,
-				stored.languageVersion(), stored.spot(), entries);
+		// the spot cannot change, so its definition may be read before the lock
+		AdtBadi.Spot spot = inputs == null || inputs.isEmpty() ? new AdtBadi.Spot(first.spot(), "", false, Map.of())
+				: spot(c, first.spot(), cancel);
+		List<List<AdtBadi.Entry>> written = new ArrayList<>();
 		String tr;
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-			tr = AdtClient.writeMetadata(session, uri, body, AdtBadi.ENHO_TYPE, Json.str(in, "transport"), cancel);
+			// merged into what SAP holds under the lock, so a change saved in between is kept
+			tr = AdtClient.writeLocked(session, uri, Json.str(in, "transport"), cancel, current -> {
+				AdtBadi.Stored stored = AdtBadi.parse(current);
+				String changed = badiRefusal(name, stored, in);
+				if (changed != null) {
+					throw new AdtException(409, changed);
+				}
+				List<AdtBadi.Entry> merged = inputs == null && remove.isEmpty() ? stored.entries()
+						: AdtBadi.merged(stored, inputs == null ? List.of() : inputs, remove, spot);
+				written.add(merged);
+				String description = Json.str(in, "description") == null ? stored.description()
+						: Json.str(in, "description");
+				return AdtBadi.xml(name, description, stored.pkg(),
+						AdtDdic.language(stored.language().isEmpty() ? s.language() : stored.language()), null,
+						stored.languageVersion(), stored.spot(), merged);
+			}, uri, AdtBadi.ENHO_TYPE);
 		} finally {
 			c.invalidate(uri);
 			inactive.remove(s.destinationId());
 		}
+		List<AdtBadi.Entry> entries = written.get(written.size() - 1);
 		return ToolResult.ok("Saved the BAdI implementations of " + name + " (" + String.join(", ",
 				entries.stream().map(AdtBadi.Entry::name).toList()) + (entries.isEmpty() ? "none" : "") + ") in "
 				+ s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")") + ". Not activated yet.");
@@ -3891,10 +3912,12 @@ public final class AdtToolProvider implements ToolProvider {
 	/** The Markdown of a knowledge transfer document, written into the envelope SAP returns. */
 	private ToolResult writeKtd(AdtSystem s, AdtClient c, AdtObjectRef ref, String uri, JsonObject in,
 			CancelToken cancel) throws IOException {
-		String body = AdtKtd.rewrite(c.readMetadata(uri, AdtKtd.TYPE, cancel), Json.str(in, "source"));
+		String markdown = Json.str(in, "source");
 		String tr;
 		try (AdtTransport.Session session = backend.stateful(s.destinationId())) {
-			tr = AdtClient.writeMetadata(session, uri, body, AdtKtd.TYPE, Json.str(in, "transport"), cancel);
+			// read under the lock, so a change saved in between is not overwritten
+			tr = AdtClient.writeLocked(session, uri, Json.str(in, "transport"), cancel,
+					envelope -> AdtKtd.rewrite(envelope, markdown), uri, AdtKtd.TYPE);
 		} finally {
 			c.invalidate(uri);
 			inactive.remove(s.destinationId());

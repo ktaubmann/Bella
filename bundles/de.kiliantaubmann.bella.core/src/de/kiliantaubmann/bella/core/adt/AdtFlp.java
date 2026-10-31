@@ -42,7 +42,7 @@ final class AdtFlp {
 		return switch (action) {
 		case "create_catalog" -> {
 			JsonObject b = new JsonObject();
-			b.addProperty("domainId", required(in, "catalog"));
+			b.addProperty("domainId", catalogDomain(required(in, "catalog")));
 			b.addProperty("title", required(in, "title"));
 			b.addProperty("type", "CATALOG_PAGE");
 			yield new String[] { "POST", SERVICE + "/Catalogs", Json.GSON.toJson(b) };
@@ -86,7 +86,8 @@ final class AdtFlp {
 			yield new String[] { "POST", SERVICE + "/PageChipInstances", Json.GSON.toJson(b) };
 		}
 		case "delete_catalog" -> new String[] { "DELETE",
-				SERVICE + "/Catalogs('" + AdtClient.enc(required(in, "catalog").replace("'", "''")).replace("+", "%20")
+				SERVICE + "/Catalogs('" + AdtClient.enc((CATALOG_PAGE + catalogDomain(required(in, "catalog")))
+						.replace("'", "''")).replace("+", "%20")
 						+ "')",
 				null };
 		default -> throw new IllegalArgumentException(

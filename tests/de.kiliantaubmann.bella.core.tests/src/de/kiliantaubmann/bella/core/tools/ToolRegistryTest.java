@@ -139,5 +139,29 @@ class ToolRegistryTest {
 		r.refresh(errors::add);
 		assertEquals(1, errors.size());
 		assertEquals(before, r.tools().stream().map(ToolSpec::name).toList(), "same tools, same order");
+		// a replaced provider that fails does not inherit the tools of the one before
+		r.addProvider(new ToolProvider() {
+			@Override
+			public String id() {
+				return listed.id();
+			}
+
+			@Override
+			public String displayName() {
+				return listed.displayName();
+			}
+
+			@Override
+			public List<ToolSpec> listTools() {
+				throw new IllegalStateException("new server down");
+			}
+
+			@Override
+			public ToolResult call(String remoteName, JsonObject input, CancelToken cancel) {
+				return ToolResult.error("down");
+			}
+		});
+		r.refresh(errors::add);
+		assertEquals(List.of("adt_a", "adt_b"), names(r));
 	}
 }
