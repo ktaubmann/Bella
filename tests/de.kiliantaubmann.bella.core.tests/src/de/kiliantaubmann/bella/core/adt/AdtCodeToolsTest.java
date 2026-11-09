@@ -192,4 +192,45 @@ class AdtCodeToolsTest {
 		assertEquals("Deleted ZCL_A in S4H_100.", forced.content());
 		assertEquals(List.of("/sap/bc/adt/oo/classes/zcl_a?lockHandle=H"), deletes);
 	}
+
+	private static String usages(String... names) {
+		StringBuilder refs = new StringBuilder();
+		for (String n : names) {
+			refs.append("<usageReferences:referencedObject uri=\"/sap/bc/adt/oo/classes/").append(n.toLowerCase())
+					.append("\"><usageReferences:adtObject adtcore:name=\"").append(n)
+					.append("\" adtcore:type=\"CLAS/OC\"/></usageReferences:referencedObject>");
+		}
+		return "<usageReferences:usageReferenceResult xmlns:usageReferences=\"http://www.sap.com/adt/ris/usageReferences\" "
+				+ "xmlns:adtcore=\"http://www.sap.com/adt/core\"><usageReferences:referencedObjects>" + refs
+				+ "</usageReferences:referencedObjects></usageReferences:usageReferenceResult>";
+	}
+
+	/** SAP indexes a fresh activation late: an empty where-used list is asked again before deleting. */
+	@Test
+	void deleteAsksWhereUsedAgainWhenItIsEmpty() {
+		List<String> deletes = new ArrayList<>();
+		List<String> answers = new ArrayList<>(List.of(usages("ZIF_A"), usages("ZIF_A"), usages("ZIF_A", "ZCL_USER")));
+		FakeAdt adt = adt()
+				.route("POST /sap/bc/adt/repository/informationsystem/usageReferences",
+						r -> FakeAdt.ok(answers.size() > 1 ? answers.remove(0) : answers.get(0)))
+				.route("POST /sap/bc/adt/oo/interfaces/zif_a?_action=LOCK", r -> FakeAdt.ok(
+						"<DATA><LOCK_HANDLE>H</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA>"))
+				.route("POST /sap/bc/adt/oo/interfaces/zif_a?_action=UNLOCK", r -> FakeAdt.ok(""))
+				.route("DELETE /sap/bc/adt/oo/interfaces/zif_a", r -> {
+					deletes.add(r.path());
+					return FakeAdt.ok("");
+				});
+		AdtToolProvider p = new AdtToolProvider(adt, () -> "dev");
+		p.whereUsedRetryMillis = new long[] { 0, 0 };
+		ToolResult used = call(p, "adt_delete_object", "{\"name\":\"ZIF_A\",\"type\":\"INTF\"}");
+		assertTrue(used.isError() && used.content().startsWith("ZIF_A is used by 1 objects, e.g. ZCL_USER."),
+				used.content());
+		assertTrue(deletes.isEmpty());
+
+		answers.clear();
+		answers.add(usages("ZIF_A"));
+		ToolResult unused = call(p, "adt_delete_object", "{\"name\":\"ZIF_A\",\"type\":\"INTF\"}");
+		assertEquals("Deleted ZIF_A in S4H_100. The where-used list showed no users.", unused.content());
+		assertEquals(1, deletes.size());
+	}
 }

@@ -60,6 +60,9 @@ public final class AdtToolProvider implements ToolProvider {
 	/** How long the inactive-objects list is reused; writes and activations clear it at once. */
 	static final long INACTIVE_TTL_MILLIS = 30_000;
 
+	/** Pauses before asking where-used again when it found no users of an object to delete. */
+	long[] whereUsedRetryMillis = { 1_000, 2_000 };
+
 	/**
 	 * @param defaultDestination destination of the active editor, used when the
 	 *                           model does not name a system; may return {@code null}
@@ -2379,8 +2382,13 @@ public final class AdtToolProvider implements ToolProvider {
 		boolean force = in.has("force") && in.get("force").isJsonPrimitive() && in.get("force").getAsBoolean()
 				|| uri.startsWith(AdtTableIndex.COLLECTION + "/"); // nothing uses an index by name
 		if (!force) {
-			List<AdtObjectRef> users = c.whereUsed(uri, cancel).stream()
-					.filter(u -> !u.name().equalsIgnoreCase(ref.name())).toList();
+			// SAP fills the where-used index of a fresh activation late, sometimes only in part: ask again
+			// before an empty list lets the delete go ahead
+			List<AdtObjectRef> users = users(c, uri, ref.name(), cancel);
+			for (int i = 0; users.isEmpty() && i < whereUsedRetryMillis.length; i++) {
+				pause(whereUsedRetryMillis[i], cancel);
+				users = users(c, uri, ref.name(), cancel);
+			}
 			if (!users.isEmpty()) {
 				return ToolResult.error(ref.name() + " is used by " + users.size() + " objects, e.g. " + String.join(", ",
 						users.stream().limit(10).map(AdtObjectRef::name).toList())
@@ -2395,7 +2403,25 @@ public final class AdtToolProvider implements ToolProvider {
 			inactive.remove(s.destinationId());
 		}
 		return ToolResult.ok("Deleted " + ref.name() + " in " + s.label() + (tr.isEmpty() ? "" : " (transport " + tr + ")")
-				+ ".");
+				+ "." + (force ? "" : " The where-used list showed no users."));
+	}
+
+	/** Objects using {@code uri}, without the object itself. */
+	private static List<AdtObjectRef> users(AdtClient c, String uri, String name, CancelToken cancel)
+			throws IOException {
+		return c.whereUsed(uri, cancel).stream().filter(u -> !u.name().equalsIgnoreCase(name)).toList();
+	}
+
+	private static void pause(long millis, CancelToken cancel) throws IOException {
+		if (cancel.isCancelled()) {
+			throw new IOException("Cancelled; nothing was deleted.");
+		}
+		try {
+			Thread.sleep(millis);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new java.io.InterruptedIOException("Interrupted; nothing was deleted.");
+		}
 	}
 
 	private static String action(JsonObject in) {
