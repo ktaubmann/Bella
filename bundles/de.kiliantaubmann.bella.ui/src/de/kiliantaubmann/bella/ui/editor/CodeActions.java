@@ -94,63 +94,73 @@ public final class CodeActions {
 			selOffset = range.get()[0];
 			selLength = range.get()[1];
 		}
-		int offset;
-		int length;
-		String text;
-		switch (target) {
-		case CURSOR -> {
-			offset = selOffset + selLength;
-			length = 0;
-			String indent = AbapEdit.indentationOfLine(before, offset);
-			boolean lineIsBlank = before.substring(AbapEdit.lineStart(before, offset), offset).isBlank();
-			text = lineIsBlank ? AbapEdit.indent(code, indent).stripLeading() : code;
+		Optional<Edit> edit = edit(before, selOffset, selLength, target, code);
+		if (edit.isEmpty()) {
+			MessageDialog.openInformation(shell, Messages.get("app.name"),
+					Messages.get(target == Target.METHOD ? "editor.noMethod" : "editor.noSelection"));
+			return false;
 		}
-		case SELECTION -> {
-			if (selLength == 0) {
-				MessageDialog.openInformation(shell, Messages.get("app.name"), Messages.get("editor.noSelection"));
-				return false;
-			}
-			offset = selOffset;
-			length = selLength;
-			String indent = AbapEdit.indentationOfLine(before, offset);
-			text = AbapEdit.indent(code, indent);
-			if (offset == AbapEdit.lineStart(before, offset)) {
-				// selection starts at column 0: keep the indentation inside the replacement
-			} else {
-				text = text.stripLeading();
-			}
-		}
-		case METHOD -> {
-			Optional<AbapStructureScanner.Block> routine = AbapStructureScanner.routineAt(before, selOffset);
-			if (routine.isEmpty()) {
-				MessageDialog.openInformation(shell, Messages.get("app.name"), Messages.get("editor.noMethod"));
-				return false;
-			}
-			AbapEdit.Replacement r = AbapEdit.replaceBody(before, routine.get(), stripFrame(code));
-			offset = r.offset();
-			length = r.length();
-			text = r.text();
-		}
-		case DOCUMENT -> {
-			offset = 0;
-			length = before.length();
-			text = before.endsWith("\n") && !code.endsWith("\n") ? code + "\n" : code;
-		}
-		default -> throw new IllegalStateException();
-		}
-		String after = before.substring(0, offset) + text + before.substring(offset + length);
-		if (!DiffPreview.confirm(shell, Messages.fmt("diff.titleObject", EditorBridge.objectName(part)), before, after,
-				notes)) {
+		Edit change = edit.get();
+		if (!DiffPreview.confirm(shell, Messages.fmt("diff.titleObject", EditorBridge.objectName(part)), before,
+				change.apply(before), notes)) {
 			return false;
 		}
 		try {
-			EditorBridge.replace(editor, offset, length, text);
+			EditorBridge.replace(editor, change.offset(), change.length(), change.text());
 			return true;
 		} catch (Exception e) {
 			BellaPlugin.log("Cannot write into editor", e);
 			MessageDialog.openError(shell, Messages.get("app.name"), e.getMessage());
 			return false;
 		}
+	}
+
+	/** Replacement of {@code length} characters at {@code offset} by {@code text}. */
+	public record Edit(int offset, int length, String text) {
+
+		public String apply(String source) {
+			return source.substring(0, offset) + text + source.substring(offset + length);
+		}
+	}
+
+	/**
+	 * Where and how {@code code} goes into {@code before}; empty when the
+	 * target is missing (no selection, no method at the cursor).
+	 */
+	public static Optional<Edit> edit(String before, int selOffset, int selLength, Target target, String code) {
+		switch (target) {
+		case CURSOR -> {
+			int offset = selOffset + selLength;
+			String indent = AbapEdit.indentationOfLine(before, offset);
+			boolean lineIsBlank = before.substring(AbapEdit.lineStart(before, offset), offset).isBlank();
+			return Optional.of(new Edit(offset, 0, lineIsBlank ? AbapEdit.indent(code, indent).stripLeading() : code));
+		}
+		case SELECTION -> {
+			if (selLength == 0) {
+				return Optional.empty();
+			}
+			String text = AbapEdit.indent(code, AbapEdit.indentationOfLine(before, selOffset));
+			// a selection starting at column 0 keeps the indentation inside the replacement
+			return Optional.of(new Edit(selOffset, selLength,
+					selOffset == AbapEdit.lineStart(before, selOffset) ? text : text.stripLeading()));
+		}
+		case METHOD -> {
+			return AbapStructureScanner.routineAt(before, selOffset).map(routine -> {
+				AbapEdit.Replacement r = AbapEdit.replaceBody(before, routine, stripFrame(code));
+				return new Edit(r.offset(), r.length(), r.text());
+			});
+		}
+		case DOCUMENT -> {
+			return Optional.of(new Edit(0, before.length(),
+					before.endsWith("\n") && !code.endsWith("\n") ? code + "\n" : code));
+		}
+		default -> throw new IllegalStateException();
+		}
+	}
+
+	/** The source of the anchor with {@code code} put in; empty when the target is missing. */
+	public static Optional<String> after(Anchor anchor, Target target, String code) {
+		return edit(anchor.source(), anchor.offset(), anchor.length(), target, code).map(e -> e.apply(anchor.source()));
 	}
 
 	/**
@@ -178,7 +188,19 @@ public final class CodeActions {
 	/** @param definitionsError why the SAP definitions could not be loaded, or {@code null} */
 	public static String previewNotes(List<String> usedDefinitions, String definitionsError,
 			List<AbapLint.Finding> findings) {
+		return previewNotes(usedDefinitions, definitionsError, findings, List.of());
+	}
+
+	/** @param syntaxErrors errors the proposed code adds to the object, formatted */
+	public static String previewNotes(List<String> usedDefinitions, String definitionsError,
+			List<AbapLint.Finding> findings, List<String> syntaxErrors) {
 		StringBuilder sb = new StringBuilder();
+		if (!syntaxErrors.isEmpty()) {
+			sb.append(Messages.fmt("diff.syntax", syntaxErrors.size())).append('\n');
+			for (String s : syntaxErrors.subList(0, Math.min(MAX_NOTED_FINDINGS, syntaxErrors.size()))) {
+				sb.append("  ").append(s).append('\n');
+			}
+		}
 		if (definitionsError != null) {
 			sb.append(Messages.fmt("diff.definitions.failed", definitionsError)).append('\n');
 		}

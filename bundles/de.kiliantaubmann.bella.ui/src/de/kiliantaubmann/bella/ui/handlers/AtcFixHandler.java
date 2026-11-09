@@ -93,7 +93,8 @@ public class AtcFixHandler extends EditorHandler {
 		job.schedule();
 	}
 
-	private static void show(IEditorPart part, ITextEditor editor, AdtEditorObject obj, List<AdtClient.Message> findings) {
+	/** Lets the developer pick findings and fixes them in the editor. UI thread. */
+	static void show(IEditorPart part, ITextEditor editor, AdtEditorObject obj, List<AdtClient.Message> findings) {
 		if (findings.isEmpty()) {
 			MessageDialog.openInformation(part.getSite().getShell(), Messages.get("atc.title"),
 					Messages.fmt("atc.none", obj.name()));

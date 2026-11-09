@@ -475,6 +475,25 @@ public final class AbapPrompts {
 	}
 
 	/**
+	 * Follow-up message after an editor action's code failed Bella's checks:
+	 * the model corrects its own answer in the same form.
+	 *
+	 * @param problems one entry per finding of the style check or new syntax error
+	 */
+	public String correctCode(List<String> problems) {
+		StringBuilder list = new StringBuilder();
+		problems.forEach(p -> list.append("- ").append(p).append('\n'));
+		return """
+				Bella checked your code before showing it to the developer and found:
+				%s
+				Correct your code so that these findings go away and follow the rules and project conventions of \
+				the system prompt. Keep what was right. If a finding is intended or cannot be fixed in this code, \
+				leave that place as it is.
+				Reply in exactly the same form as before: exactly one ```abap code block, no explanation.
+				""".formatted(list);
+	}
+
+	/**
 	 * Explains the state of a stopped debug session and looks for the cause
 	 * of what went wrong; the snapshot comes from {@code DebugSnapshot#format}.
 	 *

@@ -81,6 +81,16 @@ class PromptsTest {
 	}
 
 	@Test
+	void correctionListsTheFindingsAndAsksForTheSameForm() {
+		String text = new AbapPrompts(null, null).correctCode(List.of("Syntax check: Error line 3: X is unknown",
+				"Style check: Line 1 [warning] naming: lv_x"));
+		assertTrue(text.contains("- Syntax check: Error line 3: X is unknown\n- Style check: Line 1 [warning] naming: lv_x\n"),
+				text);
+		assertTrue(text.contains("exactly one ```abap code block"), text);
+		assertTrue(text.contains("project conventions"), text);
+	}
+
+	@Test
 	void transportReviewPromptNamesTheToolAndTheSections() {
 		String p = new AbapPrompts(null, null).reviewTransport("DEVK900100", "S4H_100");
 		assertTrue(p.startsWith("Review transport request DEVK900100 in system S4H_100 before it is released."), p);

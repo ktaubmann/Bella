@@ -1,6 +1,9 @@
 package de.kiliantaubmann.bella.ui.handlers;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.eclipse.core.commands.AbstractHandler;
@@ -13,6 +16,9 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.eclipse.ui.texteditor.ITextEditor;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.abap.AbapReferences;
 import de.kiliantaubmann.bella.core.abap.AbapStructureScanner;
@@ -141,16 +147,43 @@ abstract class EditorHandler extends AbstractHandler {
 						error(part, Messages.get("generate.empty"));
 						return Status.OK_STATUS;
 					}
-					List<AbapLint.Finding> findings = AbapLint.check(code, naming,
-							sap == null || !sap.definitions() ? AbapLint.Target.UNKNOWN : sap.lintTarget(cancel));
+					AbapLint.Target lintTarget = sap == null || !sap.definitions() ? AbapLint.Target.UNKNOWN
+							: sap.lintTarget(cancel);
+					List<AbapLint.Finding> findings = AbapLint.check(code, naming, lintTarget);
+					List<String> syntax = sap == null ? List.of() : sap.newSyntaxErrors(anchor, target, code, cancel);
 					Log.info("editor", "proposal for " + objectName + ": " + code.length() + " chars, "
-							+ findings.size() + " style findings, definitions " + used);
-					AdtTextSymbols.Plan symbols = pool == null ? null : AdtTextSymbols.plan(code, pool);
-					String notes = CodeActions.previewNotes(used, definitionsError, findings) + symbolNotes(symbols);
+							+ findings.size() + " style findings, " + syntax.size() + " new syntax errors, definitions "
+							+ used);
+					List<String> problems = problems(findings, syntax);
+					if (!problems.isEmpty()) {
+						// one correction round, as the chat does after a write: the model sees what the checks found
+						monitor.subTask(Messages.get("generate.correcting"));
+						JsonObject answer = r.assistantMessage() != null ? r.assistantMessage()
+								: Json.message("assistant", textContent(r.text()));
+						ChatRequest again = new ChatRequest(model, p.system(), List.of(Json.userText(p.user()), answer,
+								Json.userText(plugin.prompts().correctCode(problems))), List.of(), settings.maxTokens(),
+								ChatRequest.Purpose.CHAT, settings.effort());
+						ChatResult r2 = plugin.provider().chat(again, StreamListener.NONE, cancel);
+						String corrected = r2.stopReason() == StopReason.REFUSAL ? "" : Markdown.firstCodeBlock(r2.text());
+						if (corrected.isBlank()) {
+							Log.warn("editor", "correction without a code block, keeping the first proposal: "
+									+ Log.clip(r2.text(), 300));
+						} else {
+							code = corrected;
+							findings = AbapLint.check(code, naming, lintTarget);
+							syntax = sap == null ? List.of() : sap.newSyntaxErrors(anchor, target, code, cancel);
+							Log.info("editor", "corrected proposal for " + objectName + ": " + code.length()
+									+ " chars, " + findings.size() + " style findings, " + syntax.size()
+									+ " new syntax errors");
+						}
+					}
+					String finalCode = code;
+					AdtTextSymbols.Plan symbols = pool == null ? null : AdtTextSymbols.plan(finalCode, pool);
+					String notes = CodeActions.previewNotes(used, definitionsError, findings, syntax)
+							+ symbolNotes(symbols);
 					Display.getDefault().asyncExec(() -> {
-						if (CodeActions.apply(part, editor, target, code, notes, anchor) && symbols != null
-								&& !symbols.missing().isEmpty()) {
-							sap.addTextSymbols(part, symbols.missing());
+						if (CodeActions.apply(part, editor, target, finalCode, notes, anchor) && sap != null) {
+							sap.afterSave(part, editor, symbols == null ? Map.of() : symbols.missing());
 						}
 					});
 				} catch (CancelToken.CancelledException e) {
@@ -166,6 +199,25 @@ abstract class EditorHandler extends AbstractHandler {
 		};
 		job.setUser(true);
 		job.schedule();
+	}
+
+	/**
+	 * What the correction round sends back: style findings that are errors or
+	 * warnings, and the syntax errors the code adds. Information-level style
+	 * hints only go into the diff preview.
+	 */
+	static List<String> problems(List<AbapLint.Finding> findings, List<String> syntaxErrors) {
+		List<String> out = new ArrayList<>();
+		syntaxErrors.forEach(s -> out.add("Syntax check: " + s));
+		findings.stream().filter(f -> f.severity() != AbapLint.Severity.INFO)
+				.forEach(f -> out.add("Style check: " + f.format()));
+		return out;
+	}
+
+	private static JsonArray textContent(String text) {
+		JsonArray content = new JsonArray();
+		content.add(Json.textBlock(text == null ? "" : text));
+		return content;
 	}
 
 	/** Text for the diff preview: which text symbols are added to the pool, and which differ from it. */
@@ -260,48 +312,131 @@ abstract class EditorHandler extends AbstractHandler {
 		}
 
 		/**
-		 * Adds text symbols to the pool once the developer saved the editor.
-		 * Written while the editor holds unsaved changes, the pool counts as a
-		 * change of the program in the backend, and ADT then reports a version
-		 * conflict on the save. UI thread.
+		 * Once the developer saved the editor with the applied code: adds the
+		 * missing text symbols to the pool, then runs ATC on the object and
+		 * offers to fix priority 1 and 2 findings. Text symbols written while
+		 * the editor holds unsaved changes count as a change of the program in
+		 * the backend, and ADT then reports a version conflict on the save; ATC
+		 * checks the saved version only. UI thread.
 		 */
-		void addTextSymbols(IEditorPart part, java.util.Map<String, String> missing) {
+		void afterSave(IEditorPart part, ITextEditor editor, Map<String, String> missing) {
 			if (!part.isDirty()) {
-				writeTextSymbols(part, missing);
+				runAfterSave(part, editor, missing);
 				return;
 			}
-			Log.info("editor", "text symbols " + missing.keySet() + " of " + objectName + " wait for the save");
+			Log.info("editor", (missing.isEmpty() ? "" : "text symbols " + missing.keySet() + " and ")
+					+ "ATC of " + objectName + " wait for the save");
 			part.addPropertyListener(new org.eclipse.ui.IPropertyListener() {
 				@Override
 				public void propertyChanged(Object source, int property) {
 					if (property == IEditorPart.PROP_DIRTY && !part.isDirty()) {
 						part.removePropertyListener(this);
-						writeTextSymbols(part, missing);
+						runAfterSave(part, editor, missing);
 					}
 				}
 			});
 		}
 
-		/** Adds text symbols to the pool in the background; a failure is shown to the developer. */
-		private void writeTextSymbols(IEditorPart part, java.util.Map<String, String> missing) {
-			Job job = new Job(Messages.get("textSymbols.jobName")) {
+		/** Text symbols first, so ATC does not report them as missing; failures are shown to the developer. */
+		private void runAfterSave(IEditorPart part, ITextEditor editor, Map<String, String> missing) {
+			CancelToken cancel = new CancelToken();
+			Job job = new Job(Messages.fmt("atc.running", objectName)) {
 				@Override
 				protected org.eclipse.core.runtime.IStatus run(IProgressMonitor monitor) {
-					try (AdtTransport.Session session = adt.stateful(destinationId)) {
-						String tr = AdtTextSymbols.add(session, new AdtClient(adt.stateless(destinationId)),
-								pool().orElseThrow(), missing, CancelToken.NONE);
-						Log.info("editor", "text symbols " + missing.keySet() + " added to " + objectName
-								+ (tr.isEmpty() ? "" : " (transport " + tr + ")"));
+					if (!missing.isEmpty()) {
+						writeTextSymbols(part, missing);
+					}
+					AdtEditorObject obj = new AdtEditorObject(destinationId, objectUri, objectName, objectType);
+					try {
+						AdtClient client = new AdtClient(adt.stateless(destinationId), null, destinationId)
+								.atcVariant(BellaPlugin.getDefault().atcVariant(destinationId));
+						List<AdtClient.Message> findings = client.atcCheck(AdtObjectRef.objectUri(objectUri), null,
+								cancel).stream().filter(m -> m.severity().equals("Error") || m.severity().equals("Warning"))
+								.toList();
+						Log.info("editor", "ATC after save of " + objectName + ": " + findings.size()
+								+ " priority 1/2 findings");
+						if (!findings.isEmpty()) {
+							Display.getDefault().asyncExec(() -> AtcFixHandler.show(part, editor, obj, findings));
+						}
 					} catch (java.io.IOException | RuntimeException | LinkageError e) {
-						Log.warn("editor", "text symbols " + missing.keySet() + " of " + objectName + " not added: " + e);
-						StringBuilder texts = new StringBuilder();
-						missing.forEach((id, text) -> texts.append('\n').append(id).append(" = ").append(text));
-						error(part, Messages.fmt("textSymbols.failed", objectName, e.getMessage(), texts.toString()));
+						// the developer did not ask for this run; a failure only goes to the log
+						Log.warn("editor", "ATC after save of " + objectName + " failed: " + e);
 					}
 					return Status.OK_STATUS;
 				}
+
+				@Override
+				protected void canceling() {
+					cancel.cancel();
+				}
 			};
 			job.schedule();
+		}
+
+		/** Adds text symbols to the pool; a failure is shown to the developer. Background thread. */
+		private void writeTextSymbols(IEditorPart part, Map<String, String> missing) {
+			try (AdtTransport.Session session = adt.stateful(destinationId)) {
+				String tr = AdtTextSymbols.add(session, new AdtClient(adt.stateless(destinationId)),
+						pool().orElseThrow(), missing, CancelToken.NONE);
+				Log.info("editor", "text symbols " + missing.keySet() + " added to " + objectName
+						+ (tr.isEmpty() ? "" : " (transport " + tr + ")"));
+			} catch (java.io.IOException | RuntimeException | LinkageError e) {
+				Log.warn("editor", "text symbols " + missing.keySet() + " of " + objectName + " not added: " + e);
+				StringBuilder texts = new StringBuilder();
+				missing.forEach((id, text) -> texts.append('\n').append(id).append(" = ").append(text));
+				error(part, Messages.fmt("textSymbols.failed", objectName, e.getMessage(), texts.toString()));
+			}
+		}
+
+		/** Whether the editor shows the object's main source, which the syntax check takes as unsaved code. */
+		boolean mainSource() {
+			if (objectUri == null || objectUri.isBlank()) {
+				return false;
+			}
+			int hash = objectUri.indexOf('#');
+			String u = hash < 0 ? objectUri : objectUri.substring(0, hash);
+			String obj = AdtObjectRef.objectUri(u);
+			return u.equals(obj) || u.equals(obj + "/source/main");
+		}
+
+		/**
+		 * Syntax errors the code adds to the object once it is put in, each with
+		 * the line of code; empty when the code adds none, when the editor shows
+		 * an include or when the check fails.
+		 */
+		List<String> newSyntaxErrors(CodeActions.Anchor anchor, CodeActions.Target target, String code,
+				CancelToken cancel) {
+			if (anchor == null || !mainSource()) {
+				return List.of();
+			}
+			Optional<String> after = CodeActions.after(anchor, target, code);
+			if (after.isEmpty()) {
+				return List.of();
+			}
+			try {
+				AdtClient c = new AdtClient(adt.stateless(destinationId));
+				String obj = AdtObjectRef.objectUri(objectUri);
+				List<AdtClient.Message> now = errors(c.syntaxCheck(obj, after.get(), cancel));
+				if (now.isEmpty()) {
+					return List.of();
+				}
+				// errors the object already had are not the code's
+				Map<String, Integer> old = new HashMap<>();
+				errors(c.syntaxCheck(obj, anchor.source(), cancel)).forEach(m -> old.merge(m.text(), 1, Integer::sum));
+				String[] lines = after.get().replace("\r\n", "\n").split("\n", -1);
+				return now.stream().filter(m -> old.merge(m.text(), -1, Integer::sum) < 0)
+						.map(m -> m.format() + (m.include().isEmpty() && m.line() > 0 && m.line() <= lines.length
+								? " (code: " + lines[m.line() - 1].strip() + ")"
+								: ""))
+						.toList();
+			} catch (java.io.IOException | RuntimeException | LinkageError e) {
+				Log.info("editor", "Syntax check of the proposal for " + objectName + " failed: " + e.getMessage());
+				return List.of();
+			}
+		}
+
+		private static List<AdtClient.Message> errors(List<AdtClient.Message> msgs) {
+			return msgs.stream().filter(m -> m.severity().equals("Error")).toList();
 		}
 
 		/**
