@@ -115,7 +115,9 @@ jobs:
   pages:
     name: Publish update site on GitHub Pages
     needs: release
-    if: vars.PAGES_ENABLED == 'true' && needs.release.outputs.tag != ''
+    # a run started by a tag cannot deploy: the github-pages environment only
+    # accepts the branch main (see pages-from-main)
+    if: vars.PAGES_ENABLED == 'true' && needs.release.outputs.tag != '' && github.ref_type != 'tag'
     permissions:
       contents: read
       pages: write
@@ -123,3 +125,22 @@ jobs:
     uses: ./.github/workflows/pages.yml
     with:
       tag: ${{ needs.release.outputs.tag }}
+
+  pages-from-main:
+    name: Start the update site on the branch main
+    needs: release
+    # for a release from a pushed tag: the same workflow, started on main, where
+    # the github-pages environment allows the deployment (a workflow_dispatch
+    # with GITHUB_TOKEN does start a new run)
+    if: vars.PAGES_ENABLED == 'true' && needs.release.outputs.tag != '' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.release.outputs.tag }}
+    steps:
+      - name: Run the Update site workflow on main
+        run: |
+          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG"
+          echo "Update site for $TAG started on main: https://github.com/$GITHUB_REPOSITORY/actions/workflows/pages.yml" >> "$GITHUB_STEP_SUMMARY"
