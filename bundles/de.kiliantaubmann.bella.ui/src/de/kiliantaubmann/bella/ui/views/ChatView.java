@@ -509,6 +509,7 @@ public class ChatView extends ViewPart {
 		newSession();
 		setMode(ChatMode.NORMAL);
 		BellaPlugin.getDefault().devScope().addListener(scopeListener);
+		BellaPlugin.getDefault().devScope().readAsker(this::askRead);
 		scopeJob.schedule();
 	}
 
@@ -1670,6 +1671,7 @@ public class ChatView extends ViewPart {
 		getSite().getPage().removePartListener(partListener);
 		saveChat(true);
 		BellaPlugin.getDefault().devScope().removeListener(scopeListener);
+		BellaPlugin.getDefault().devScope().readAsker(null);
 		scopeJob = null;
 		cancel();
 		if (session != null) {
@@ -1683,6 +1685,23 @@ public class ChatView extends ViewPart {
 	private boolean confirmTool(ToolSpec tool, JsonObject input) {
 		AtomicBoolean ok = new AtomicBoolean();
 		Display.getDefault().syncExec(() -> ok.set(ToolConfirmDialog.ask(getSite().getShell(), tool, input)));
+		return ok.get();
+	}
+
+	/**
+	 * Asks whether Bella may read customer objects of a package outside the
+	 * development package; the answer holds for the rest of the chat.
+	 */
+	private boolean askRead(String destinationId, String object, String pkg, String dev) {
+		AtomicBoolean ok = new AtomicBoolean();
+		Display.getDefault().syncExec(() -> {
+			if (getSite().getShell() == null || getSite().getShell().isDisposed()) {
+				return;
+			}
+			ok.set(MessageDialog.openQuestion(getSite().getShell(), Messages.get("chat.readPackage.title"),
+					Messages.fmt("chat.readPackage.message", object, pkg,
+							dev == null ? Messages.get("chat.readPackage.noDev") : dev)));
+		});
 		return ok.get();
 	}
 

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -317,7 +318,9 @@ public final class AdtToolProvider implements ToolProvider {
 			t.add(ToolSpec.of("adt_dev_package",
 					"The development package of this chat and the transport request for its changes. Customer "
 							+ "objects (Z*, Y*) are used only from this package; objects of other packages are "
-							+ "ignored, and every write needs the package. 'get' (default) shows both. 'set' records "
+							+ "ignored unless the developer allows reading their package (Bella asks when you read "
+							+ "one that the task needs; never changed), and every write needs the package. 'get' "
+							+ "(default) shows both. 'set' records "
 							+ "what the developer answered: 'package' (not when the chat works on an editor object, "
 							+ "whose package it is) and/or 'transport', one of the developer's own open requests. "
 							+ "Ask the developer first; never choose a package or request yourself.",
@@ -915,7 +918,7 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			String dev = scopePackage(s, c, cancel);
 			if (write || !objects.isEmpty()) {
-				if (dev == null) {
+				if (dev == null && (write || !scope.asksForReads())) {
 					List<String> names = objects.stream().map(o -> Json.str(o, "name").trim().toUpperCase(Locale.ROOT))
 							.toList();
 					return Optional.of((write ? "No development package is set, so Bella does not write. "
@@ -943,11 +946,13 @@ public final class AdtToolProvider implements ToolProvider {
 						}
 						throw e;
 					}
-					if (!pkg.equals(dev)) {
+					if (!pkg.equals(dev) && (write || !scope.mayRead(s.destinationId(), name, pkg, dev))) {
 						return Optional.of(name + " belongs to package " + (pkg.isEmpty() ? "(unknown)" : pkg)
-								+ ", outside the development package " + dev + ". Bella "
+								+ ", outside the development package " + (dev == null ? "(not set)" : dev) + ". Bella "
 								+ (write ? "changes only objects of the development package"
-										: "ignores customer objects of other packages")
+										: scope.readRefused(s.destinationId(), pkg)
+												? "may not read it: the developer did not allow reading package " + pkg
+												: "ignores customer objects of other packages")
 								+ ": do not use it. Do not retry; if it is needed, tell the developer.");
 					}
 				}
@@ -1129,7 +1134,7 @@ public final class AdtToolProvider implements ToolProvider {
 	/** Objects may be used: SAP's always, customer objects only from the development package. */
 	private Predicate<AdtObjectRef> scopeFilter(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
 		return scope == null || scope.readsEveryPackage(s.destinationId()) ? r -> true
-				: AdtContext.inPackage(c, scopePackage(s, c, cancel), cancel);
+				: AdtContext.inPackage(c, scopePackage(s, c, cancel), scope.readPackages(s.destinationId()), cancel);
 	}
 
 	/**
@@ -1209,7 +1214,11 @@ public final class AdtToolProvider implements ToolProvider {
 					.append(fromEditor ? " (of " + editor.name() + " in the editor)" : " (named by the developer)")
 					.append(scope.readsEveryPackage(s.destinationId())
 							? ". Customer objects of other packages may be read (transport review), not changed.\n"
-							: ". Customer objects of other packages are ignored.\n");
+							: ". Customer objects of other packages are ignored"
+									+ (scope.readPackages(s.destinationId()).isEmpty() ? ""
+											: ", except reading in the packages the developer allowed: "
+													+ String.join(", ", new TreeSet<>(scope.readPackages(s.destinationId()))))
+									+ ".\n");
 			String tr = scope.transport(s.destinationId());
 			if (DevScope.local(dev)) {
 				sb.append("Local package: no transport request needed.");
@@ -1446,7 +1455,8 @@ public final class AdtToolProvider implements ToolProvider {
 			String dev = scopePackage(sys, c, cancel);
 			// only the package the hit names: asking each hit's package would cost a request per hit
 			hidden = refs.stream().filter(r -> DevScope.customer(r.name()) && !r.name().equalsIgnoreCase(dev)
-					&& (dev == null || !r.packageName().equalsIgnoreCase(dev))).map(AdtObjectRef::name).toList();
+					&& (dev == null || !r.packageName().equalsIgnoreCase(dev))
+					&& !scope.readsPackage(sys.destinationId(), r.packageName())).map(AdtObjectRef::name).toList();
 			List<String> h = hidden;
 			refs = refs.stream().filter(r -> !h.contains(r.name())).toList();
 		}
@@ -1527,7 +1537,8 @@ public final class AdtToolProvider implements ToolProvider {
 				}
 			}
 			String pkg = adt.isEmpty() ? tadirPackage : adt.get(0).replaceFirst(".* package ", "");
-			if (scoped && DevScope.customer(name) && !(dev != null && pkg.equalsIgnoreCase(dev))) {
+			if (scoped && DevScope.customer(name) && !(dev != null && pkg.equalsIgnoreCase(dev))
+					&& !scope.readsPackage(sys.destinationId(), pkg)) {
 				sb.append(name).append(": a customer object outside the development package, ignored.\n");
 				continue;
 			}
@@ -1778,14 +1789,19 @@ public final class AdtToolProvider implements ToolProvider {
 		if (hasPackage && scope != null && DevScope.customer(pkg)) {
 			String dev = scopePackage(sys, c, cancel);
 			String p = pkg.trim().toUpperCase(Locale.ROOT);
+			if (!p.equals(dev) && scope.mayRead(sys.destinationId(), "package " + p, p, dev)) {
+				return Optional.empty();
+			}
 			if (dev == null) {
 				return Optional.of(ToolResult.error(p + " is a customer package; customer objects are used only "
 						+ "from the development package, which is not set. " + ASK_PACKAGE));
 			}
 			if (!p.equals(dev)) {
-				return Optional.of(ToolResult.error(p + " is not the development package " + dev
-						+ ". Bella ignores customer objects of other packages: do not use it. Do not retry; if it "
-						+ "is needed, tell the developer."));
+				return Optional.of(ToolResult.error(p + " is not the development package " + dev + ". "
+						+ (scope.readRefused(sys.destinationId(), p)
+								? "The developer did not allow reading package " + p
+								: "Bella ignores customer objects of other packages")
+						+ ": do not use it. Do not retry; if it is needed, tell the developer."));
 			}
 		}
 		return Optional.empty();

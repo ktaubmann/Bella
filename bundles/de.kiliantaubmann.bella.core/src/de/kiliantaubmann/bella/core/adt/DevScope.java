@@ -1,7 +1,9 @@
 package de.kiliantaubmann.bella.core.adt;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -11,7 +13,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * With an object from the editor in the chat, its package is the development
  * package and cannot be changed. Once a transport request was reviewed on a
  * system, the chat reads customer objects of every package there; writes stay
- * in the development package.
+ * in the development package. Customer objects of another package are read
+ * when the developer allows it for that package ({@link ReadAsker}); the
+ * answer holds for the rest of the chat, and writes stay in the development
+ * package.
  * <p>
  * Thread safe; one instance belongs to the chat and is reset with it.
  * Listeners hear of every change, e.g. to show package and request in the
@@ -26,6 +31,24 @@ public final class DevScope {
 	private String pkg;
 	private String transport;
 	private String reviewed;
+	/** Packages the developer allowed or refused for reading, as {@code destination|PACKAGE}. */
+	private final Set<String> readAllowed = new HashSet<>();
+	private final Set<String> readRefused = new HashSet<>();
+	private final Object asking = new Object();
+	private volatile ReadAsker readAsker;
+
+	/** Asks the developer whether Bella may read customer objects of a package outside the development package. */
+	public interface ReadAsker {
+		/**
+		 * Blocks until the developer answered.
+		 *
+		 * @param object the object Bella is about to read
+		 * @param pkg    its package
+		 * @param dev    the development package, {@code null} while none is set
+		 * @return whether objects of {@code pkg} may be read in this chat
+		 */
+		boolean allowRead(String destinationId, String object, String pkg, String dev);
+	}
 
 	/** {@code listener} runs after each change of package, request or editor object. */
 	public void addListener(Runnable listener) {
@@ -49,8 +72,71 @@ public final class DevScope {
 			pkg = null;
 			transport = null;
 			reviewed = null;
+			readAllowed.clear();
+			readRefused.clear();
 		}
 		changed();
+	}
+
+	/** Who asks the developer before a package outside the development package is read; {@code null} never asks. */
+	public void readAsker(ReadAsker asker) {
+		readAsker = asker;
+	}
+
+	private static String key(String destinationId, String pkg) {
+		return destinationId + "|" + pkg.trim().toUpperCase(Locale.ROOT);
+	}
+
+	/** Customer objects of {@code pkg} may be read: after a transport review or because the developer allowed it. */
+	public synchronized boolean readsPackage(String destinationId, String pkg) {
+		return readsEveryPackage(destinationId)
+				|| pkg != null && !pkg.isBlank() && readAllowed.contains(key(destinationId, pkg));
+	}
+
+	/** The packages the developer allowed for reading on this system, upper case. */
+	public synchronized Set<String> readPackages(String destinationId) {
+		Set<String> out = new HashSet<>();
+		String prefix = destinationId + "|";
+		readAllowed.stream().filter(k -> k.startsWith(prefix)).forEach(k -> out.add(k.substring(prefix.length())));
+		return out;
+	}
+
+	/** The developer declined reading {@code pkg} in this chat. */
+	public synchronized boolean readRefused(String destinationId, String pkg) {
+		return pkg != null && readRefused.contains(key(destinationId, pkg));
+	}
+
+	/**
+	 * Whether {@code object} of {@code pkg} may be read, asking the developer
+	 * once per package and chat. Without an asker, or after a no, it may not.
+	 * One question at a time: parallel reads of the same package ask once.
+	 */
+	public boolean mayRead(String destinationId, String object, String pkg, String dev) {
+		if (pkg == null || pkg.isBlank()) {
+			return false;
+		}
+		if (readsPackage(destinationId, pkg)) {
+			return true; // without waiting for a question about another package
+		}
+		synchronized (asking) {
+			ReadAsker asker = readAsker;
+			if (readsPackage(destinationId, pkg)) {
+				return true;
+			}
+			if (asker == null || readRefused(destinationId, pkg)) {
+				return false;
+			}
+			boolean yes = asker.allowRead(destinationId, object, pkg.trim().toUpperCase(Locale.ROOT), dev);
+			synchronized (this) {
+				(yes ? readAllowed : readRefused).add(key(destinationId, pkg));
+			}
+			return yes;
+		}
+	}
+
+	/** Whether the developer can be asked to allow reading another package. */
+	public boolean asksForReads() {
+		return readAsker != null;
 	}
 
 	/** The system the chat is bound to, {@code null} while no package or editor object binds it. */

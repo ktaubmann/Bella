@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -329,5 +330,71 @@ class DevScopeTest {
 		assertEquals(Optional.of("DEVK900003 is released."), p.choose(null, "DEVK900003", CancelToken.NONE));
 		ToolResult model = call(p, "adt_dev_package", "{\"action\":\"set\",\"transport\":\"DEVK900003\"}");
 		assertEquals("DEVK900003 is released. Ask the developer for an open request.", model.content());
+	}
+
+	private static final String READ_OTHER = "{\"name\":\"ZCL_OTHER\",\"type\":\"CLAS\"}";
+
+	@Test
+	void readingAnotherPackageAsksOnceAndHoldsForTheChat() {
+		DevScope scope = new DevScope();
+		List<String> asked = new ArrayList<>();
+		scope.readAsker((d, object, pkg, dev) -> asked.add(d + " " + object + " " + pkg + " " + dev));
+		AdtToolProvider p = provider(system(), scope);
+		call(p, "adt_dev_package", "{\"action\":\"set\",\"package\":\"ZSD_DELIV\"}");
+
+		assertEquals(Optional.empty(), refuse(p, "adt_read_source", READ_OTHER));
+		assertEquals(List.of("dev ZCL_OTHER ZMM_OTHER ZSD_DELIV"), asked);
+		assertEquals(Optional.empty(), refuse(p, "adt_read_source", READ_OTHER));
+		assertEquals(1, asked.size(), "one question per package and chat");
+		assertTrue(scope.readsPackage("dev", "zmm_other"));
+
+		// reading only: writes stay in the development package, without a question
+		Optional<String> write = refuse(p, "adt_write_source",
+				"{\"name\":\"ZCL_OTHER\",\"type\":\"CLAS\",\"source\":\"x\"}");
+		assertTrue(write.isPresent() && write.get().contains("changes only objects of the development package"),
+				write.toString());
+		assertEquals(1, asked.size());
+
+		// the allowed package shows up in search and in the package info
+		ToolResult search = call(p, "adt_search_objects", "{\"query\":\"ZCL_O*\"}");
+		assertTrue(search.content().contains("ZCL_OTHER (CLAS/OC)"), search.content());
+		assertFalse(search.content().contains("ignored"), search.content());
+		ToolResult info = call(p, "adt_dev_package", "{}");
+		assertTrue(info.content().contains("packages the developer allowed: ZMM_OTHER"), info.content());
+
+		// a new chat asks again
+		scope.reset();
+		assertFalse(scope.readsPackage("dev", "ZMM_OTHER"));
+	}
+
+	@Test
+	void aDeclinedPackageIsNotAskedAgain() {
+		DevScope scope = new DevScope();
+		AtomicInteger asked = new AtomicInteger();
+		scope.readAsker((d, object, pkg, dev) -> asked.incrementAndGet() < 0);
+		AdtToolProvider p = provider(system(), scope);
+		call(p, "adt_dev_package", "{\"action\":\"set\",\"package\":\"ZSD_DELIV\"}");
+
+		Optional<String> no = refuse(p, "adt_read_source", READ_OTHER);
+		assertTrue(no.isPresent() && no.get().contains("the developer did not allow reading package ZMM_OTHER"),
+				no.toString());
+		assertTrue(refuse(p, "adt_read_source", READ_OTHER).isPresent());
+		assertEquals(1, asked.get());
+		ToolResult search = call(p, "adt_search_objects", "{\"query\":\"ZCL_O*\"}");
+		assertTrue(search.content().contains("ignored (their names are taken): ZCL_OTHER"), search.content());
+	}
+
+	@Test
+	void withoutAPackageAReadAsksToo() {
+		DevScope scope = new DevScope();
+		List<String> asked = new ArrayList<>();
+		scope.readAsker((d, object, pkg, dev) -> asked.add(object + " " + pkg + " " + dev));
+		AdtToolProvider p = provider(system(), scope);
+		assertEquals(Optional.empty(), refuse(p, "adt_read_source", READ_OTHER));
+		assertEquals(List.of("ZCL_OTHER ZMM_OTHER null"), asked);
+		// writes still need the package
+		Optional<String> write = refuse(p, "adt_write_source",
+				"{\"name\":\"ZCL_OTHER\",\"type\":\"CLAS\",\"source\":\"x\"}");
+		assertTrue(write.isPresent() && write.get().startsWith("No development package is set"), write.toString());
 	}
 }

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -118,16 +119,22 @@ public final class AdtContext {
 	 * An object whose package cannot be read does not count either.
 	 */
 	public static Predicate<AdtObjectRef> inPackage(AdtClient client, String pkg, CancelToken cancel) {
+		return inPackage(client, pkg, Set.of(), cancel);
+	}
+
+	/** @param alsoRead further packages (upper case) whose customer objects may be read */
+	public static Predicate<AdtObjectRef> inPackage(AdtClient client, String pkg, Set<String> alsoRead,
+			CancelToken cancel) {
 		return r -> {
 			if (!DevScope.customer(r.name()) || r.name().equalsIgnoreCase(pkg)) {
 				return true;
 			}
-			if (pkg == null) {
+			if (pkg == null && alsoRead.isEmpty()) {
 				return false;
 			}
 			try {
 				String own = r.packageName().isEmpty() ? client.packageOf(r.uri(), cancel) : r.packageName();
-				return own.equalsIgnoreCase(pkg);
+				return own.equalsIgnoreCase(pkg) || alsoRead.contains(own.toUpperCase(Locale.ROOT));
 			} catch (IOException | RuntimeException e) {
 				return false;
 			}
@@ -236,8 +243,8 @@ public final class AdtContext {
 	}
 
 	/** Heads the list of customer objects outside the development package. */
-	public static final String IGNORED = "Ignored, customer objects outside the development package (do not use "
-			+ "them): ";
+	public static final String IGNORED = "Ignored, customer objects outside the development package (read one "
+			+ "only if the task needs it; Bella asks the developer first): ";
 
 	/**
 	 * Exact-name search; among several hits the object type the code position
