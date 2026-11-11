@@ -66,7 +66,7 @@ import de.kiliantaubmann.bella.ui.views.ChatAsker;
 public class BellaPlugin extends AbstractUIPlugin {
 
 	public static final String ID = "de.kiliantaubmann.bella.ui";
-	public static final String VERSION = "0.9.10";
+	public static final String VERSION = "0.9.11";
 
 	private static BellaPlugin plugin;
 
