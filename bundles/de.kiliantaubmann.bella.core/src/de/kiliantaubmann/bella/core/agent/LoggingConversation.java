@@ -1,6 +1,9 @@
 package de.kiliantaubmann.bella.core.agent;
 
+import java.util.List;
+
 import de.kiliantaubmann.bella.core.llm.ChatResult;
+import de.kiliantaubmann.bella.core.llm.Attachment;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.llm.Usage;
@@ -35,11 +38,12 @@ public final class LoggingConversation implements Conversation {
 	}
 
 	@Override
-	public void ask(String userText, ConversationListener listener, CancelToken cancel)
+	public void ask(String userText, List<Attachment> attachments, ConversationListener listener, CancelToken cancel)
 			throws LlmException, CancelledException {
 		String kind = delegate.unwrap().getClass().getSimpleName();
 		long start = System.nanoTime();
-		Log.info(AREA, kind + " question: " + (userText == null ? 0 : userText.length()) + " chars ["
+		Log.info(AREA, kind + " question: " + (userText == null ? 0 : userText.length()) + " chars"
+				+ (attachments == null || attachments.isEmpty() ? "" : ", " + attachments.size() + " attachment(s)") + " ["
 				+ delegate.describe() + "]");
 		Log.debug(AREA, () -> "question:\n" + Log.clip(userText));
 		StringBuilder answer = new StringBuilder();
@@ -120,7 +124,7 @@ public final class LoggingConversation implements Conversation {
 			}
 		};
 		try {
-			delegate.ask(userText, logging, cancel);
+			delegate.ask(userText, attachments, logging, cancel);
 			Log.info(AREA, kind + " answered (" + Log.millisSince(start) + " ms)");
 		} catch (LlmException e) {
 			Log.warn(AREA, kind + " failed after " + Log.millisSince(start) + " ms: "

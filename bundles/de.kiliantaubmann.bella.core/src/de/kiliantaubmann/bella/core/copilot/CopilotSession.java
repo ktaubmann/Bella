@@ -1,6 +1,7 @@
 package de.kiliantaubmann.bella.core.copilot;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -11,6 +12,7 @@ import com.google.gson.JsonObject;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
+import de.kiliantaubmann.bella.core.llm.Attachment;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.mcp.McpServer;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
@@ -77,7 +79,7 @@ public final class CopilotSession implements Conversation {
 	}
 
 	@Override
-	public void ask(String userText, ConversationListener listener, CancelToken cancel)
+	public void ask(String userText, List<Attachment> attachments, ConversationListener listener, CancelToken cancel)
 			throws LlmException, CancelledException {
 		cancel.throwIfCancelled();
 		listener.onTurnStart();
@@ -109,9 +111,17 @@ public final class CopilotSession implements Conversation {
 		}
 		server.setTurn(listener, cancel);
 		cancel.onCancel(() -> interrupt(a, sid, t));
+		List<Attachment> sent = new java.util.ArrayList<>();
+		for (Attachment f : attachments == null ? List.<Attachment>of() : attachments) {
+			if (f.isImage() ? a.imagePrompts() : a.resourcePrompts()) {
+				sent.add(f);
+			} else {
+				listener.onNotice("cp_no_attachment:" + (f.name() == null ? f.mediaType() : f.name()));
+			}
+		}
 		JsonObject result;
 		try {
-			result = a.request("session/prompt", promptParams(sid, prompt), 0);
+			result = a.request("session/prompt", promptParams(sid, prompt, sent), 0);
 		} catch (Acp.AcpException e) {
 			finish(t);
 			if (cancel.isCancelled()) {
@@ -165,15 +175,39 @@ public final class CopilotSession implements Conversation {
 	 * should show the question, not Bella's system prompt.
 	 */
 	static JsonObject promptParams(String sessionId, String text) {
+		return promptParams(sessionId, text, List.of());
+	}
+
+	/**
+	 * The ACP prompt with attachments after the question: images as {@code image} blocks, PDFs as embedded
+	 * {@code resource} blocks.
+	 */
+	static JsonObject promptParams(String sessionId, String text, List<Attachment> attachments) {
 		JsonArray prompt = new JsonArray();
 		String end = "</instructions>";
 		int close = text.startsWith("<instructions>") ? text.indexOf(end) : -1;
 		String rest = close < 0 ? "" : text.substring(close + end.length()).strip();
-		if (close >= 0 && !rest.isEmpty()) {
-			prompt.add(textBlock(rest));
+		boolean split = close >= 0 && !rest.isEmpty();
+		prompt.add(textBlock(split ? rest : text));
+		// the attachments right after the question, which stays the first block
+		for (Attachment file : attachments) {
+			JsonObject block = new JsonObject();
+			if (file.isImage()) {
+				block.addProperty("type", "image");
+				block.addProperty("mimeType", file.mediaType());
+				block.addProperty("data", file.base64());
+			} else {
+				JsonObject resource = new JsonObject();
+				resource.addProperty("uri", "file:///" + (file.name() == null ? "document.pdf" : file.name()));
+				resource.addProperty("mimeType", file.mediaType());
+				resource.addProperty("blob", file.base64());
+				block.addProperty("type", "resource");
+				block.add("resource", resource);
+			}
+			prompt.add(block);
+		}
+		if (split) {
 			prompt.add(textBlock(text.substring(0, close + end.length())));
-		} else {
-			prompt.add(textBlock(text));
 		}
 		JsonObject p = new JsonObject();
 		p.addProperty("sessionId", sessionId);

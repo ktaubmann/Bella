@@ -11,6 +11,7 @@ import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.llm.ChatRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
+import de.kiliantaubmann.bella.core.llm.Attachment;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.llm.LlmProvider;
 import de.kiliantaubmann.bella.core.llm.ModelCaps;
@@ -71,9 +72,9 @@ public final class ChatSession implements Conversation {
 	}
 
 	@Override
-	public void ask(String userText, ConversationListener listener, CancelToken cancel)
+	public void ask(String userText, List<Attachment> attachments, ConversationListener listener, CancelToken cancel)
 			throws LlmException, CancelledException {
-		send(userText, listener, cancel);
+		send(userText, attachments, listener, cancel);
 	}
 
 	/**
@@ -122,8 +123,15 @@ public final class ChatSession implements Conversation {
 	 */
 	public ChatResult send(String userText, ConversationListener listener, CancelToken cancel)
 			throws LlmException, CancelledException {
+		return send(userText, List.of(), listener, cancel);
+	}
+
+	/** Like {@link #send(String, ConversationListener, CancelToken)}, with attachments and PDFs before the text. */
+	public ChatResult send(String userText, List<Attachment> attachments, ConversationListener listener,
+			CancelToken cancel) throws LlmException, CancelledException {
 		synchronized (this) {
-			history.add(Json.userText(userText));
+			history.add(attachments == null || attachments.isEmpty() ? Json.userText(userText)
+					: Json.userContent(userText, attachments));
 		}
 		listener.onTurnStart();
 		ChatResult result = null;
@@ -225,7 +233,8 @@ public final class ChatSession implements Conversation {
 			boolean onlyText = content != null && content.size() > 0;
 			if (content != null) {
 				for (var e : content) {
-					if (!"text".equals(Json.str(e.getAsJsonObject(), "type"))) {
+					String type = Json.str(e.getAsJsonObject(), "type");
+					if (!"text".equals(type) && !"image".equals(type) && !"document".equals(type)) {
 						onlyText = false;
 					}
 				}

@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -17,6 +18,7 @@ import com.google.gson.JsonObject;
 import de.kiliantaubmann.bella.core.agent.ChatSession;
 import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.agent.ConversationListener;
+import de.kiliantaubmann.bella.core.llm.Attachment;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.mcp.McpServer;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
@@ -83,7 +85,7 @@ public final class ClaudeCodeSession implements Conversation {
 	}
 
 	@Override
-	public void ask(String userText, ConversationListener listener, CancelToken cancel)
+	public void ask(String userText, List<Attachment> attachments, ConversationListener listener, CancelToken cancel)
 			throws LlmException, CancelledException {
 		cancel.throwIfCancelled();
 		listener.onTurnStart();
@@ -103,7 +105,7 @@ public final class ClaudeCodeSession implements Conversation {
 		Turn state = new Turn();
 		cancel.onCancel(() -> interrupt(p, state));
 		try {
-			writeLine(p, userMessage(userText));
+			writeLine(p, userMessage(userText, attachments));
 			String line;
 			while (!turn.done() && (line = in.readLine()) != null) {
 				turn.accept(line);
@@ -198,12 +200,9 @@ public final class ClaudeCodeSession implements Conversation {
 		writeLine(p, msg);
 	}
 
-	private static JsonObject userMessage(String text) {
-		JsonArray content = new JsonArray();
-		content.add(Json.textBlock(text));
-		JsonObject message = new JsonObject();
-		message.addProperty("role", "user");
-		message.add("content", content);
+	/** The stream-json user message; it takes Anthropic content blocks, so attachments go as they are. */
+	static JsonObject userMessage(String text, List<Attachment> attachments) {
+		JsonObject message = Json.userContent(text, attachments);
 		JsonObject msg = new JsonObject();
 		msg.addProperty("type", "user");
 		msg.add("message", message);

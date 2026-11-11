@@ -1,5 +1,8 @@
 package de.kiliantaubmann.bella.core.agent;
 
+import java.util.List;
+
+import de.kiliantaubmann.bella.core.llm.Attachment;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.CancelToken.CancelledException;
@@ -12,7 +15,16 @@ import de.kiliantaubmann.bella.core.util.CancelToken.CancelledException;
 public interface Conversation extends AutoCloseable {
 
 	/** Sends a user message and runs until the model's turn is complete. */
-	void ask(String userText, ConversationListener listener, CancelToken cancel)
+	default void ask(String userText, ConversationListener listener, CancelToken cancel)
+			throws LlmException, CancelledException {
+		ask(userText, List.of(), listener, cancel);
+	}
+
+	/**
+	 * Sends a user message with attachments (screenshots, diagrams, PDFs) and runs until the model's turn is
+	 * complete.
+	 */
+	void ask(String userText, List<Attachment> attachments, ConversationListener listener, CancelToken cancel)
 			throws LlmException, CancelledException;
 
 	/** Starts over with a new system prompt. */

@@ -188,7 +188,7 @@ public final class CopilotCli {
 		ProcessLauncher.CliProcess p = start(acpArgs(model, effort, userMcpServers()));
 		Acp acp = new Acp(p, notifications, requests);
 		try {
-			acp.request("initialize", initializeParams(), 60_000);
+			acp.initialized(acp.request("initialize", initializeParams(), 60_000));
 			return acp;
 		} catch (Acp.AcpException | IOException e) {
 			acp.close();

@@ -2,6 +2,7 @@ package de.kiliantaubmann.bella.core.util;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.List;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -12,6 +13,8 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
+
+import de.kiliantaubmann.bella.core.llm.Attachment;
 
 /** Small Gson helpers shared by the providers and the MCP client. */
 public final class Json {
@@ -101,6 +104,18 @@ public final class Json {
 	public static JsonObject userText(String text) {
 		JsonArray content = new JsonArray();
 		content.add(textBlock(text));
+		return message("user", content);
+	}
+
+	/** A user message with images or PDFs; they come before the text, as Anthropic recommends. */
+	public static JsonObject userContent(String text, List<Attachment> attachments) {
+		JsonArray content = new JsonArray();
+		if (attachments != null) {
+			attachments.forEach(a -> content.add(a.anthropicBlock()));
+		}
+		if (text != null && !text.isEmpty() || content.isEmpty()) {
+			content.add(textBlock(text == null ? "" : text));
+		}
 		return message("user", content);
 	}
 }

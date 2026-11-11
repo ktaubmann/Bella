@@ -25,6 +25,15 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
 .avatar.user { background: var(--border); color: var(--fg); }
 .bubble { flex: 1; min-width: 0; }
 .msg.user .bubble { background: var(--user-bg); border-radius: 8px; padding: 6px 10px; white-space: pre-wrap; }
+.msg.user .images { display: flex; flex-wrap: wrap; gap: 6px; }
+.msg.user .files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.msg.user .files span { border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+.answer-bar { display: flex; justify-content: flex-end; margin-top: 2px; opacity: 0.6; }
+.answer-bar:hover { opacity: 1; }
+.msg.user .images + .text:not(:empty) { margin-top: 6px; }
+.msg.user .images img { max-width: 240px; max-height: 180px; border-radius: 4px; border: 1px solid var(--border);
+  cursor: zoom-in; }
+.msg.user .images img.large { max-width: 100%; max-height: none; cursor: zoom-out; }
 .bubble p { margin: 4px 0 8px; }
 .bubble h3, .bubble h4, .bubble h5 { margin: 10px 0 4px; }
 .bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 20px; }
@@ -101,6 +110,7 @@ button.icon.primary { border-color: var(--accent); color: var(--accent); }
 <div id="menu"></div>
 <script>
 var ICONS = {
+  save: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v7M5 7l3 3 3-3"/><path d="M3 11.5v1A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-1"/></svg>',
   insert: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>',
   replace: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h8l-2-2M13 11H5l2 2"/></svg>',
   method: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3C4 3 4 5 4 6.5S3 8 2.5 8C3 8 4 8.5 4 9.5S4 13 6 13M10 3c2 0 2 2 2 3.5S13 8 13.5 8C13 8 12 8.5 12 9.5S12 13 10 13"/></svg>',
@@ -127,12 +137,39 @@ function clearEmpty() { var e = log.querySelector('.empty'); if (e) e.remove(); 
 function scrollDown() { window.scrollTo(0, document.body.scrollHeight); }
 function nearBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 60; }
 
-function addUser(id, text) {
+function addUser(id, text, images, files) {
   clearEmpty();
   var m = document.createElement('div');
   m.className = 'msg user'; m.id = 'm' + id;
   m.innerHTML = '<div class="avatar user">' + T.youInitial + '</div><div class="bubble"></div>';
-  m.querySelector('.bubble').textContent = text;
+  var bubble = m.querySelector('.bubble');
+  if (images && images.length) {
+    var row = document.createElement('div');
+    row.className = 'images';
+    images.forEach(function (src) {
+      if (src.indexOf('data:image/') !== 0) return;
+      var img = document.createElement('img');
+      img.src = src;
+      img.onclick = function () { img.classList.toggle('large'); };
+      img.onload = scrollDown;
+      row.appendChild(img);
+    });
+    bubble.appendChild(row);
+  }
+  if (files && files.length) {
+    var list = document.createElement('div');
+    list.className = 'files';
+    files.forEach(function (name) {
+      var f = document.createElement('span');
+      f.textContent = '📄 ' + name;
+      list.appendChild(f);
+    });
+    bubble.appendChild(list);
+  }
+  var t = document.createElement('div');
+  t.className = 'text';
+  t.textContent = text;
+  bubble.appendChild(t);
   log.appendChild(m); scrollDown();
 }
 function startAssistant(id) {
@@ -181,7 +218,15 @@ function finishTool(id, seg, status, label, output) {
   var pre = document.createElement('pre'); pre.textContent = output; d.appendChild(pre);
 }
 function endAssistant(id) {
-  var p = document.querySelector('#m' + id + ' .pending'); if (p) p.remove();
+  var m = document.getElementById('m' + id); if (!m) return;
+  var p = m.querySelector('.pending'); if (p) p.remove();
+  var parts = m.querySelector('.parts');
+  if (!m.querySelector('.answer-bar') && parts && parts.textContent.trim()) {
+    var bar = document.createElement('div'); bar.className = 'answer-bar';
+    bar.innerHTML = '<button class="icon" data-save="' + id + '" title="' + T.saveMdTip + '">' + ICONS.save +
+      T.saveMd + '</button>';
+    m.querySelector('.bubble').appendChild(bar);
+  }
 }
 function notice(id, kind, html) {
   var n = document.createElement('div'); n.className = 'notice ' + kind; n.innerHTML = html;
@@ -207,6 +252,8 @@ function run(action, where) {
   bellaAction(action, parseInt(parts[0], 10), parseInt(parts[1], 10), where.idx);
 }
 document.addEventListener('click', function (e) {
+  var s = e.target.closest('button[data-save]');
+  if (s) { bellaSave(parseInt(s.getAttribute('data-save'), 10)); e.preventDefault(); return; }
   var b = e.target.closest('button[data-action]');
   if (b && b.closest('.code-bar')) { run(b.getAttribute('data-action'), locate(b)); e.preventDefault(); return; }
   if (b && b.closest('#menu')) { run(b.getAttribute('data-action'), menuTarget); e.preventDefault(); return; }

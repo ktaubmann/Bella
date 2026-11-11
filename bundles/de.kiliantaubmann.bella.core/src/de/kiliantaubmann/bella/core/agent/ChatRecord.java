@@ -109,12 +109,60 @@ public final class ChatRecord {
 
 	/** A message of the developer, as the chat shows it (without the editor context sent along). */
 	public synchronized void user(int messageId, String text) {
+		user(messageId, text, List.of(), List.of());
+	}
+
+	/**
+	 * A message of the developer with the files sent along.
+	 *
+	 * @param thumbnails small previews of the images as {@code data:} URLs, shown when the chat is opened again
+	 * @param files      names of the other attached files (PDF, text files)
+	 */
+	public synchronized void user(int messageId, String text, List<String> thumbnails, List<String> files) {
 		if (title.isEmpty()) {
-			title = titleOf(text);
+			title = titleOf(text.isBlank() && files != null && !files.isEmpty() ? String.join(", ", files) : text);
 		}
 		JsonObject e = entry("user", "u" + messageId, messageId);
 		e.addProperty("text", text);
+		if (thumbnails != null && !thumbnails.isEmpty()) {
+			JsonArray images = new JsonArray();
+			thumbnails.forEach(images::add);
+			e.add("images", images);
+		}
+		if (files != null && !files.isEmpty()) {
+			JsonArray names = new JsonArray();
+			files.forEach(names::add);
+			e.add("files", names);
+		}
 		put(e);
+	}
+
+	/** Names of the files (other than images) attached to a developer's message. */
+	public static List<String> filesOf(JsonObject entry) {
+		JsonArray files = Json.arr(entry, "files");
+		List<String> out = new ArrayList<>();
+		if (files != null) {
+			files.forEach(f -> {
+				if (f.isJsonPrimitive()) {
+					out.add(f.getAsString());
+				}
+			});
+		}
+		return out;
+	}
+
+	/** The image previews of a developer's message ({@code data:} URLs), empty if it had none. */
+	public static List<String> thumbnailsOf(JsonObject entry) {
+		JsonArray images = Json.arr(entry, "images");
+		List<String> out = new ArrayList<>();
+		if (images != null) {
+			images.forEach(i -> {
+				if (i.isJsonPrimitive() && i.getAsString().startsWith("data:image/")) {
+					out.add(i.getAsString());
+				}
+			});
+		}
+		return out;
 	}
 
 	/** Start of Bella's answer. */
@@ -280,7 +328,18 @@ public final class ChatRecord {
 		StringBuilder sb = new StringBuilder();
 		for (JsonObject e : entries) {
 			switch (nz(Json.str(e, "t"))) {
-			case "user" -> sb.append("\n\nDeveloper: ").append(nz(Json.str(e, "text")));
+			case "user" -> {
+				sb.append("\n\nDeveloper: ").append(nz(Json.str(e, "text")));
+				int images = thumbnailsOf(e).size();
+				if (images > 0) {
+					sb.append("\n[").append(images).append(images == 1 ? " image" : " images")
+							.append(" attached, not available any more]");
+				}
+				List<String> files = filesOf(e);
+				if (!files.isEmpty()) {
+					sb.append("\n[attached ").append(String.join(", ", files)).append(", not available any more]");
+				}
+			}
 			case "bella" -> sb.append("\n\nBella:");
 			case "text" -> sb.append('\n').append(nz(Json.str(e, "md")));
 			case "tool" -> sb.append("\n[tool ").append(nz(Json.str(e, "name"))).append(": ")
@@ -298,6 +357,78 @@ public final class ChatRecord {
 		String cut = text.substring(text.length() - maxChars);
 		int nl = cut.indexOf('\n');
 		return "[… earlier part of the conversation left out]\n" + (nl >= 0 ? cut.substring(nl + 1) : cut);
+	}
+
+	// ---- Markdown export ------------------------------------------------------------------
+
+	/** Labels of the Markdown export, in the developer's language. */
+	public record MarkdownLabels(String developer, String bella, String attached, String tool) {
+	}
+
+	/** The text of one answer of Bella as Markdown (without thinking, tools and notices). */
+	public synchronized String answerMarkdown(int messageId) {
+		StringBuilder sb = new StringBuilder();
+		for (JsonObject e : entries) {
+			if ("text".equals(Json.str(e, "t")) && Json.integer(e, "id", -1) == messageId) {
+				appendBlock(sb, nz(Json.str(e, "md")));
+			}
+		}
+		return sb.toString().strip() + "\n";
+	}
+
+	/**
+	 * The whole chat as a Markdown document: title, the developer's messages with their attachments, Bella's
+	 * answers and the tools used.
+	 */
+	public synchronized String toMarkdown(MarkdownLabels labels) {
+		StringBuilder sb = new StringBuilder("# ").append(title.isBlank() ? "Bella" : title.strip()).append("\n");
+		for (JsonObject e : entries) {
+			switch (nz(Json.str(e, "t"))) {
+			case "user" -> {
+				sb.append("\n## ").append(labels.developer()).append("\n\n");
+				String text = nz(Json.str(e, "text")).strip();
+				if (!text.isEmpty()) {
+					sb.append(text).append("\n");
+				}
+				List<String> files = filesOf(e);
+				int images = thumbnailsOf(e).size();
+				if (!files.isEmpty() || images > 0) {
+					List<String> all = new ArrayList<>(files);
+					for (int i = 0; i < images; i++) {
+						all.add("🖼");
+					}
+					sb.append("\n*").append(labels.attached()).append(": ").append(String.join(", ", all))
+							.append("*\n");
+				}
+			}
+			case "bella" -> sb.append("\n## ").append(labels.bella()).append("\n");
+			case "text" -> {
+				sb.append('\n');
+				appendBlock(sb, nz(Json.str(e, "md")));
+			}
+			case "tool" -> sb.append("\n> ").append(labels.tool()).append(": `").append(nz(Json.str(e, "name")))
+					.append('`').append(Json.str(e, "state") == null ? "" : " (" + Json.str(e, "state") + ")")
+					.append('\n');
+			default -> {
+				// thinking, questions and notices stay in Bella
+			}
+			}
+		}
+		return sb.toString();
+	}
+
+	private static void appendBlock(StringBuilder sb, String markdown) {
+		String md = markdown.strip();
+		if (md.isEmpty()) {
+			return;
+		}
+		if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '\n') {
+			sb.append('\n');
+		}
+		if (sb.length() > 0 && !sb.toString().endsWith("\n\n")) {
+			sb.append('\n');
+		}
+		sb.append(md).append('\n');
 	}
 
 	private static void appendAnswers(StringBuilder sb, JsonObject e) {

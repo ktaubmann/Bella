@@ -60,6 +60,7 @@ import de.kiliantaubmann.bella.core.agent.TurnUsage;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
 import de.kiliantaubmann.bella.core.adt.AdtTransportRequest;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
+import de.kiliantaubmann.bella.core.llm.Attachment;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.prompt.EditorContext;
@@ -86,6 +87,8 @@ public class ChatView extends ViewPart {
 
 	private Browser browser;
 	private Text input;
+	/** Images pasted, dropped or chosen for the next message. */
+	private Attachments attachments;
 	private Button send;
 	private Button stop;
 	private Button withContext;
@@ -119,6 +122,8 @@ public class ChatView extends ViewPart {
 	private int nextMessageId = 1;
 	/** Tool problems last shown in this chat; the same problem is not repeated on every question. */
 	private volatile List<String> shownToolErrors = List.of();
+	/** Shown id of an answer → its id in {@link #record}; they differ for a chat opened from the history. */
+	private final Map<Integer, Integer> answerRecordIds = new HashMap<>();
 	/** "messageId_segment" → code blocks of that text segment. */
 	private final Map<String, List<String>> codeBlocks = new HashMap<>();
 	/** Scripts issued before the page finished loading. */
@@ -287,6 +292,14 @@ public class ChatView extends ViewPart {
 				return null;
 			}
 		};
+		new BrowserFunction(browser, "bellaSave") {
+			@Override
+			public Object function(Object[] args) {
+				int shown = ((Number) args[0]).intValue();
+				Display.getDefault().asyncExec(() -> saveAnswer(shown));
+				return null;
+			}
+		};
 		new BrowserFunction(browser, "bellaOpen") {
 			@Override
 			public Object function(Object[] args) {
@@ -356,6 +369,12 @@ public class ChatView extends ViewPart {
 		Composite bottom = new Composite(parent, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).applyTo(bottom);
 		GridLayoutFactory.swtDefaults().numColumns(4).equalWidth(true).margins(6, 6).applyTo(bottom);
+		attachments = new Attachments(bottom, () -> {
+			if (!bottom.isDisposed()) {
+				bottom.getParent().layout(true, true);
+			}
+		});
+		GridDataFactory.fillDefaults().grab(true, false).span(4, 1).exclude(true).applyTo(attachments.control());
 		input = new Text(bottom, SWT.MULTI | SWT.WRAP | SWT.BORDER | SWT.V_SCROLL);
 		input.setMessage(Messages.get("chat.inputHint"));
 		GridDataFactory.fillDefaults().grab(true, false).span(4, 1).hint(SWT.DEFAULT, 64).applyTo(input);
@@ -363,8 +382,11 @@ public class ChatView extends ViewPart {
 			if ((e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) && (e.stateMask & SWT.SHIFT) == 0) {
 				e.doit = false;
 				sendFromInput();
+			} else if (isPaste(e) && attachments.paste()) {
+				e.doit = false; // the clipboard held images, no text
 			}
 		});
+		attachments.acceptDrops(input);
 		send = new Button(bottom, SWT.PUSH);
 		send.setImage(BellaPlugin.image("send"));
 		send.setToolTipText(Messages.get("chat.send"));
@@ -402,7 +424,7 @@ public class ChatView extends ViewPart {
 		options = new Composite(bottom, SWT.NONE);
 		GridDataFactory.fillDefaults().span(4, 1).grab(true, false).applyTo(options);
 		bottom.addListener(SWT.Resize, e -> arrangeInput(bottom));
-		GridLayoutFactory.fillDefaults().numColumns(5).spacing(12, 0).applyTo(options);
+		GridLayoutFactory.fillDefaults().numColumns(6).spacing(12, 0).applyTo(options);
 		withContext = new Button(options, SWT.CHECK);
 		withContext.setText(Messages.get("chat.withContext"));
 		withContext.setToolTipText(Messages.get("chat.withContextTip"));
@@ -420,6 +442,13 @@ public class ChatView extends ViewPart {
 				return;
 			}
 			setMode(chosen);
+		});
+		Button attach = new Button(options, SWT.PUSH);
+		attach.setImage(BellaPlugin.image("image"));
+		attach.setToolTipText(Messages.get("chat.attachTip"));
+		attach.addListener(SWT.Selection, e -> {
+			attachments.choose(getSite().getShell());
+			input.setFocus();
 		});
 		status = new Label(options, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).align(SWT.FILL, SWT.CENTER).applyTo(status);
@@ -469,6 +498,13 @@ public class ChatView extends ViewPart {
 				}
 			}
 		};
+		Action exportChat = new Action(Messages.get("chat.exportMd")) {
+			@Override
+			public void run() {
+				exportChat();
+			}
+		};
+		getViewSite().getActionBars().getMenuManager().add(exportChat);
 		getViewSite().getActionBars().getMenuManager().add(openLog);
 		newSession();
 		setMode(ChatMode.NORMAL);
@@ -494,8 +530,70 @@ public class ChatView extends ViewPart {
 		}
 		layout.numColumns = columns;
 		((GridData) input.getLayoutData()).horizontalSpan = columns;
+		((GridData) attachments.control().getLayoutData()).horizontalSpan = columns;
 		((GridData) options.getLayoutData()).horizontalSpan = columns;
 		bottom.getParent().layout(true, true);
+	}
+
+	// ---- Markdown export -----------------------------------------------------------------
+
+	/** Saves one answer of Bella as a Markdown file. UI thread. */
+	private void saveAnswer(int shownId) {
+		Integer id = answerRecordIds.get(shownId);
+		String md = id == null ? "" : record.answerMarkdown(id);
+		if (md.isBlank()) {
+			return;
+		}
+		saveMarkdown(md, record.title());
+	}
+
+	/** Saves the whole chat as a Markdown file. UI thread. */
+	private void exportChat() {
+		if (record.isEmpty()) {
+			MessageDialog.openInformation(getSite().getShell(), Messages.get("chat.exportMd"),
+					Messages.get("chat.exportMd.empty"));
+			return;
+		}
+		saveMarkdown(record.toMarkdown(new ChatRecord.MarkdownLabels(Messages.get("chat.exportMd.developer"),
+				"Bella", Messages.get("chat.exportMd.attached"), Messages.get("chat.exportMd.tool"))),
+				record.title());
+	}
+
+	private void saveMarkdown(String markdown, String title) {
+		org.eclipse.swt.widgets.FileDialog dialog = new org.eclipse.swt.widgets.FileDialog(getSite().getShell(),
+				SWT.SAVE);
+		dialog.setText(Messages.get("chat.js.saveMdTip"));
+		dialog.setFilterExtensions(new String[] { "*.md", "*.*" });
+		dialog.setFilterNames(new String[] { "Markdown (*.md)", "*.*" });
+		dialog.setFileName(fileName(title) + ".md");
+		dialog.setOverwrite(true);
+		String file = dialog.open();
+		if (file == null) {
+			return;
+		}
+		try {
+			java.nio.file.Files.writeString(java.nio.file.Path.of(file), markdown, StandardCharsets.UTF_8);
+		} catch (IOException | RuntimeException e) {
+			MessageDialog.openError(getSite().getShell(), Messages.get("chat.exportMd"),
+					Messages.fmt("chat.exportMd.failed", file, e.getMessage()));
+		}
+	}
+
+	/** A file name from the chat title: no characters Windows forbids, at most 60 characters. */
+	static String fileName(String title) {
+		String name = title == null ? "" : title.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]+", " ").strip();
+		name = name.replaceAll("\\s+", " ");
+		if (name.length() > 60) {
+			name = name.substring(0, 60).strip();
+		}
+		return name.isEmpty() ? "bella-chat" : name;
+	}
+
+	/** Ctrl+V (Cmd+V on macOS) or Shift+Insert. */
+	private static boolean isPaste(org.eclipse.swt.widgets.Event e) {
+		int mods = e.stateMask & SWT.MODIFIER_MASK;
+		return mods == SWT.MOD1 && (e.keyCode == 'v' || e.keyCode == 'V')
+				|| mods == SWT.SHIFT && e.keyCode == SWT.INSERT;
 	}
 
 	private static int width(Button b) {
@@ -625,7 +723,7 @@ public class ChatView extends ViewPart {
 		for (String k : List.of("welcomeTitle", "welcomeText", "tip1", "tip2", "tip3", "youInitial", "working",
 				"thinking", "insert", "insertTip", "replace", "replaceTip", "copyTip", "insertAtCursor",
 				"replaceSelection", "replaceMethod", "copy", "askOther", "askHint", "askHintMulti", "askNext",
-				"askSubmit", "askDismiss", "askDismissed")) {
+				"askSubmit", "askDismiss", "askDismissed", "saveMd", "saveMdTip")) {
 			t.put(k, Markdown.escape(Messages.get("chat.js." + k)));
 		}
 		t.put("tip3", Markdown.escape(Messages.fmt("chat.js.tip3", Shortcuts.completion())));
@@ -659,6 +757,7 @@ public class ChatView extends ViewPart {
 		saveChat();
 		newSession();
 		codeBlocks.clear();
+		answerRecordIds.clear();
 		announcedScope = "";
 		scopeChosen = false;
 		record = new ChatRecord();
@@ -777,9 +876,12 @@ public class ChatView extends ViewPart {
 			int seg = Json.integer(e, "seg", 0);
 			String type = String.valueOf(Json.str(e, "t"));
 			switch (type) {
-			case "user" -> js("addUser(" + id + "," + str(nz(Json.str(e, "text"))) + ")");
+			case "user" -> js("addUser(" + id + "," + str(nz(Json.str(e, "text"))) + ","
+					+ Json.GSON.toJson(ChatRecord.thumbnailsOf(e)) + "," + Json.GSON.toJson(ChatRecord.filesOf(e))
+					+ ")");
 			case "bella" -> {
 				js("startAssistant(" + id + ")");
+				answerRecordIds.put(id, Json.integer(e, "id", 0));
 				answers.add(id);
 				lastAnswerId = id;
 			}
@@ -1296,18 +1398,21 @@ public class ChatView extends ViewPart {
 	/** Sends the input; while the Planning Mode button is pressed, as a planning turn. */
 	private void sendFromInput() {
 		String text = input.getText().trim();
-		if (text.isEmpty() || running != null) {
+		if (text.isEmpty() && attachments.isEmpty() || running != null) {
 			input.setFocus();
 			return;
 		}
 		boolean planning = planActive;
 		input.setText("");
+		Sent sent = new Sent(attachments.files(), attachments.thumbnails(), attachments.fileNames());
+		String textFiles = attachments.textFiles();
+		attachments.clear();
 		if (revisingPlan) {
 			revisingPlan = false;
 			input.setMessage(Messages.get("chat.plan.inputHint"));
 			text = REVISE_PLAN + text;
 		}
-		String prompt = text;
+		String prompt = text + textFiles;
 		if (withContext.getSelection()) {
 			IEditorPart part = activeEditor();
 			Optional<ITextEditor> editor = EditorBridge.textEditor(part);
@@ -1319,12 +1424,23 @@ public class ChatView extends ViewPart {
 				boolean known = BellaPlugin.getDefault().conversationType().isInstance(session.unwrap())
 						&& session.unwrap().continuesConversation()
 						&& Integer.valueOf(hash).equals(sentSources.get(ctx.describeObject()));
-				prompt = withEditorContext(text, ctx, known);
+				prompt = withEditorContext(text + textFiles, ctx, known);
 				pendingSource = known ? null : Map.entry(ctx.describeObject(), hash);
 				bindEditor(part);
 			}
 		}
-		ask(text.startsWith(REVISE_PLAN) ? text.substring(REVISE_PLAN.length()) : text, prompt, planning);
+		ask(text.startsWith(REVISE_PLAN) ? text.substring(REVISE_PLAN.length()) : text, prompt, planning, sent);
+	}
+
+	/**
+	 * What goes with a message besides its text.
+	 *
+	 * @param files      images and PDFs for the model
+	 * @param thumbnails previews of the images for the chat, {@code data:} URLs
+	 * @param fileNames  names of the other attached files for the chat
+	 */
+	private record Sent(List<Attachment> files, List<String> thumbnails, List<String> fileNames) {
+		static final Sent NONE = new Sent(List.of(), List.of(), List.of());
 	}
 
 	/**
@@ -1363,6 +1479,10 @@ public class ChatView extends ViewPart {
 	 *                 a plan, then offers to accept, change or cancel it
 	 */
 	public void ask(String display, String prompt, boolean planning) {
+		ask(display, prompt, planning, Sent.NONE);
+	}
+
+	private void ask(String display, String prompt, boolean planning, Sent attached) {
 		Map.Entry<String, Integer> source = pendingSource;
 		pendingSource = null;
 		if (running != null) {
@@ -1384,10 +1504,12 @@ public class ChatView extends ViewPart {
 		}
 		int userId = nextMessageId++;
 		int botId = nextMessageId++;
-		js("addUser(" + userId + "," + str(display) + ")");
+		js("addUser(" + userId + "," + str(display) + "," + Json.GSON.toJson(attached.thumbnails()) + ","
+				+ Json.GSON.toJson(attached.fileNames()) + ")");
 		js("startAssistant(" + botId + ")");
+		answerRecordIds.put(botId, botId);
 		ChatRecord chat = record;
-		chat.user(userId, display);
+		chat.user(userId, display, attached.thumbnails(), attached.fileNames());
 		chat.answer(botId);
 		CancelToken cancel = new CancelToken();
 		ChatMode turnMode = planning ? ChatMode.PLAN : mode;
@@ -1410,7 +1532,7 @@ public class ChatView extends ViewPart {
 					toolErrors.forEach(err -> renderer.notice("warn", Markdown.escape(err)));
 				}
 				shownToolErrors = List.copyOf(toolErrors);
-				session.ask(turnMode.apply(sent), renderer, cancel);
+				session.ask(turnMode.apply(sent), attached.files(), renderer, cancel);
 				answered.set(!cancel.isCancelled() && !renderer.incomplete);
 			} catch (CancelToken.CancelledException e) {
 				renderer.notice("warn", Messages.get("chat.cancelled"));

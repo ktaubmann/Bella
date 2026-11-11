@@ -63,6 +63,10 @@ final class Acp implements AutoCloseable {
 	private final AtomicLong ids = new AtomicLong();
 	private final Map<Long, CompletableFuture<JsonObject>> pending = new ConcurrentHashMap<>();
 	private volatile boolean closed;
+	/** The agent announced {@code promptCapabilities.image} in its {@code initialize} answer. */
+	private volatile boolean imagePrompts;
+	/** The agent announced {@code promptCapabilities.embeddedContext}: it takes {@code resource} blocks. */
+	private volatile boolean resourcePrompts;
 
 	Acp(ProcessLauncher.CliProcess process, NotificationHandler notifications, RequestHandler requests) {
 		this.process = process;
@@ -75,6 +79,25 @@ final class Acp implements AutoCloseable {
 
 	ProcessLauncher.CliProcess process() {
 		return process;
+	}
+
+	/** Whether the agent takes {@code image} blocks in a prompt. */
+	boolean imagePrompts() {
+		return imagePrompts;
+	}
+
+	/** Whether the agent takes embedded files ({@code resource} blocks, e.g. a PDF) in a prompt. */
+	boolean resourcePrompts() {
+		return resourcePrompts;
+	}
+
+	/** Takes the agent's capabilities from its {@code initialize} answer. */
+	void initialized(JsonObject result) {
+		JsonObject prompt = Json.obj(Json.obj(result, "agentCapabilities"), "promptCapabilities");
+		JsonElement image = prompt == null ? null : prompt.get("image");
+		imagePrompts = image != null && image.isJsonPrimitive() && image.getAsBoolean();
+		JsonElement embedded = prompt == null ? null : prompt.get("embeddedContext");
+		resourcePrompts = embedded != null && embedded.isJsonPrimitive() && embedded.getAsBoolean();
 	}
 
 	boolean isAlive() {

@@ -99,10 +99,31 @@ public final class OpenAiCompatibleProvider implements LlmProvider {
 		StringBuilder text = new StringBuilder();
 		JsonArray toolCalls = new JsonArray();
 		List<JsonObject> toolResults = new ArrayList<>();
+		JsonArray images = new JsonArray();
 		for (JsonElement el : blocks) {
 			JsonObject b = el.getAsJsonObject();
 			switch (String.valueOf(Json.str(b, "type"))) {
 			case "text" -> text.append(Json.str(b, "text"));
+			case "image", "document" -> {
+				Attachment file = Attachment.fromAnthropicBlock(b);
+				if (file != null && file.isImage()) {
+					JsonObject url = new JsonObject();
+					url.addProperty("url", file.dataUrl());
+					JsonObject part = new JsonObject();
+					part.addProperty("type", "image_url");
+					part.add("image_url", url);
+					images.add(part);
+				} else if (file != null) {
+					// the "file" part of the Chat Completions API; endpoints without it reject the request
+					JsonObject data = new JsonObject();
+					data.addProperty("filename", file.name() == null ? "document.pdf" : file.name());
+					data.addProperty("file_data", file.dataUrl());
+					JsonObject part = new JsonObject();
+					part.addProperty("type", "file");
+					part.add("file", data);
+					images.add(part);
+				}
+			}
 			case "tool_use" -> {
 				JsonObject fn = new JsonObject();
 				fn.addProperty("name", Json.str(b, "name"));
@@ -127,6 +148,22 @@ public final class OpenAiCompatibleProvider implements LlmProvider {
 			}
 		}
 		toolResults.forEach(out::add);
+		if (!images.isEmpty()) {
+			// Chat Completions takes images and files only as content parts of a user message
+			JsonArray parts = new JsonArray();
+			if (!text.isEmpty()) {
+				JsonObject part = new JsonObject();
+				part.addProperty("type", "text");
+				part.addProperty("text", text.toString());
+				parts.add(part);
+			}
+			parts.addAll(images);
+			JsonObject msg = new JsonObject();
+			msg.addProperty("role", role);
+			msg.add("content", parts);
+			out.add(msg);
+			return;
+		}
 		if (!text.isEmpty() || !toolCalls.isEmpty()) {
 			JsonObject msg = new JsonObject();
 			msg.addProperty("role", role);
