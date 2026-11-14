@@ -100,8 +100,8 @@ public class AtcFixHandler extends EditorHandler {
 					Messages.fmt("atc.none", obj.name()));
 			return;
 		}
-		List<AdtClient.Message> chosen = AtcFindingsDialog.choose(part.getSite().getShell(), editor, obj.name(),
-				findings);
+		List<AdtClient.Message> chosen = AtcFindingsDialog.choose(part.getSite().getShell(), editor, obj.uri(),
+				obj.name(), findings);
 		if (chosen.isEmpty()) {
 			return;
 		}
