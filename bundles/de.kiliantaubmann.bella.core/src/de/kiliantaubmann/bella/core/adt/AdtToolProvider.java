@@ -1218,6 +1218,7 @@ public final class AdtToolProvider implements ToolProvider {
 									+ (scope.readPackages(s.destinationId()).isEmpty() ? ""
 											: ", except reading in the packages the developer allowed: "
 													+ String.join(", ", new TreeSet<>(scope.readPackages(s.destinationId()))))
+									+ (scope.asksForReads() ? "; reading one the task needs asks the developer" : "")
 									+ ".\n");
 			String tr = scope.transport(s.destinationId());
 			if (DevScope.local(dev)) {
@@ -1462,7 +1463,7 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		String hiddenNote = hidden.isEmpty() ? ""
 				: "Customer objects outside the development package, ignored (their names are taken): "
-						+ String.join(", ", hidden) + "\n";
+						+ String.join(", ", hidden) + "\n" + readOnRequest();
 		if (refs.isEmpty()) {
 			return ToolResult.ok(hiddenNote + "No objects found" + (hidden.isEmpty() ? "." : " in the development package."));
 		}
@@ -1539,7 +1540,8 @@ public final class AdtToolProvider implements ToolProvider {
 			String pkg = adt.isEmpty() ? tadirPackage : adt.get(0).replaceFirst(".* package ", "");
 			if (scoped && DevScope.customer(name) && !(dev != null && pkg.equalsIgnoreCase(dev))
 					&& !scope.readsPackage(sys.destinationId(), pkg)) {
-				sb.append(name).append(": a customer object outside the development package, ignored.\n");
+				sb.append(name).append(": a customer object outside the development package, ignored.")
+						.append(readOnRequest().isEmpty() ? "\n" : " " + readOnRequest());
 				continue;
 			}
 			sb.append(name).append(":\n  ADT: ").append(adt.isEmpty() ? "not found" : String.join("; ", adt))
@@ -2225,7 +2227,7 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.ok(name + ": superclass " + (superclass.isEmpty() ? "none" : superclass) + "; interfaces "
 					+ (interfaces.isEmpty() ? "none" : String.join(", ", interfaces)) + "; subclasses "
 					+ (subclasses.isEmpty() ? "none" : String.join(", ", subclasses)) + "."
-					+ (hidden.isEmpty() ? "" : "\n" + OUTSIDE_PACKAGE + String.join(", ", hidden)));
+					+ (hidden.isEmpty() ? "" : "\n" + OUTSIDE_PACKAGE + String.join(", ", hidden) + "\n" + readOnRequest()));
 		}
 		AdtObjectRef ref = resolve(c, in, cancel);
 		String objectUri = AdtObjectRef.objectUri(ref.uri());
@@ -2259,7 +2261,7 @@ public final class AdtToolProvider implements ToolProvider {
 				}
 				return ok;
 			}).toList();
-			String hiddenNote = hidden.isEmpty() ? "" : OUTSIDE_PACKAGE + String.join(", ", hidden) + "\n";
+			String hiddenNote = hidden.isEmpty() ? "" : OUTSIDE_PACKAGE + String.join(", ", hidden) + "\n" + readOnRequest();
 			if (refs.isEmpty()) {
 				return ToolResult.ok(hiddenNote + "No references found"
 						+ (hidden.isEmpty() ? "." : " in the development package or SAP's objects."));
@@ -2300,6 +2302,17 @@ public final class AdtToolProvider implements ToolProvider {
 	}
 
 	static final String OUTSIDE_PACKAGE = "Customer objects outside the development package, ignored: ";
+
+	/**
+	 * How the model gets an object of another package when the task needs it;
+	 * empty when the developer cannot be asked.
+	 */
+	private String readOnRequest() {
+		return scope == null || !scope.asksForReads() ? ""
+				: "If the task needs one of them (e.g. a table to read or an enhancement spot to implement), read it "
+						+ "with adt_read_source or adt_table_contents: Bella asks the developer once per package whether "
+						+ "it may be read. Never change it.\n";
+	}
 
 	/** Whether a class or interface of a navigation result may be shown; the others are collected. */
 	private static boolean keep(Predicate<AdtObjectRef> allowed, String name, String type, List<String> hidden) {

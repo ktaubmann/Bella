@@ -112,6 +112,7 @@ class DevScopeTest {
 		assertTrue(search.content().contains("ZCL_OWN (CLAS/OC)"), search.content());
 		assertFalse(search.content().contains("ZCL_OTHER (CLAS/OC)"), search.content());
 		assertTrue(search.content().contains("ignored (their names are taken): ZCL_OTHER"), search.content());
+		assertFalse(search.content().contains("asks the developer"), "nobody to ask: " + search.content());
 
 		ToolResult context = call(p, "adt_context", "{\"names\":[\"ZCL_OTHER\"]}");
 		assertTrue(context.content().contains(AdtContext.IGNORED + "ZCL_OTHER"), context.content());
@@ -382,6 +383,8 @@ class DevScopeTest {
 		assertEquals(1, asked.get());
 		ToolResult search = call(p, "adt_search_objects", "{\"query\":\"ZCL_O*\"}");
 		assertTrue(search.content().contains("ignored (their names are taken): ZCL_OTHER"), search.content());
+		// the model learns that reading such an object asks, instead of giving up on it
+		assertTrue(search.content().contains("Bella asks the developer once per package"), search.content());
 	}
 
 	@Test

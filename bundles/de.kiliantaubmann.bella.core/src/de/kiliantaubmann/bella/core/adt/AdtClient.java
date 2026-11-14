@@ -1824,9 +1824,11 @@ public final class AdtClient {
 	/**
 	 * One activation with SAP's preaudit. When SAP answers with the inactive
 	 * objects it wants to activate as well instead of activating, nothing is
-	 * active yet: if it lists only the given objects the activation is
-	 * confirmed, otherwise the answer becomes an error naming the others, so
-	 * they are activated only when asked for (and pass the package check).
+	 * active yet; the activation is then confirmed for the given objects only,
+	 * as when the developer unticks the others in Eclipse's activation dialog.
+	 * The others (e.g. inactive objects of another package) stay inactive and
+	 * are named in a message, so they are activated only when asked for (and
+	 * pass the package check).
 	 */
 	private List<Message> activateOnce(List<AdtObjectRef> objects, CancelToken cancel) throws IOException {
 		String body = activationBody(objects);
@@ -1839,15 +1841,15 @@ public final class AdtClient {
 		}
 		List<AdtObjectRef> others = pending.stream().filter(p -> objects.stream().noneMatch(o -> sameObject(o, p)))
 				.toList();
-		if (others.isEmpty()) {
-			r = send(AdtRequest.post("/sap/bc/adt/activation?method=activate&preauditRequested=false",
-					"application/xml", body, "application/xml"), cancel);
-			return parseActivationMessages(r.body());
+		r = send(AdtRequest.post("/sap/bc/adt/activation?method=activate&preauditRequested=false",
+				"application/xml", body, "application/xml"), cancel);
+		List<Message> out = new ArrayList<>(parseActivationMessages(r.body()));
+		if (!others.isEmpty()) {
+			out.add(new Message("Info", "SAP also listed these inactive objects, which were not activated: "
+					+ String.join(", ", others.stream().map(AdtClient::label).toList())
+					+ ". They may belong to other work or another package: do not activate them unless the developer "
+					+ "asks for it.", "", 0));
 		}
-		List<Message> out = new ArrayList<>(msgs);
-		out.add(new Message("Error", "Nothing was activated: SAP activates these only together with other inactive "
-				+ "objects: " + String.join(", ", others.stream().map(AdtClient::label).toList())
-				+ ". Activate them all in one call, or ask the developer.", "", 0));
 		return out;
 	}
 

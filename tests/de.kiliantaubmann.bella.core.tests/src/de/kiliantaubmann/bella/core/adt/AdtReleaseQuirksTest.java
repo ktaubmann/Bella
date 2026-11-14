@@ -41,19 +41,26 @@ class AdtReleaseQuirksTest {
 	}
 
 	@Test
-	void preauditWithOtherObjectsIsNotReportedAsActivated() {
+	void preauditWithOtherObjectsActivatesOnlyTheGivenOnes() {
 		List<String> posts = new ArrayList<>();
+		List<String> bodies = new ArrayList<>();
 		FakeAdt adt = system().route("POST /sap/bc/adt/activation", r -> {
 			posts.add(r.path());
-			return FakeAdt.ok(preaudit("/sap/bc/adt/oo/classes/zcl_a", "CLAS/OC", "ZCL_A",
-					"/sap/bc/adt/oo/interfaces/zif_a", "INTF/OI", "ZIF_A"));
+			bodies.add(r.body());
+			return FakeAdt.ok(r.path().contains("preauditRequested=true")
+					? preaudit("/sap/bc/adt/oo/classes/zcl_a", "CLAS/OC", "ZCL_A",
+							"/sap/bc/adt/oo/interfaces/zif_other", "INTF/OI", "ZIF_OTHER")
+					: "");
 		});
 		ToolResult r = call(adt, "adt_activate", "{\"objects\":[{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}]}");
-		assertTrue(r.isError(), r.content());
-		assertTrue(r.content().contains("Nothing was activated") && r.content().contains("ZIF_A (INTF/OI)"), r.content());
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().startsWith("Activated ZCL_A"), r.content());
+		assertTrue(r.content().contains("not activated: ZIF_OTHER (INTF/OI)"), r.content());
 		assertFalse(r.content().contains("ZCL_A (CLAS/OC)"), r.content());
-		// the other objects are not activated behind the developer's back
-		assertEquals(1, posts.size(), posts.toString());
+		// the confirmation names only the given object; the others (e.g. of another package) stay inactive
+		assertEquals(List.of("/sap/bc/adt/activation?method=activate&preauditRequested=true",
+				"/sap/bc/adt/activation?method=activate&preauditRequested=false"), posts);
+		assertTrue(bodies.get(1).contains("ZCL_A") && !bodies.get(1).contains("ZIF_OTHER"), bodies.get(1));
 	}
 
 	@Test
