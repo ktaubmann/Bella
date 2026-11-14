@@ -141,6 +141,13 @@ abstract class EditorHandler extends AbstractHandler {
 						error(part, Messages.fmt("chat.notice.refusal", r.stopDetail() == null ? "" : r.stopDetail()));
 						return Status.OK_STATUS;
 					}
+					if (r.stopReason() == StopReason.MAX_TOKENS) {
+						// the code is cut off; putting it in would delete the rest of the source
+						Log.warn("editor", target + " on " + objectName + ": answer cut off at " + settings.maxTokens()
+								+ " output tokens");
+						error(part, Messages.fmt("generate.truncated", String.valueOf(settings.maxTokens())));
+						return Status.OK_STATUS;
+					}
 					String code = Markdown.firstCodeBlock(r.text());
 					if (code.isBlank()) {
 						Log.warn("editor", "answer without a code block: " + Log.clip(r.text(), 500));
@@ -164,7 +171,9 @@ abstract class EditorHandler extends AbstractHandler {
 								Json.userText(plugin.prompts().correctCode(problems))), List.of(), settings.maxTokens(),
 								ChatRequest.Purpose.CHAT, settings.effort());
 						ChatResult r2 = plugin.provider().chat(again, StreamListener.NONE, cancel);
-						String corrected = r2.stopReason() == StopReason.REFUSAL ? "" : Markdown.firstCodeBlock(r2.text());
+						String corrected = r2.stopReason() == StopReason.REFUSAL || r2.stopReason() == StopReason.MAX_TOKENS
+								? ""
+								: Markdown.firstCodeBlock(r2.text());
 						if (corrected.isBlank()) {
 							Log.warn("editor", "correction without a code block, keeping the first proposal: "
 									+ Log.clip(r2.text(), 300));
