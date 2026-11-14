@@ -6,6 +6,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import de.kiliantaubmann.bella.core.util.CancelToken;
+
 /**
  * The package a chat develops in and the transport request the developer
  * chose for it. Customer objects (Z*, Y*) of other packages are ignored, and
@@ -40,14 +42,21 @@ public final class DevScope {
 	/** Asks the developer whether Bella may read customer objects of a package outside the development package. */
 	public interface ReadAsker {
 		/**
-		 * Blocks until the developer answered.
+		 * Blocks until the developer answered. {@link Answer#NONE} when the
+		 * question could not be shown: nothing is recorded then, and a later
+		 * read asks again.
 		 *
 		 * @param object the object Bella is about to read
 		 * @param pkg    its package
 		 * @param dev    the development package, {@code null} while none is set
 		 * @return whether objects of {@code pkg} may be read in this chat
 		 */
-		boolean allowRead(String destinationId, String object, String pkg, String dev);
+		Answer allowRead(String destinationId, String object, String pkg, String dev);
+	}
+
+	/** What the developer said to a {@link ReadAsker}; {@code NONE} if the question never reached them. */
+	public enum Answer {
+		YES, NO, NONE
 	}
 
 	/** {@code listener} runs after each change of package, request or editor object. */
@@ -106,12 +115,22 @@ public final class DevScope {
 		return pkg != null && readRefused.contains(key(destinationId, pkg));
 	}
 
+	/** The packages the developer declined for reading on this system, upper case. */
+	public synchronized Set<String> refusedPackages(String destinationId) {
+		Set<String> out = new HashSet<>();
+		String prefix = destinationId + "|";
+		readRefused.stream().filter(k -> k.startsWith(prefix)).forEach(k -> out.add(k.substring(prefix.length())));
+		return out;
+	}
+
 	/**
 	 * Whether {@code object} of {@code pkg} may be read, asking the developer
 	 * once per package and chat. Without an asker, or after a no, it may not.
 	 * One question at a time: parallel reads of the same package ask once.
+	 * A cancelled run does not ask, and a question that could not be shown
+	 * counts as no for this read only.
 	 */
-	public boolean mayRead(String destinationId, String object, String pkg, String dev) {
+	public boolean mayRead(String destinationId, String object, String pkg, String dev, CancelToken cancel) {
 		if (pkg == null || pkg.isBlank()) {
 			return false;
 		}
@@ -123,14 +142,17 @@ public final class DevScope {
 			if (readsPackage(destinationId, pkg)) {
 				return true;
 			}
-			if (asker == null || readRefused(destinationId, pkg)) {
+			if (asker == null || readRefused(destinationId, pkg) || cancel != null && cancel.isCancelled()) {
 				return false;
 			}
-			boolean yes = asker.allowRead(destinationId, object, pkg.trim().toUpperCase(Locale.ROOT), dev);
-			synchronized (this) {
-				(yes ? readAllowed : readRefused).add(key(destinationId, pkg));
+			Answer answer = asker.allowRead(destinationId, object, pkg.trim().toUpperCase(Locale.ROOT), dev);
+			if (answer == null || answer == Answer.NONE) {
+				return false;
 			}
-			return yes;
+			synchronized (this) {
+				(answer == Answer.YES ? readAllowed : readRefused).add(key(destinationId, pkg));
+			}
+			return answer == Answer.YES;
 		}
 	}
 

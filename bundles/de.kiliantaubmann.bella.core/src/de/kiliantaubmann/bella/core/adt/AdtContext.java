@@ -243,8 +243,7 @@ public final class AdtContext {
 	}
 
 	/** Heads the list of customer objects outside the development package. */
-	public static final String IGNORED = "Ignored, customer objects outside the development package (read one "
-			+ "only if the task needs it; Bella asks the developer first): ";
+	public static final String IGNORED = "Ignored, customer objects outside the development package: ";
 
 	/**
 	 * Exact-name search; among several hits the object type the code position

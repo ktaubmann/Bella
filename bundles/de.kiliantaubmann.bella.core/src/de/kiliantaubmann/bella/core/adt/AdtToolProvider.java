@@ -2,11 +2,13 @@ package de.kiliantaubmann.bella.core.adt;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -318,8 +320,8 @@ public final class AdtToolProvider implements ToolProvider {
 			t.add(ToolSpec.of("adt_dev_package",
 					"The development package of this chat and the transport request for its changes. Customer "
 							+ "objects (Z*, Y*) are used only from this package; objects of other packages are "
-							+ "ignored unless the developer allows reading their package (Bella asks when you read "
-							+ "one that the task needs; never changed), and every write needs the package. 'get' "
+							+ "ignored unless the developer allows reading their package (where it can, Bella asks when you "
+							+ "read one that the task needs; never changed), and every write needs the package. 'get' "
 							+ "(default) shows both. 'set' records "
 							+ "what the developer answered: 'package' (not when the chat works on an editor object, "
 							+ "whose package it is) and/or 'transport', one of the developer's own open requests. "
@@ -917,8 +919,10 @@ public final class AdtToolProvider implements ToolProvider {
 				objects = List.of(); // after a transport review, reading is not limited to the package
 			}
 			String dev = scopePackage(s, c, cancel);
+			// unit tests run the object's code, so the permission to read a package does not cover them
+			boolean runs = tool.equals("adt_run_unit_tests");
 			if (write || !objects.isEmpty()) {
-				if (dev == null && (write || !scope.asksForReads())) {
+				if (dev == null && (write || runs || !scope.asksForReads())) {
 					List<String> names = objects.stream().map(o -> Json.str(o, "name").trim().toUpperCase(Locale.ROOT))
 							.toList();
 					return Optional.of((write ? "No development package is set, so Bella does not write. "
@@ -946,10 +950,12 @@ public final class AdtToolProvider implements ToolProvider {
 						}
 						throw e;
 					}
-					if (!pkg.equals(dev) && (write || !scope.mayRead(s.destinationId(), name, pkg, dev))) {
+					if (!pkg.equals(dev)
+							&& (write || runs || !scope.mayRead(s.destinationId(), name, pkg, dev, cancel))) {
 						return Optional.of(name + " belongs to package " + (pkg.isEmpty() ? "(unknown)" : pkg)
 								+ ", outside the development package " + (dev == null ? "(not set)" : dev) + ". Bella "
 								+ (write ? "changes only objects of the development package"
+										: runs ? "runs unit tests only on objects of the development package"
 										: scope.readRefused(s.destinationId(), pkg)
 												? "may not read it: the developer did not allow reading package " + pkg
 												: "ignores customer objects of other packages")
@@ -1133,8 +1139,15 @@ public final class AdtToolProvider implements ToolProvider {
 
 	/** Objects may be used: SAP's always, customer objects only from the development package. */
 	private Predicate<AdtObjectRef> scopeFilter(AdtSystem s, AdtClient c, CancelToken cancel) throws IOException {
+		return scopeFilter(s, c, true, cancel);
+	}
+
+	/** @param reads whether the objects are only read; otherwise the packages allowed for reading do not count */
+	private Predicate<AdtObjectRef> scopeFilter(AdtSystem s, AdtClient c, boolean reads, CancelToken cancel)
+			throws IOException {
 		return scope == null || scope.readsEveryPackage(s.destinationId()) ? r -> true
-				: AdtContext.inPackage(c, scopePackage(s, c, cancel), scope.readPackages(s.destinationId()), cancel);
+				: AdtContext.inPackage(c, scopePackage(s, c, cancel),
+						reads ? scope.readPackages(s.destinationId()) : Set.of(), cancel);
 	}
 
 	/**
@@ -1427,7 +1440,8 @@ public final class AdtToolProvider implements ToolProvider {
 		String searchIn = Json.str(in, "search_in");
 		if (searchIn != null && searchIn.trim().equalsIgnoreCase("source")) {
 			return searchSource(c, in, max, scope == null || scope.readsEveryPackage(sys.destinationId()) ? Optional.empty()
-					: Optional.ofNullable(scopePackage(sys, c, cancel)).or(() -> Optional.of("")), cancel);
+					: Optional.ofNullable(scopePackage(sys, c, cancel)).or(() -> Optional.of("")),
+					scope == null ? Set.of() : scope.readPackages(sys.destinationId()), cancel);
 		}
 		if (searchIn != null && searchIn.trim().equalsIgnoreCase("tadir")) {
 			return tadirLookup(sys, c, in, max, cancel);
@@ -1452,18 +1466,21 @@ public final class AdtToolProvider implements ToolProvider {
 			refs = refs.subList(0, max);
 		}
 		List<String> hidden = new ArrayList<>();
+		List<String> hiddenIn = List.of();
 		if (scope != null && !scope.readsEveryPackage(sys.destinationId())) {
 			String dev = scopePackage(sys, c, cancel);
 			// only the package the hit names: asking each hit's package would cost a request per hit
-			hidden = refs.stream().filter(r -> DevScope.customer(r.name()) && !r.name().equalsIgnoreCase(dev)
-					&& (dev == null || !r.packageName().equalsIgnoreCase(dev))
-					&& !scope.readsPackage(sys.destinationId(), r.packageName())).map(AdtObjectRef::name).toList();
+			List<AdtObjectRef> out = refs.stream().filter(r -> DevScope.customer(r.name())
+					&& !r.name().equalsIgnoreCase(dev) && (dev == null || !r.packageName().equalsIgnoreCase(dev))
+					&& !scope.readsPackage(sys.destinationId(), r.packageName())).toList();
+			hidden = out.stream().map(AdtObjectRef::name).toList();
+			hiddenIn = out.stream().map(AdtObjectRef::packageName).toList();
 			List<String> h = hidden;
 			refs = refs.stream().filter(r -> !h.contains(r.name())).toList();
 		}
 		String hiddenNote = hidden.isEmpty() ? ""
 				: "Customer objects outside the development package, ignored (their names are taken): "
-						+ String.join(", ", hidden) + "\n" + readOnRequest();
+						+ String.join(", ", hidden) + "\n" + readOnRequest(sys, hiddenIn);
 		if (refs.isEmpty()) {
 			return ToolResult.ok(hiddenNote + "No objects found" + (hidden.isEmpty() ? "." : " in the development package."));
 		}
@@ -1541,7 +1558,7 @@ public final class AdtToolProvider implements ToolProvider {
 			if (scoped && DevScope.customer(name) && !(dev != null && pkg.equalsIgnoreCase(dev))
 					&& !scope.readsPackage(sys.destinationId(), pkg)) {
 				sb.append(name).append(": a customer object outside the development package, ignored.")
-						.append(readOnRequest().isEmpty() ? "\n" : " " + readOnRequest());
+						.append(readOnRequest(sys, List.of(pkg)).isEmpty() ? "\n" : " " + readOnRequest(sys, List.of(pkg)));
 				continue;
 			}
 			sb.append(name).append(":\n  ADT: ").append(adt.isEmpty() ? "not found" : String.join("; ", adt))
@@ -1573,7 +1590,7 @@ public final class AdtToolProvider implements ToolProvider {
 	 *            packages are left out
 	 */
 	private static ToolResult searchSource(AdtClient c, JsonObject in, int max, Optional<String> dev,
-			CancelToken cancel) throws IOException {
+			Set<String> alsoRead, CancelToken cancel) throws IOException {
 		String text = Json.str(in, "query");
 		if (text == null || text.isBlank()) {
 			return ToolResult.error("Give the text to find in 'query'.");
@@ -1590,7 +1607,8 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.error(e.getMessage());
 		}
 		String note = "";
-		if (dev.isPresent() && !dev.get().equals(pkg)) {
+		// a package the developer allowed for reading is searched like the development package
+		if (dev.isPresent() && !dev.get().equals(pkg) && !(pkg != null && alsoRead.contains(pkg))) {
 			int all = hits.size();
 			hits = hits.stream().filter(h -> !DevScope.customer(h.name())).toList();
 			if (hits.size() < all) {
@@ -1724,7 +1742,8 @@ public final class AdtToolProvider implements ToolProvider {
 				return ToolResult.error("Could not read from the SAP system (this does not mean the objects are "
 						+ "missing): " + String.join("; ", r.failed()));
 			}
-			String ignored = r.ignored().isEmpty() ? "" : AdtContext.IGNORED + String.join(", ", r.ignored()) + "\n";
+			String ignored = r.ignored().isEmpty() ? ""
+					: AdtContext.IGNORED + String.join(", ", r.ignored()) + "\n" + readOnRequest(sys, null);
 			if (!r.notFound().isEmpty()) {
 				return ToolResult.ok(ignored + "None of these objects exist in the system: "
 						+ String.join(", ", r.notFound()));
@@ -1740,6 +1759,9 @@ public final class AdtToolProvider implements ToolProvider {
 		}
 		if (r.error() != null) {
 			text += "Loading stopped: " + r.error() + "\n";
+		}
+		if (!r.ignored().isEmpty()) {
+			text += readOnRequest(sys, null);
 		}
 		return ToolResult.ok(text);
 	}
@@ -1757,7 +1779,7 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult unitTests(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem sys = system(in);
 		AdtClient c = client(sys);
-		Optional<ToolResult> target = packageOrName(sys, c, in, cancel);
+		Optional<ToolResult> target = packageOrName(sys, c, in, true, cancel);
 		if (target.isPresent()) {
 			return target.get();
 		}
@@ -1767,7 +1789,7 @@ public final class AdtToolProvider implements ToolProvider {
 		String pkg = Json.str(in, "package");
 		if (pkg != null && !pkg.isBlank()) {
 			PackageRuns.Selection s = PackageRuns.forUnitTests(c, pkg, flag(in, "include_subpackages", false),
-					scopeFilter(sys, c, cancel), cancel);
+					scopeFilter(sys, c, false, cancel), cancel);
 			return ToolResult.ok(PackageRuns.unitTests(c, s, cancel));
 		}
 		AdtObjectRef ref = resolve(c, in, cancel);
@@ -1776,12 +1798,14 @@ public final class AdtToolProvider implements ToolProvider {
 
 	/**
 	 * Checks that a unit test or ATC call names either an object or a
-	 * package, and that a customer package is the development package.
+	 * package, and that a customer package is the development package or,
+	 * for a check that only reads, one the developer allows reading.
 	 *
+	 * @param runs the call runs the package's code (unit tests)
 	 * @return the refusal, empty when the call may run
 	 */
-	private Optional<ToolResult> packageOrName(AdtSystem sys, AdtClient c, JsonObject in, CancelToken cancel)
-			throws IOException {
+	private Optional<ToolResult> packageOrName(AdtSystem sys, AdtClient c, JsonObject in, boolean runs,
+			CancelToken cancel) throws IOException {
 		String pkg = Json.str(in, "package");
 		boolean hasPackage = pkg != null && !pkg.isBlank();
 		boolean hasName = Json.str(in, "name") != null && !Json.str(in, "name").isBlank();
@@ -1791,7 +1815,7 @@ public final class AdtToolProvider implements ToolProvider {
 		if (hasPackage && scope != null && DevScope.customer(pkg)) {
 			String dev = scopePackage(sys, c, cancel);
 			String p = pkg.trim().toUpperCase(Locale.ROOT);
-			if (!p.equals(dev) && scope.mayRead(sys.destinationId(), "package " + p, p, dev)) {
+			if (!p.equals(dev) && !runs && scope.mayRead(sys.destinationId(), "package " + p, p, dev, cancel)) {
 				return Optional.empty();
 			}
 			if (dev == null) {
@@ -1800,7 +1824,8 @@ public final class AdtToolProvider implements ToolProvider {
 			}
 			if (!p.equals(dev)) {
 				return Optional.of(ToolResult.error(p + " is not the development package " + dev + ". "
-						+ (scope.readRefused(sys.destinationId(), p)
+						+ (runs ? "Unit tests run only in the development package"
+								: scope.readRefused(sys.destinationId(), p)
 								? "The developer did not allow reading package " + p
 								: "Bella ignores customer objects of other packages")
 						+ ": do not use it. Do not retry; if it is needed, tell the developer."));
@@ -1812,7 +1837,7 @@ public final class AdtToolProvider implements ToolProvider {
 	private ToolResult atc(JsonObject in, CancelToken cancel) throws IOException {
 		AdtSystem sys = system(in);
 		AdtClient c = client(sys);
-		Optional<ToolResult> target = packageOrName(sys, c, in, cancel);
+		Optional<ToolResult> target = packageOrName(sys, c, in, false, cancel);
 		if (target.isPresent()) {
 			return target.get();
 		}
@@ -2227,7 +2252,7 @@ public final class AdtToolProvider implements ToolProvider {
 			return ToolResult.ok(name + ": superclass " + (superclass.isEmpty() ? "none" : superclass) + "; interfaces "
 					+ (interfaces.isEmpty() ? "none" : String.join(", ", interfaces)) + "; subclasses "
 					+ (subclasses.isEmpty() ? "none" : String.join(", ", subclasses)) + "."
-					+ (hidden.isEmpty() ? "" : "\n" + OUTSIDE_PACKAGE + String.join(", ", hidden) + "\n" + readOnRequest()));
+					+ (hidden.isEmpty() ? "" : "\n" + OUTSIDE_PACKAGE + String.join(", ", hidden) + "\n" + readOnRequest(sys, null)));
 		}
 		AdtObjectRef ref = resolve(c, in, cancel);
 		String objectUri = AdtObjectRef.objectUri(ref.uri());
@@ -2261,7 +2286,7 @@ public final class AdtToolProvider implements ToolProvider {
 				}
 				return ok;
 			}).toList();
-			String hiddenNote = hidden.isEmpty() ? "" : OUTSIDE_PACKAGE + String.join(", ", hidden) + "\n" + readOnRequest();
+			String hiddenNote = hidden.isEmpty() ? "" : OUTSIDE_PACKAGE + String.join(", ", hidden) + "\n" + readOnRequest(sys, null);
 			if (refs.isEmpty()) {
 				return ToolResult.ok(hiddenNote + "No references found"
 						+ (hidden.isEmpty() ? "." : " in the development package or SAP's objects."));
@@ -2305,13 +2330,27 @@ public final class AdtToolProvider implements ToolProvider {
 
 	/**
 	 * How the model gets an object of another package when the task needs it;
-	 * empty when the developer cannot be asked.
+	 * empty when the developer cannot be asked. Packages the developer
+	 * declined in this chat are named instead: they are not asked for again.
+	 *
+	 * @param packages the packages of the ignored objects, {@code null} when unknown
 	 */
-	private String readOnRequest() {
-		return scope == null || !scope.asksForReads() ? ""
-				: "If the task needs one of them (e.g. a table to read or an enhancement spot to implement), read it "
-						+ "with adt_read_source or adt_table_contents: Bella asks the developer once per package whether "
-						+ "it may be read. Never change it.\n";
+	private String readOnRequest(AdtSystem sys, Collection<String> packages) {
+		if (scope == null || !scope.asksForReads()) {
+			return "";
+		}
+		Set<String> refused = new TreeSet<>(scope.refusedPackages(sys.destinationId()));
+		String declined = refused.isEmpty() ? ""
+				: "The developer did not allow reading package" + (refused.size() == 1 ? " " : "s ")
+						+ String.join(", ", refused) + " in this chat: do not use objects of "
+						+ (refused.size() == 1 ? "it" : "them") + ".\n";
+		if (packages != null && !packages.isEmpty() && packages.stream()
+				.allMatch(p -> p != null && refused.contains(p.trim().toUpperCase(Locale.ROOT)))) {
+			return declined;
+		}
+		return "If the task needs one of them (e.g. a table to read or an enhancement spot to implement), read it "
+				+ "with adt_read_source or adt_table_contents: Bella asks the developer once per package whether "
+				+ "it may be read. Never change it.\n" + declined;
 	}
 
 	/** Whether a class or interface of a navigation result may be shown; the others are collected. */

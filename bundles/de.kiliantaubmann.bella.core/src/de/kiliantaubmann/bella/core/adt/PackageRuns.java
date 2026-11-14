@@ -53,9 +53,11 @@ final class PackageRuns {
 	 * @param packages   the packages searched
 	 * @param objects    the objects to run, at most {@link #MAX_OBJECTS}
 	 * @param ignored    customer objects of other packages left out
+	 * @param ignoredIn  the packages they belong to
 	 * @param incomplete why the selection may miss objects; empty if it is complete
 	 */
-	record Selection(String pkg, List<String> packages, List<AdtObjectRef> objects, int ignored, String incomplete) {
+	record Selection(String pkg, List<String> packages, List<AdtObjectRef> objects, int ignored,
+			List<String> ignoredIn, String incomplete) {
 	}
 
 	static Selection forUnitTests(AdtClient c, String pkg, boolean subpackages, Predicate<AdtObjectRef> allowed,
@@ -84,6 +86,7 @@ final class PackageRuns {
 		Set<String> seen = new LinkedHashSet<>();
 		List<String> incomplete = new ArrayList<>();
 		int ignored = 0;
+		Set<String> ignoredIn = new LinkedHashSet<>();
 		while (!queue.isEmpty()) {
 			String current = queue.poll();
 			if (!visited.add(current)) {
@@ -118,6 +121,7 @@ final class PackageRuns {
 				}
 				if (!allowed.test(r)) {
 					ignored++;
+					ignoredIn.add(own.isEmpty() ? current : own);
 					continue;
 				}
 				objects.put(r.uri(), r);
@@ -130,7 +134,7 @@ final class PackageRuns {
 					+ "subpackages one by one or check single objects");
 			list = new ArrayList<>(list.subList(0, MAX_OBJECTS));
 		}
-		return new Selection(root, List.copyOf(visited), list, ignored, String.join("; ", incomplete));
+		return new Selection(root, List.copyOf(visited), list, ignored, List.copyOf(ignoredIn), String.join("; ", incomplete));
 	}
 
 	/** Main programs, classes and groups; not includes or function modules, which run with their main object. */
@@ -227,7 +231,10 @@ final class PackageRuns {
 		StringBuilder sb = new StringBuilder();
 		if (s.ignored() > 0) {
 			sb.append("\nLeft out: ").append(s.ignored())
-					.append(" customer objects outside the development package.");
+					.append(" customer objects outside the development package")
+					.append(s.ignoredIn().isEmpty() ? "" : " (in " + String.join(", ", s.ignoredIn())
+							+ "; each package counts on its own, also a subpackage of the one asked for)")
+					.append('.');
 		}
 		if (!s.incomplete().isEmpty()) {
 			sb.append("\nIncomplete: ").append(s.incomplete()).append('.');

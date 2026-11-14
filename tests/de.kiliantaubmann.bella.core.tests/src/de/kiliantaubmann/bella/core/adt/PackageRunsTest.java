@@ -175,7 +175,7 @@ class PackageRunsTest {
 		ToolResult own = call(p, "adt_run_unit_tests", "{\"package\":\"ZPKG\",\"include_subpackages\":true}");
 		assertFalse(own.isError(), own.content());
 		assertFalse(bodies.get(0).contains("zcl_sub"), bodies.get(0));
-		assertTrue(own.content().contains("Left out: 1 customer objects outside the development package."),
+		assertTrue(own.content().contains("Left out: 1 customer objects outside the development package (in ZSUB;"),
 				own.content());
 	}
 

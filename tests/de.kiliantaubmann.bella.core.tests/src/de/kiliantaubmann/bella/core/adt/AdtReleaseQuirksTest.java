@@ -104,6 +104,23 @@ class AdtReleaseQuirksTest {
 	}
 
 	@Test
+	void oneByOneActivationDoesNotReportTheOtherObjectsOfTheBatch() {
+		String ed064 = "<chkl:messages xmlns:chkl=\"http://www.sap.com/abapxml/checklist\"><msg type=\"E\"><shortText>"
+				+ "<txt>No next/previous object found (ED064)</txt></shortText></msg></chkl:messages>";
+		String pending = preaudit("/sap/bc/adt/oo/classes/zcl_a", "CLAS/OC", "ZCL_A",
+				"/sap/bc/adt/oo/interfaces/zif_a", "INTF/OI", "ZIF_A",
+				"/sap/bc/adt/oo/interfaces/zif_other", "INTF/OI", "ZIF_OTHER");
+		FakeAdt adt = system().route("POST /sap/bc/adt/activation",
+				r -> FakeAdt.ok(r.body().contains("zcl_a") && r.body().contains("zif_a") ? ed064
+						: r.path().contains("preauditRequested=true") ? pending : ""));
+		ToolResult r = call(adt, "adt_activate",
+				"{\"objects\":[{\"name\":\"ZIF_A\",\"type\":\"INTF\"},{\"name\":\"ZCL_A\",\"type\":\"CLAS\"}]}");
+		assertFalse(r.isError(), r.content());
+		assertTrue(r.content().contains("not activated: ZIF_OTHER (INTF/OI)"), r.content());
+		assertFalse(r.content().contains("ZIF_A (INTF/OI)") || r.content().contains("ZCL_A (CLAS/OC)"), r.content());
+	}
+
+	@Test
 	void realActivationErrorsAreNotRetried() {
 		String errors = "<chkl:messages xmlns:chkl=\"http://www.sap.com/abapxml/checklist\">"
 				+ "<msg type=\"E\"><shortText><txt>No next/previous object found (ED064)</txt></shortText></msg>"

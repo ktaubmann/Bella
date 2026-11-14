@@ -71,6 +71,10 @@ class DevScopeTest {
 		return new AdtToolProvider(adt, () -> "dev", () -> "", d -> "", () -> NamingRules.NONE, scope);
 	}
 
+	private static DevScope.Answer yes(boolean yes) {
+		return yes ? DevScope.Answer.YES : DevScope.Answer.NO;
+	}
+
 	private static ToolResult call(AdtToolProvider p, String tool, String json) {
 		return p.call(tool, Json.parseObject(json), CancelToken.NONE);
 	}
@@ -339,7 +343,7 @@ class DevScopeTest {
 	void readingAnotherPackageAsksOnceAndHoldsForTheChat() {
 		DevScope scope = new DevScope();
 		List<String> asked = new ArrayList<>();
-		scope.readAsker((d, object, pkg, dev) -> asked.add(d + " " + object + " " + pkg + " " + dev));
+		scope.readAsker((d, object, pkg, dev) -> yes(asked.add(d + " " + object + " " + pkg + " " + dev)));
 		AdtToolProvider p = provider(system(), scope);
 		call(p, "adt_dev_package", "{\"action\":\"set\",\"package\":\"ZSD_DELIV\"}");
 
@@ -372,7 +376,7 @@ class DevScopeTest {
 	void aDeclinedPackageIsNotAskedAgain() {
 		DevScope scope = new DevScope();
 		AtomicInteger asked = new AtomicInteger();
-		scope.readAsker((d, object, pkg, dev) -> asked.incrementAndGet() < 0);
+		scope.readAsker((d, object, pkg, dev) -> yes(asked.incrementAndGet() < 0));
 		AdtToolProvider p = provider(system(), scope);
 		call(p, "adt_dev_package", "{\"action\":\"set\",\"package\":\"ZSD_DELIV\"}");
 
@@ -383,15 +387,76 @@ class DevScopeTest {
 		assertEquals(1, asked.get());
 		ToolResult search = call(p, "adt_search_objects", "{\"query\":\"ZCL_O*\"}");
 		assertTrue(search.content().contains("ignored (their names are taken): ZCL_OTHER"), search.content());
-		// the model learns that reading such an object asks, instead of giving up on it
+		// no hint to read it: the developer is not asked again
+		assertFalse(search.content().contains("Bella asks the developer"), search.content());
+		assertTrue(search.content().contains("The developer did not allow reading package ZMM_OTHER in this chat"),
+				search.content());
+	}
+
+	@Test
+	void theModelLearnsThatReadingAsks() {
+		DevScope scope = new DevScope();
+		scope.readAsker((d, object, pkg, dev) -> DevScope.Answer.YES);
+		AdtToolProvider p = provider(system(), scope);
+		call(p, "adt_dev_package", "{\"action\":\"set\",\"package\":\"ZSD_DELIV\"}");
+		ToolResult search = call(p, "adt_search_objects", "{\"query\":\"ZCL_O*\"}");
+		assertTrue(search.content().contains("ignored (their names are taken): ZCL_OTHER"), search.content());
 		assertTrue(search.content().contains("Bella asks the developer once per package"), search.content());
+		// without an asker there is no such promise
+		ToolResult silent = call(provider(system(), new DevScope()), "adt_search_objects", "{\"query\":\"ZCL_O*\"}");
+		assertFalse(silent.content().contains("asks the developer"), silent.content());
+	}
+
+	@Test
+	void aQuestionThatCouldNotBeShownIsAskedAgain() {
+		DevScope scope = new DevScope();
+		List<DevScope.Answer> answers = new ArrayList<>(List.of(DevScope.Answer.NONE, DevScope.Answer.YES));
+		scope.readAsker((d, object, pkg, dev) -> answers.remove(0));
+		assertFalse(scope.mayRead("dev", "ZCL_OTHER", "ZMM_OTHER", "ZSD_DELIV", CancelToken.NONE));
+		assertFalse(scope.readRefused("dev", "ZMM_OTHER"), "nobody said no");
+		assertTrue(scope.mayRead("dev", "ZCL_OTHER", "ZMM_OTHER", "ZSD_DELIV", CancelToken.NONE));
+	}
+
+	@Test
+	void aCancelledRunDoesNotAsk() {
+		DevScope scope = new DevScope();
+		AtomicInteger asked = new AtomicInteger();
+		scope.readAsker((d, object, pkg, dev) -> yes(asked.incrementAndGet() > 0));
+		CancelToken cancelled = new CancelToken();
+		cancelled.cancel();
+		assertFalse(scope.mayRead("dev", "ZCL_OTHER", "ZMM_OTHER", "ZSD_DELIV", cancelled));
+		assertEquals(0, asked.get());
+		assertFalse(scope.readRefused("dev", "ZMM_OTHER"));
+	}
+
+	@Test
+	void readingAPackageDoesNotCoverItsUnitTests() {
+		DevScope scope = new DevScope();
+		AtomicInteger asked = new AtomicInteger();
+		scope.readAsker((d, object, pkg, dev) -> yes(asked.incrementAndGet() > 0));
+		AdtToolProvider p = provider(system(), scope);
+		call(p, "adt_dev_package", "{\"action\":\"set\",\"package\":\"ZSD_DELIV\"}");
+
+		// unit tests run code: refused without a question, also once the package may be read
+		Optional<String> run = refuse(p, "adt_run_unit_tests", READ_OTHER);
+		assertTrue(run.isPresent() && run.get().contains("runs unit tests only on objects of the development package"),
+				run.toString());
+		assertEquals(0, asked.get());
+		assertEquals(Optional.empty(), refuse(p, "adt_read_source", READ_OTHER));
+		assertTrue(refuse(p, "adt_run_unit_tests", READ_OTHER).isPresent());
+		ToolResult pkg = call(p, "adt_run_unit_tests", "{\"package\":\"ZMM_OTHER\"}");
+		assertTrue(pkg.isError() && pkg.content().contains("Unit tests run only in the development package"),
+				pkg.content());
+		// ATC only reads
+		assertEquals(Optional.empty(), refuse(p, "adt_atc_check", READ_OTHER));
+		assertEquals(1, asked.get());
 	}
 
 	@Test
 	void withoutAPackageAReadAsksToo() {
 		DevScope scope = new DevScope();
 		List<String> asked = new ArrayList<>();
-		scope.readAsker((d, object, pkg, dev) -> asked.add(object + " " + pkg + " " + dev));
+		scope.readAsker((d, object, pkg, dev) -> yes(asked.add(object + " " + pkg + " " + dev)));
 		AdtToolProvider p = provider(system(), scope);
 		assertEquals(Optional.empty(), refuse(p, "adt_read_source", READ_OTHER));
 		assertEquals(List.of("ZCL_OTHER ZMM_OTHER null"), asked);

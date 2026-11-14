@@ -90,7 +90,8 @@ public final class AbapPrompts {
 				  anything; with an editor object (and no package named before) it is that object's package.
 				  Customer objects of other packages are never changed. Read one only when the task needs it (e.g. a
 				  table whose contents or structure matter, or an enhancement spot to implement): Bella then asks the
-				  developer whether its package may be read; after a no, do not use it. After adt_transport_review,
+				  developer whether its package may be read; after a no, or where Bella cannot ask (the tool result
+				  then says it ignores the object), do not use it. After adt_transport_review,
 				  objects of every package may be read, not changed.
 				  The developer may also choose the package and the transport request in the chat window: check
 				  adt_dev_package first and ask only for what is not set yet.

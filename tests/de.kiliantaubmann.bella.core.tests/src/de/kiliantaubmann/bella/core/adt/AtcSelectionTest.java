@@ -29,6 +29,20 @@ class AtcSelectionTest {
 	}
 
 	@Test
+	void numberedIncludesAreDifferentSources() {
+		String group = "/sap/bc/adt/functions/groups/zfg";
+		String f01 = group + "/includes/lzfgf01";
+		String f02 = group + "/includes/lzfgf02";
+		assertTrue(AtcSelection.fixable(finding("Error", f01 + "/source/main", 3), f01));
+		assertFalse(AtcSelection.fixable(finding("Error", f02 + "/source/main", 3), f01));
+		assertEquals("lzfgf02", finding("Error", f02 + "/source/main", 3).include());
+		// namespaced includes are no main source
+		String ns = "/sap/bc/adt/programs/includes/%2fabc%2finc_top";
+		assertEquals("/abc/inc_top", finding("Error", ns, 3).include());
+		assertFalse(AtcSelection.fixable(finding("Error", ns, 3), group));
+	}
+
+	@Test
 	void ticksAtMostTheLimitOfFixableErrorsAndWarnings() {
 		List<AdtClient.Message> findings = new ArrayList<>();
 		findings.add(finding("Error", TESTS, 1));
