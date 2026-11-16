@@ -228,6 +228,7 @@ What happens:
 - The CLI's built-in tools are switched off (`--tools ""`), so Claude can neither read files nor run commands.
 - The CLI gets Bella's SAP tools through a **local MCP server** inside Bella. It listens on `127.0.0.1` only and requires a random token. Other MCP configurations of the user are ignored (`--strict-mcp-config`).
 - Every tool call passes the same rules as with an API key: tool policy, confirmation dialog and the router for open objects (code only goes into the editor).
+- The CLI waits up to 30 minutes for a tool call, the confirmation dialog included. If it stops waiting anyway (timeout, stopped turn), the open confirmation dialog closes and the call does not run, even if it is allowed later. A call that was already running when the CLI gave up is reported to the model with the next tool call, so it does not repeat a create that went through.
 - Bella removes an `ANTHROPIC_API_KEY` from the CLI's environment so that the subscription is really used.
 
 Limits:

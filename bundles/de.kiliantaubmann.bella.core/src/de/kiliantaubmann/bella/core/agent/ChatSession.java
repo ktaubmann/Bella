@@ -59,7 +59,7 @@ public final class ChatSession implements Conversation {
 	private volatile String system;
 
 	public ChatSession(Supplier<LlmProvider> provider, Supplier<Settings> settings, String system, ToolRegistry tools,
-			Supplier<ToolPolicy> policy, Confirmer confirmer, WriteGuard writeGuard) {
+			Supplier<ToolPolicy> policy, ToolExecutor.Confirmer confirmer, WriteGuard writeGuard) {
 		this.provider = provider;
 		this.settings = settings;
 		this.system = system;

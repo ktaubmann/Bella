@@ -28,7 +28,19 @@ public final class ToolExecutor {
 	/** Asks the developer whether a tool call may run. Blocks until answered. */
 	public interface Confirmer {
 		boolean confirm(ToolSpec tool, JsonObject input);
+
+		/**
+		 * Like {@link #confirm(ToolSpec, JsonObject)}, but stops asking once
+		 * {@code cancel} is cancelled, e.g. when the caller no longer waits.
+		 */
+		default boolean confirm(ToolSpec tool, JsonObject input, CancelToken cancel) {
+			return confirm(tool, input);
+		}
 	}
+
+	/** Result of a call that was cancelled before it ran. */
+	public static final String NOT_RUN = "Not run: the call was cancelled before it started (the caller stopped "
+			+ "waiting, e.g. after a timeout). Nothing was changed.";
 
 	/** Notified before and after a tool runs, e.g. to show it in the chat. */
 	public interface Observer {
@@ -203,7 +215,13 @@ public final class ToolExecutor {
 			Log.info(AREA, tool.name() + ": refused by the provider: " + refused.get());
 			return ToolResult.error(refused.get());
 		}
-		if (decision == ToolPolicy.Decision.CONFIRM && !confirmer.confirm(tool, input)) {
+		boolean confirmed = decision != ToolPolicy.Decision.CONFIRM || confirmer.confirm(tool, input, cancel);
+		if (cancel.isCancelled()) {
+			// an answer given after the caller stopped waiting must not change anything: nobody gets the result
+			Log.warn(AREA, tool.name() + ": cancelled before it ran");
+			return ToolResult.error(NOT_RUN);
+		}
+		if (!confirmed) {
 			Log.info(AREA, tool.name() + ": declined by the developer");
 			return ToolResult.error("The developer declined this tool call.");
 		}

@@ -13,6 +13,10 @@ import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +38,10 @@ import de.kiliantaubmann.bella.core.util.Json;
 class McpServerTest {
 
 	static final class Tools implements ToolProvider {
-		final List<String> calls = new ArrayList<>();
+		final List<String> calls = new CopyOnWriteArrayList<>();
+		/** Set: a call waits for it, as a slow SAP request would. */
+		volatile CountDownLatch slow;
+		final CountDownLatch running = new CountDownLatch(1);
 
 		@Override
 		public String id() {
@@ -60,6 +67,15 @@ class McpServerTest {
 		@Override
 		public ToolResult call(String remoteName, JsonObject input, CancelToken cancel) {
 			calls.add(remoteName + ":" + Json.str(input, "name"));
+			CountDownLatch wait = slow;
+			if (wait != null) {
+				running.countDown();
+				try {
+					wait.await(10, TimeUnit.SECONDS);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
 			return ToolResult.ok("result of " + remoteName);
 		}
 	}
@@ -67,6 +83,9 @@ class McpServerTest {
 	private final Tools tools = new Tools();
 	private final List<String> confirmed = new ArrayList<>();
 	private volatile boolean allow;
+	/** Set: the confirmation waits for it or for the call's cancellation, like the dialog. */
+	private volatile CountDownLatch answer;
+	private final CountDownLatch asking = new CountDownLatch(1);
 	private McpServer server;
 	private McpClient client;
 
@@ -76,10 +95,30 @@ class McpServerTest {
 		registry.addProvider(tools);
 		registry.refresh(e -> {
 		});
-		ToolExecutor executor = new ToolExecutor(registry, ToolPolicy::defaults, (tool, input) -> {
-			confirmed.add(tool.name());
-			return allow;
-		}, (tool, input) -> "ZCL_OPEN".equals(Json.str(input, "name")) && tool.kind() == ToolSpec.Kind.WRITE
+		ToolExecutor.Confirmer confirmer = new ToolExecutor.Confirmer() {
+
+			@Override
+			public boolean confirm(ToolSpec tool, JsonObject input) {
+				return confirm(tool, input, CancelToken.NONE);
+			}
+
+			@Override
+			public boolean confirm(ToolSpec tool, JsonObject input, CancelToken cancel) {
+				confirmed.add(tool.name());
+				CountDownLatch wait = answer;
+				if (wait != null) {
+					asking.countDown();
+					cancel.onCancel(wait::countDown);
+					try {
+						wait.await(10, TimeUnit.SECONDS);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}
+				return allow;
+			}
+		};
+		ToolExecutor executor = new ToolExecutor(registry, ToolPolicy::defaults, confirmer, (tool, input) -> "ZCL_OPEN".equals(Json.str(input, "name")) && tool.kind() == ToolSpec.Kind.WRITE
 				? Optional.of(ToolResult.ok("written into the editor"))
 				: Optional.empty());
 		server = new McpServer(executor, "0.2.0");
@@ -184,5 +223,61 @@ class McpServerTest {
 		assertTrue(Json.str(bella, "url").startsWith("http://127.0.0.1:"));
 		assertEquals("Bearer " + server.token(),
 				bella.getAsJsonObject("headers").get("Authorization").getAsString());
+		// without it the CLI aborts a call after five idle minutes, e.g. while the confirmation is open
+		assertEquals(McpServer.TOOL_TIMEOUT_MILLIS, bella.get("timeout").getAsInt());
+	}
+
+	private CompletableFuture<HttpResponse<String>> post(HttpClient http, String body) {
+		return http.sendAsync(HttpRequest.newBuilder(URI.create(server.url()))
+				.header("Authorization", "Bearer " + server.token()).header("Content-Type", "application/json")
+				.POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+	}
+
+	private static String callBody(int id, String name) {
+		return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"method\":\"tools/call\",\"params\":{\"name\":\""
+				+ "adt_write_source\",\"arguments\":{\"name\":\"" + name + "\"}}}";
+	}
+
+	private static String cancelBody(int id) {
+		return "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":" + id
+				+ ",\"reason\":\"Request timed out\"}}";
+	}
+
+	@Test
+	void aCallCancelledWhileAskingNeverRuns() throws Exception {
+		allow = true; // the developer allows it, but only after the CLI gave up
+		answer = new CountDownLatch(1);
+		HttpClient http = HttpClient.newHttpClient();
+		CompletableFuture<HttpResponse<String>> call = post(http, callBody(7, "ZCL_A"));
+		assertTrue(asking.await(10, TimeUnit.SECONDS));
+		assertEquals(202, post(http, cancelBody(7)).get(10, TimeUnit.SECONDS).statusCode());
+		String response = call.get(10, TimeUnit.SECONDS).body();
+		assertTrue(response.contains("Nothing was changed") && response.contains("\"isError\":true"), response);
+		assertTrue(tools.calls.isEmpty(), tools.calls.toString());
+		// a cancellation for a finished or unknown request is ignored
+		assertEquals(202, post(http, cancelBody(99)).get(10, TimeUnit.SECONDS).statusCode());
+	}
+
+	@Test
+	void aCallCancelledWhileRunningIsReportedWithTheNextCall() throws Exception {
+		allow = true;
+		tools.slow = new CountDownLatch(1);
+		HttpClient http = HttpClient.newHttpClient();
+		CompletableFuture<HttpResponse<String>> call = post(http, callBody(8, "ZCL_SLOW"));
+		assertTrue(tools.running.await(10, TimeUnit.SECONDS));
+		post(http, cancelBody(8)).get(10, TimeUnit.SECONDS);
+		tools.slow.countDown();
+		call.get(10, TimeUnit.SECONDS);
+		tools.slow = null;
+
+		McpClient.CallResult next = client.callTool("adt_read_source", Json.parseObject("{\"name\":\"ZCL_B\"}"),
+				CancelToken.NONE);
+		assertTrue(next.text().contains("still ran to the end"), next.text());
+		assertTrue(next.text().contains("- adt_write_source {\"name\":\"ZCL_SLOW\"} ran: result of adt_write_source"),
+				next.text());
+		assertTrue(next.text().contains("result of adt_read_source"), next.text());
+		McpClient.CallResult after = client.callTool("adt_read_source", Json.parseObject("{\"name\":\"ZCL_C\"}"),
+				CancelToken.NONE);
+		assertEquals("result of adt_read_source", after.text());
 	}
 }

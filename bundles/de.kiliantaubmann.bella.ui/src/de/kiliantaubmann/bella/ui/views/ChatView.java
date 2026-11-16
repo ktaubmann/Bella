@@ -69,6 +69,7 @@ import de.kiliantaubmann.bella.core.prompt.EditorContext;
 import de.kiliantaubmann.bella.core.tools.AskUserToolProvider;
 import de.kiliantaubmann.bella.core.tools.ChatMode;
 import de.kiliantaubmann.bella.core.tools.ToolResult;
+import de.kiliantaubmann.bella.core.tools.ToolExecutor;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
@@ -738,7 +739,7 @@ public class ChatView extends ViewPart {
 		if (session != null) {
 			session.close();
 		}
-		session = plugin.newConversation(this::confirmTool, new OpenEditorRouter(),
+		session = plugin.newConversation(confirmer, new OpenEditorRouter(),
 				() -> turnOverride != null ? turnOverride : mode);
 		// a new conversation knows no package yet; the developer names it again
 		plugin.devScope().reset();
@@ -1684,11 +1685,25 @@ public class ChatView extends ViewPart {
 
 	// ---- tool confirmation ---------------------------------------------------------------
 
-	private boolean confirmTool(ToolSpec tool, JsonObject input) {
-		AtomicBoolean ok = new AtomicBoolean();
-		Display.getDefault().syncExec(() -> ok.set(ToolConfirmDialog.ask(getSite().getShell(), tool, input)));
-		return ok.get();
-	}
+	/** Asks before a tool runs; the dialog closes when the call is cancelled, e.g. after a CLI timeout. */
+	private final ToolExecutor.Confirmer confirmer = new ToolExecutor.Confirmer() {
+
+		@Override
+		public boolean confirm(ToolSpec tool, JsonObject input) {
+			return confirm(tool, input, CancelToken.NONE);
+		}
+
+		@Override
+		public boolean confirm(ToolSpec tool, JsonObject input, CancelToken cancel) {
+			AtomicBoolean ok = new AtomicBoolean();
+			Display.getDefault().syncExec(() -> {
+				if (!cancel.isCancelled()) {
+					ok.set(ToolConfirmDialog.ask(getSite().getShell(), tool, input, cancel));
+				}
+			});
+			return ok.get();
+		}
+	};
 
 	/**
 	 * Asks whether Bella may read customer objects of a package outside the

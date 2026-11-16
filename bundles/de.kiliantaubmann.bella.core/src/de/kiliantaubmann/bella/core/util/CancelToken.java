@@ -50,6 +50,13 @@ public final class CancelToken {
 		closeables.add(closeable);
 	}
 
+	/** A token cancelled together with this one that can also be cancelled on its own. */
+	public CancelToken child() {
+		CancelToken child = new CancelToken();
+		onCancel(child::cancel);
+		return child;
+	}
+
 	public void throwIfCancelled() throws CancelledException {
 		if (cancelled) {
 			throw new CancelledException();

@@ -7,6 +7,7 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
@@ -15,6 +16,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
+import de.kiliantaubmann.bella.core.util.CancelToken;
 import de.kiliantaubmann.bella.core.util.Json;
 import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
@@ -32,8 +34,28 @@ final class ToolConfirmDialog extends TitleAreaDialog {
 		setShellStyle(getShellStyle() | SWT.RESIZE);
 	}
 
-	static boolean ask(Shell shell, ToolSpec tool, JsonObject input) {
-		return new ToolConfirmDialog(shell, tool, input).open() == OK;
+	/**
+	 * Opens the dialog and waits for the answer. UI thread. Once {@code cancel}
+	 * is cancelled (the caller stopped waiting), the dialog closes as declined.
+	 */
+	static boolean ask(Shell shell, ToolSpec tool, JsonObject input, CancelToken cancel) {
+		ToolConfirmDialog dialog = new ToolConfirmDialog(shell, tool, input);
+		Display display = shell.getDisplay();
+		cancel.onCancel(() -> {
+			if (!display.isDisposed()) {
+				display.asyncExec(dialog::abandon);
+			}
+		});
+		return dialog.open() == OK && !cancel.isCancelled();
+	}
+
+	/** Closes a dialog still open as declined. */
+	private void abandon() {
+		Shell s = getShell();
+		if (s != null && !s.isDisposed()) {
+			setReturnCode(CANCEL);
+			close();
+		}
 	}
 
 	@Override

@@ -18,6 +18,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 
 import de.kiliantaubmann.bella.core.llm.LlmException;
+import de.kiliantaubmann.bella.core.mcp.McpServer;
 import de.kiliantaubmann.bella.core.util.Json;
 import de.kiliantaubmann.bella.core.util.Executables;
 import de.kiliantaubmann.bella.core.util.ProcessLauncher;
@@ -159,7 +160,7 @@ public final class ClaudeCli {
 		env.put("ANTHROPIC_AUTH_TOKEN", null);
 		env.put("DISABLE_AUTOUPDATER", "1");
 		// Tool calls may wait for the developer's confirmation dialog.
-		env.put("MCP_TOOL_TIMEOUT", "1800000");
+		env.put("MCP_TOOL_TIMEOUT", String.valueOf(McpServer.TOOL_TIMEOUT_MILLIS));
 		if (config.oauthToken() != null && !config.oauthToken().isBlank()) {
 			env.put("CLAUDE_CODE_OAUTH_TOKEN", config.oauthToken().trim());
 		}

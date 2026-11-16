@@ -12,10 +12,13 @@ import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -45,6 +48,15 @@ public final class McpServer implements AutoCloseable {
 	public static final String PATH = "/mcp";
 	private static final String PROTOCOL_VERSION = "2025-06-18";
 	private static final int MAX_BODY = 32 * 1024 * 1024;
+	/**
+	 * How long the CLI waits for one tool call, confirmation dialog included.
+	 * Also set per server: the CLI otherwise aborts an HTTP tool call after
+	 * five minutes without an answer or progress (idle timeout), whatever
+	 * {@code MCP_TOOL_TIMEOUT} says.
+	 */
+	public static final int TOOL_TIMEOUT_MILLIS = 1_800_000;
+	/** Characters of a late result reported to the model. */
+	static final int LATE_RESULT_CHARS = 1_500;
 
 	private final ToolExecutor executor;
 	private final String version;
@@ -53,6 +65,10 @@ public final class McpServer implements AutoCloseable {
 	private ExecutorService pool;
 	private volatile ToolExecutor.Observer observer = ToolExecutor.Observer.NONE;
 	private volatile CancelToken cancel = CancelToken.NONE;
+	/** Running tool calls by JSON-RPC id, so that {@code notifications/cancelled} can stop them. */
+	private final Map<String, CancelToken> running = new ConcurrentHashMap<>();
+	/** Results of calls that went on after the caller had given up; reported with the next call. */
+	private final List<String> late = new ArrayList<>();
 
 	public McpServer(ToolExecutor executor, String version) {
 		this.executor = executor;
@@ -107,6 +123,7 @@ public final class McpServer implements AutoCloseable {
 		server.addProperty("type", "http");
 		server.addProperty("url", url());
 		server.add("headers", headers);
+		server.addProperty("timeout", TOOL_TIMEOUT_MILLIS);
 		JsonObject servers = new JsonObject();
 		servers.add(serverName, server);
 		JsonObject root = new JsonObject();
@@ -306,19 +323,22 @@ public final class McpServer implements AutoCloseable {
 	JsonObject dispatch(JsonObject msg) {
 		JsonElement id = msg.get("id");
 		String method = Json.str(msg, "method");
+		JsonObject params = Json.obj(msg, "params");
 		if (id == null || id.isJsonNull()) {
-			return null; // notification, e.g. notifications/initialized
+			if ("notifications/cancelled".equals(method)) {
+				cancelled(params);
+			}
+			return null; // other notifications, e.g. notifications/initialized
 		}
 		if (method == null) {
 			return error(id, -32600, "Invalid Request");
 		}
-		JsonObject params = Json.obj(msg, "params");
 		Log.debug("mcp", () -> "server <- " + method + (params == null ? "" : " " + Log.clip(Json.GSON.toJson(params), 2_000)));
 		return switch (method) {
 		case "initialize" -> result(id, initialize(params));
 		case "ping" -> result(id, new JsonObject());
 		case "tools/list" -> result(id, listTools());
-		case "tools/call" -> result(id, callTool(params));
+		case "tools/call" -> result(id, callTool(id, params));
 		default -> error(id, -32601, "Method not found: " + method);
 		};
 	}
@@ -361,7 +381,22 @@ public final class McpServer implements AutoCloseable {
 		return r;
 	}
 
-	private JsonObject callTool(JsonObject params) {
+	/**
+	 * The caller stopped waiting for a request (timeout, interrupted turn): a
+	 * confirmation still open is closed and the call does not run.
+	 */
+	private void cancelled(JsonObject params) {
+		JsonElement requestId = params == null ? null : params.get("requestId");
+		CancelToken token = requestId == null ? null : running.get(requestId.toString());
+		Log.warn("mcp", "Bella's MCP server: the client cancelled request " + requestId
+				+ (Json.str(params, "reason") == null ? "" : " (" + Json.str(params, "reason") + ")")
+				+ (token == null ? ", which is no longer running" : ""));
+		if (token != null) {
+			token.cancel();
+		}
+	}
+
+	private JsonObject callTool(JsonElement id, JsonObject params) {
 		String name = Json.str(params, "name");
 		JsonObject args = Json.obj(params, "arguments");
 		if (args == null) {
@@ -374,16 +409,53 @@ public final class McpServer implements AutoCloseable {
 		}
 		ToolCall call = new ToolCall("mcp-" + System.nanoTime(), String.valueOf(name), args, Json.GSON.toJson(args),
 				inputError);
-		ToolResult r = executor.run(call, observer, cancel);
+		String key = id.toString();
+		CancelToken token = cancel.child();
+		running.put(key, token);
+		ToolResult r;
+		try {
+			r = executor.run(call, observer, token);
+		} finally {
+			running.remove(key);
+		}
+		// taken before this call's own late result is added: that goes to the next call, not to the lost answer
+		String notes = lateNotes();
+		if (token.isCancelled() && spec != null && spec.kind() != ToolSpec.Kind.READ
+				&& !ToolExecutor.NOT_RUN.equals(r.content())) {
+			String out = r.content() == null ? "" : r.content();
+			synchronized (late) {
+				late.add("- " + name + " " + Log.clip(Json.GSON.toJson(args), 300) + (r.isError() ? " failed: " : " ran: ")
+						+ (out.length() > LATE_RESULT_CHARS ? out.substring(0, LATE_RESULT_CHARS) + " …" : out));
+			}
+		}
+		JsonArray content = new JsonArray();
+		if (notes != null) {
+			JsonObject note = new JsonObject();
+			note.addProperty("type", "text");
+			note.addProperty("text", notes);
+			content.add(note);
+		}
 		JsonObject text = new JsonObject();
 		text.addProperty("type", "text");
 		text.addProperty("text", r.content() == null || r.content().isEmpty() ? "(empty)" : r.content());
-		JsonArray content = new JsonArray();
 		content.add(text);
 		JsonObject result = new JsonObject();
 		result.add("content", content);
 		result.addProperty("isError", r.isError());
 		return result;
+	}
+
+	/** Late results not yet reported, once; {@code null} if there are none. */
+	private String lateNotes() {
+		synchronized (late) {
+			if (late.isEmpty()) {
+				return null;
+			}
+			String notes = "Bella: earlier tool calls you stopped waiting for (e.g. after a timeout) still ran to the "
+					+ "end. Check their outcome before repeating them:\n" + String.join("\n", late);
+			late.clear();
+			return notes;
+		}
 	}
 
 	private static JsonObject result(JsonElement id, JsonObject result) {
