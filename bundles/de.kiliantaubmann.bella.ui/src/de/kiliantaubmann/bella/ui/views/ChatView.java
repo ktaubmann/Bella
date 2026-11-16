@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
@@ -59,6 +60,7 @@ import de.kiliantaubmann.bella.core.agent.Conversation;
 import de.kiliantaubmann.bella.core.agent.TurnUsage;
 import de.kiliantaubmann.bella.core.adt.AdtToolProvider;
 import de.kiliantaubmann.bella.core.adt.AdtTransportRequest;
+import de.kiliantaubmann.bella.core.adt.DevScope;
 import de.kiliantaubmann.bella.core.llm.ChatResult;
 import de.kiliantaubmann.bella.core.llm.Attachment;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
@@ -1692,17 +1694,18 @@ public class ChatView extends ViewPart {
 	 * Asks whether Bella may read customer objects of a package outside the
 	 * development package; the answer holds for the rest of the chat.
 	 */
-	private boolean askRead(String destinationId, String object, String pkg, String dev) {
-		AtomicBoolean ok = new AtomicBoolean();
+	private DevScope.Answer askRead(String destinationId, String object, String pkg, String dev) {
+		AtomicReference<DevScope.Answer> answer = new AtomicReference<>(DevScope.Answer.NONE);
 		Display.getDefault().syncExec(() -> {
 			if (getSite().getShell() == null || getSite().getShell().isDisposed()) {
-				return;
+				return; // nobody was asked, so nothing is recorded
 			}
-			ok.set(MessageDialog.openQuestion(getSite().getShell(), Messages.get("chat.readPackage.title"),
+			answer.set(MessageDialog.openQuestion(getSite().getShell(), Messages.get("chat.readPackage.title"),
 					Messages.fmt("chat.readPackage.message", object, pkg,
-							dev == null ? Messages.get("chat.readPackage.noDev") : dev)));
+							dev == null ? Messages.get("chat.readPackage.noDev") : dev)) ? DevScope.Answer.YES
+									: DevScope.Answer.NO);
 		});
-		return ok.get();
+		return answer.get();
 	}
 
 	// ---- code block actions ----------------------------------------------------------------

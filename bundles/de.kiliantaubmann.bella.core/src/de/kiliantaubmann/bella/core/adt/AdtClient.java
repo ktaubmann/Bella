@@ -1173,17 +1173,18 @@ public final class AdtClient {
 		}
 
 		/**
-		 * The class include the message is about ({@code testclasses},
-		 * {@code definitions} …); empty for the main source. Line numbers
-		 * count within it.
+		 * The include the message is about: a class include
+		 * ({@code testclasses}, {@code definitions} …) or the include of a
+		 * program or function group ({@code lzfgf01}); empty for the main
+		 * source. Line numbers count within it.
 		 */
 		public String include() {
 			Matcher m = INCLUDE.matcher(uri == null ? "" : uri);
-			return m.find() ? m.group(1).toLowerCase(Locale.ROOT) : "";
+			return m.find() ? m.group(1).replaceAll("(?i)%2f", "/").toLowerCase(Locale.ROOT) : "";
 		}
 	}
 
-	private static final Pattern INCLUDE = Pattern.compile("/includes/([A-Za-z_]+)");
+	private static final Pattern INCLUDE = Pattern.compile("/includes/([^/?#;]+)");
 
 	private static final Pattern START = Pattern.compile("#start=(\\d+)");
 
@@ -1809,12 +1810,12 @@ public final class AdtClient {
 
 	/** Activates objects; returns the activation messages (empty on success). */
 	public List<Message> activate(List<AdtObjectRef> objects, CancelToken cancel) throws IOException {
-		List<Message> msgs = activateOnce(objects, cancel);
+		List<Message> msgs = activateOnce(objects, objects, cancel);
 		if (objects.size() > 1 && onlyEd064(msgs)) {
 			// SAP's batch activation sometimes fails with ED064 alone; one by one the same objects activate
 			List<Message> out = new ArrayList<>();
 			for (AdtObjectRef o : objects) {
-				out.addAll(activateOnce(List.of(o), cancel));
+				out.addAll(activateOnce(List.of(o), objects, cancel));
 			}
 			return out;
 		}
@@ -1829,8 +1830,12 @@ public final class AdtClient {
 	 * The others (e.g. inactive objects of another package) stay inactive and
 	 * are named in a message, so they are activated only when asked for (and
 	 * pass the package check).
+	 *
+	 * @param requested all objects of the call; they are not reported as left
+	 *                  inactive when {@code objects} is one of them activated alone
 	 */
-	private List<Message> activateOnce(List<AdtObjectRef> objects, CancelToken cancel) throws IOException {
+	private List<Message> activateOnce(List<AdtObjectRef> objects, List<AdtObjectRef> requested, CancelToken cancel)
+			throws IOException {
 		String body = activationBody(objects);
 		AdtResponse r = send(AdtRequest.post("/sap/bc/adt/activation?method=activate&preauditRequested=true",
 				"application/xml", body, "application/xml"), cancel);
@@ -1839,7 +1844,7 @@ public final class AdtClient {
 		if (pending.isEmpty() || msgs.stream().anyMatch(m -> m.severity().equals("Error"))) {
 			return msgs;
 		}
-		List<AdtObjectRef> others = pending.stream().filter(p -> objects.stream().noneMatch(o -> sameObject(o, p)))
+		List<AdtObjectRef> others = pending.stream().filter(p -> requested.stream().noneMatch(o -> sameObject(o, p)))
 				.toList();
 		r = send(AdtRequest.post("/sap/bc/adt/activation?method=activate&preauditRequested=false",
 				"application/xml", body, "application/xml"), cancel);
