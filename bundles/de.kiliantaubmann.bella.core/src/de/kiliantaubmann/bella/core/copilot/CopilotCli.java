@@ -18,6 +18,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 
 import de.kiliantaubmann.bella.core.llm.LlmException;
+import de.kiliantaubmann.bella.core.mcp.McpServer;
 import de.kiliantaubmann.bella.core.util.Executables;
 import de.kiliantaubmann.bella.core.util.Json;
 import de.kiliantaubmann.bella.core.util.ProcessLauncher;
@@ -105,8 +106,9 @@ public final class CopilotCli {
 	 * Arguments for {@code copilot --acp}.
 	 *
 	 * @param userMcpServers MCP servers from the developer's Copilot configuration; all are disabled
+	 * @param mcpConfig      file with Bella's MCP server ({@link McpServer#copilotConfig}), {@code null} without tools
 	 */
-	public static List<String> acpArgs(String model, String effort, List<String> userMcpServers) {
+	public static List<String> acpArgs(String model, String effort, List<String> userMcpServers, Path mcpConfig) {
 		List<String> a = new ArrayList<>(List.of("--acp", "--no-auto-update", "--disable-builtin-mcps",
 				"--deny-tool", "shell", "--deny-tool", "write", "--deny-tool", "url",
 				"--allow-tool", MCP_SERVER_NAME, "--disallow-temp-dir", "--no-ask-user", "--no-custom-instructions"));
@@ -115,6 +117,10 @@ public final class CopilotCli {
 				a.add("--disable-mcp-server");
 				a.add(server);
 			}
+		}
+		if (mcpConfig != null) {
+			a.add("--additional-mcp-config");
+			a.add("@" + mcpConfig.toAbsolutePath());
 		}
 		if (model != null && !model.isBlank()) {
 			a.add("--model");
@@ -182,10 +188,14 @@ public final class CopilotCli {
 		}
 	}
 
-	/** Starts {@code copilot --acp} and completes the handshake. */
-	Acp startAcp(String model, String effort, Acp.NotificationHandler notifications, Acp.RequestHandler requests)
-			throws LlmException {
-		ProcessLauncher.CliProcess p = start(acpArgs(model, effort, userMcpServers()));
+	/**
+	 * Starts {@code copilot --acp} and completes the handshake.
+	 *
+	 * @param mcpConfig file with Bella's MCP server, {@code null} without tools
+	 */
+	Acp startAcp(String model, String effort, Path mcpConfig, Acp.NotificationHandler notifications,
+			Acp.RequestHandler requests) throws LlmException {
+		ProcessLauncher.CliProcess p = start(acpArgs(model, effort, userMcpServers(), mcpConfig));
 		Acp acp = new Acp(p, notifications, requests);
 		try {
 			acp.initialized(acp.request("initialize", initializeParams(), 60_000));
@@ -213,25 +223,14 @@ public final class CopilotCli {
 		return p;
 	}
 
-	/** {@code session/new} parameters; {@code mcpUrl} is {@code null} for sessions without tools. */
-	JsonObject newSessionParams(String mcpUrl, String mcpToken) {
+	/**
+	 * {@code session/new} parameters. Bella's MCP server is not named here but
+	 * in {@code --additional-mcp-config}: only there does it get a timeout.
+	 */
+	JsonObject newSessionParams() {
 		JsonObject p = new JsonObject();
 		p.addProperty("cwd", workDir.toAbsolutePath().toString());
-		JsonArray servers = new JsonArray();
-		if (mcpUrl != null) {
-			JsonObject auth = new JsonObject();
-			auth.addProperty("name", "Authorization");
-			auth.addProperty("value", "Bearer " + mcpToken);
-			JsonArray headers = new JsonArray();
-			headers.add(auth);
-			JsonObject s = new JsonObject();
-			s.addProperty("type", "http");
-			s.addProperty("name", MCP_SERVER_NAME);
-			s.addProperty("url", mcpUrl);
-			s.add("headers", headers);
-			servers.add(s);
-		}
-		p.add("mcpServers", servers);
+		p.add("mcpServers", new JsonArray());
 		return p;
 	}
 
@@ -265,11 +264,11 @@ public final class CopilotCli {
 		}
 		Acp acp = null;
 		try {
-			acp = startAcp(null, null, (m, p) -> {
+			acp = startAcp(null, null, null, (m, p) -> {
 			}, (m, p) -> {
 				throw new Acp.AcpException(-32601, "not supported");
 			});
-			JsonObject session = acp.request("session/new", newSessionParams(null, null), 60_000);
+			JsonObject session = acp.request("session/new", newSessionParams(), 60_000);
 			return new Status(State.LOGGED_IN, version, models(session), null);
 		} catch (Acp.AcpException e) {
 			return new Status(e.isAuthRequired() ? State.NOT_LOGGED_IN : State.ERROR, version, List.of(),

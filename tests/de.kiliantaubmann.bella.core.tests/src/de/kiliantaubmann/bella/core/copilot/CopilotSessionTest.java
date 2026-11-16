@@ -30,6 +30,7 @@ import de.kiliantaubmann.bella.core.llm.Usage;
 import de.kiliantaubmann.bella.core.llm.LlmException;
 import de.kiliantaubmann.bella.core.llm.ToolCall;
 import de.kiliantaubmann.bella.core.mcp.McpClient;
+import de.kiliantaubmann.bella.core.mcp.McpServer;
 import de.kiliantaubmann.bella.core.mcp.StreamableHttpTransport;
 import de.kiliantaubmann.bella.core.tools.Capability;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
@@ -161,13 +162,19 @@ class CopilotSessionTest {
 		assertEquals("high", p.arg("--reasoning-effort"));
 		assertEquals(tmp.resolve("work"), p.workDir);
 
-		JsonObject server = p.newSessionParams.getAsJsonArray("mcpServers").get(0).getAsJsonObject();
+		// named in the config file, not in session/new: only there does it get a timeout
+		assertEquals(0, p.newSessionParams.getAsJsonArray("mcpServers").size());
+		JsonObject server = p.bellaServer();
 		assertEquals("http", Json.str(server, "type"));
-		assertEquals("bella", Json.str(server, "name"));
 		assertTrue(Json.str(server, "url").startsWith("http://127.0.0.1:"));
-		assertTrue(server.getAsJsonArray("headers").get(0).getAsJsonObject().get("value").getAsString()
-				.startsWith("Bearer "));
+		assertFalse(p.bellaToken().isEmpty());
+		assertEquals(McpServer.TOOL_TIMEOUT_MILLIS, server.get("timeout").getAsInt());
+		assertEquals("[\"*\"]", server.get("tools").toString());
 		assertEquals(tmp.resolve("work").toAbsolutePath().toString(), Json.str(p.newSessionParams, "cwd"));
+		Path config = Path.of(p.arg("--additional-mcp-config").substring(1));
+		assertTrue(Files.exists(config));
+		session.close();
+		assertFalse(Files.exists(config), "the file with the token goes with the process");
 	}
 
 	@Test
@@ -184,11 +191,8 @@ class CopilotSessionTest {
 				"Du bist Bella.", plan, "0.3.0")) {
 			fake.script = (p, id, sid, text) -> {
 				try {
-					JsonObject server = p.newSessionParams.getAsJsonArray("mcpServers").get(0).getAsJsonObject();
-					String auth = server.getAsJsonArray("headers").get(0).getAsJsonObject().get("value").getAsString();
 					try (McpClient client = new McpClient(new StreamableHttpTransport(
-							URI.create(Json.str(server, "url")), auth.substring("Bearer ".length()),
-							HttpTransport.jdk()))) {
+							URI.create(Json.str(p.bellaServer(), "url")), p.bellaToken(), HttpTransport.jdk()))) {
 						client.initialize("copilot");
 						McpClient.CallResult write = client.callTool("adt_write_source",
 								Json.parseObject("{\"name\":\"ZCL_ORDERS\",\"source\":\"x\"}"), CancelToken.NONE);
@@ -217,10 +221,8 @@ class CopilotSessionTest {
 	void copilotCallsBellasToolsThroughTheMcpServer() throws Exception {
 		fake.script = (p, id, sid, text) -> {
 			try {
-				JsonObject server = p.newSessionParams.getAsJsonArray("mcpServers").get(0).getAsJsonObject();
-				String auth = server.getAsJsonArray("headers").get(0).getAsJsonObject().get("value").getAsString();
-				try (McpClient client = new McpClient(new StreamableHttpTransport(URI.create(Json.str(server, "url")),
-						auth.substring("Bearer ".length()), HttpTransport.jdk()))) {
+				try (McpClient client = new McpClient(new StreamableHttpTransport(
+						URI.create(Json.str(p.bellaServer(), "url")), p.bellaToken(), HttpTransport.jdk()))) {
 					client.initialize("copilot");
 					McpClient.CallResult r = client.callTool("adt_read_source",
 							Json.parseObject("{\"name\":\"ZCL_ORDERS\"}"), CancelToken.NONE);

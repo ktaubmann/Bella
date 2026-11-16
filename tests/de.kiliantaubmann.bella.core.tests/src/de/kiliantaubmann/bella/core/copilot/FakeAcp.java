@@ -4,7 +4,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -154,6 +156,26 @@ class FakeAcp implements ProcessLauncher {
 		String arg(String flag) {
 			int i = command.indexOf(flag);
 			return i < 0 || i + 1 >= command.size() ? null : command.get(i + 1);
+		}
+
+		/** Bella's server from {@code --additional-mcp-config @file}, read as the CLI does at start. */
+		JsonObject bellaServer() {
+			String file = arg("--additional-mcp-config");
+			if (file == null || !file.startsWith("@")) {
+				return null;
+			}
+			try {
+				JsonObject root = Json.parseObject(Files.readString(Path.of(file.substring(1)), StandardCharsets.UTF_8));
+				return root.getAsJsonObject("mcpServers").getAsJsonObject("bella");
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		}
+
+		/** Bearer token of {@link #bellaServer()}. */
+		String bellaToken() {
+			return bellaServer().getAsJsonObject("headers").get("Authorization").getAsString()
+					.substring("Bearer ".length());
 		}
 
 		JsonObject responseTo(int id) {

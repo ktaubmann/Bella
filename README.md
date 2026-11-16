@@ -256,7 +256,8 @@ What happens:
 
 - Bella starts `copilot --acp` (Agent Client Protocol) in its own empty working directory in the Eclipse workspace metadata. One CLI process runs per chat; *New chat* ends it.
 - The CLI's own abilities are switched off: no shell commands (`--deny-tool shell`), no file changes (`--deny-tool write`), no web access (`--deny-tool url`), no GitHub MCP server and none of your own Copilot MCP servers.
-- The CLI gets Bella's SAP tools through the same **local MCP server** as the Claude subscription (loopback only, random token). Tool policy, confirmation dialog and the router for open objects apply as usual. Bella rejects every other action the CLI asks permission for and says so in the chat.
+- The CLI gets Bella's SAP tools through the same **local MCP server** as the Claude subscription (loopback only, random token), registered with `--additional-mcp-config` from a file only you can read, which Bella deletes when the process ends. Tool policy, confirmation dialog and the router for open objects apply as usual. Bella rejects every other action the CLI asks permission for and says so in the chat.
+- As with the Claude subscription, the CLI waits up to 30 minutes for a tool call (by default it gives up after three minutes, in older versions after one). If it stops waiting anyway, the confirmation dialog closes and the call does not run; a call that was already running is reported to the model with the next tool call.
 
 Limits:
 

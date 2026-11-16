@@ -40,7 +40,8 @@ class CopilotCliTest {
 
 	@Test
 	void commandLineSwitchesOffEverythingButBellasTools() {
-		List<String> a = CopilotCli.acpArgs("gpt-5", "high", List.of("github-tools", "bella", "my-db"));
+		List<String> a = CopilotCli.acpArgs("gpt-5", "high", List.of("github-tools", "bella", "my-db"),
+				Path.of("/work/mcp-1.json"));
 		assertTrue(a.contains("--acp"));
 		assertTrue(a.contains("--disable-builtin-mcps"));
 		assertTrue(a.contains("--no-auto-update"));
@@ -55,7 +56,10 @@ class CopilotCliTest {
 		assertFalse(a.contains("--yolo"));
 		assertFalse(a.contains("--allow-all"));
 
-		List<String> plain = CopilotCli.acpArgs("", null, List.of());
+		assertEquals(List.of("@" + Path.of("/work/mcp-1.json").toAbsolutePath()), valuesOf(a, "--additional-mcp-config"));
+
+		List<String> plain = CopilotCli.acpArgs("", null, List.of(), null);
+		assertFalse(plain.contains("--additional-mcp-config"));
 		assertFalse(plain.contains("--model"));
 		assertFalse(plain.contains("--reasoning-effort"));
 	}

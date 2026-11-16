@@ -131,6 +131,21 @@ public final class McpServer implements AutoCloseable {
 		return root;
 	}
 
+	/**
+	 * {@code mcpServers} entry for the Copilot CLI's
+	 * {@code --additional-mcp-config}. Unlike a server named in ACP's
+	 * {@code session/new}, it can carry a timeout; without one the CLI gives
+	 * up on a tool call after three minutes (one in older versions), e.g.
+	 * while the confirmation dialog is open.
+	 */
+	public JsonObject copilotConfig(String serverName) {
+		JsonObject root = claudeCodeConfig(serverName);
+		JsonArray tools = new JsonArray();
+		tools.add("*");
+		root.getAsJsonObject("mcpServers").getAsJsonObject(serverName).add("tools", tools);
+		return root;
+	}
+
 	private void acceptLoop(ServerSocket s) {
 		while (!s.isClosed()) {
 			try {

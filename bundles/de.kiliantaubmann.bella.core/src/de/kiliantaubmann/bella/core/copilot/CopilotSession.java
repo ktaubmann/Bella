@@ -1,6 +1,9 @@
 package de.kiliantaubmann.bella.core.copilot;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -38,6 +41,8 @@ public final class CopilotSession implements Conversation {
 
 	private String system;
 	private McpServer server;
+	/** {@code --additional-mcp-config} of the running process; holds the MCP bearer token. */
+	private Path mcpConfigFile;
 	private Acp acp;
 	private String sessionId;
 	private String processModel;
@@ -286,18 +291,32 @@ public final class CopilotSession implements Conversation {
 				server = new McpServer(executor, version);
 			}
 			server.start();
+			Files.createDirectories(cli.workDir());
+			// createTempFile is owner-only on POSIX; the file holds the MCP bearer token.
+			mcpConfigFile = Files.createTempFile(cli.workDir(), "mcp-", ".json");
+			Files.writeString(mcpConfigFile, Json.GSON.toJson(server.copilotConfig(CopilotCli.MCP_SERVER_NAME)),
+					StandardCharsets.UTF_8);
 		} catch (IOException e) {
+			deleteConfig();
 			throw new LlmException("Could not start Bella's tool server: " + e.getMessage(), e);
 		}
-		Acp a = cli.startAcp(s.model(), s.effort(), this::onNotification, this::onRequest);
+		Acp a;
 		try {
-			JsonObject created = a.request("session/new", cli.newSessionParams(server.url(), server.token()), 60_000);
+			a = cli.startAcp(s.model(), s.effort(), mcpConfigFile, this::onNotification, this::onRequest);
+		} catch (LlmException e) {
+			deleteConfig();
+			throw e;
+		}
+		try {
+			JsonObject created = a.request("session/new", cli.newSessionParams(), 60_000);
 			sessionId = Json.str(created, "sessionId");
 		} catch (IOException e) {
 			a.close();
+			deleteConfig();
 			throw new LlmException("The Copilot CLI did not open a session: " + e.getMessage(), e);
 		} catch (Acp.AcpException e) {
 			a.close();
+			deleteConfig();
 			throw e;
 		}
 		acp = a;
@@ -312,6 +331,18 @@ public final class CopilotSession implements Conversation {
 			acp = null;
 		}
 		sessionId = null;
+		deleteConfig();
+	}
+
+	private void deleteConfig() {
+		if (mcpConfigFile != null) {
+			try {
+				Files.deleteIfExists(mcpConfigFile);
+			} catch (IOException e) {
+				// a leftover temp file in Bella's work directory; the token dies with the server
+			}
+			mcpConfigFile = null;
+		}
 	}
 
 	@Override

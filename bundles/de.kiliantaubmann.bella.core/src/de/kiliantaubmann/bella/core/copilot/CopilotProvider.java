@@ -48,7 +48,7 @@ public final class CopilotProvider implements LlmProvider {
 		AtomicReference<Turn> turn = new AtomicReference<>();
 		AtomicReference<String> sessionId = new AtomicReference<>();
 		String effort = request.purpose() == ChatRequest.Purpose.COMPLETION ? null : request.effort();
-		Acp acp = cli.startAcp(request.model(), effort, (method, params) -> {
+		Acp acp = cli.startAcp(request.model(), effort, null, (method, params) -> {
 			Turn t = turn.get();
 			if (t != null && "session/update".equals(method)
 					&& java.util.Objects.equals(Json.str(params, "sessionId"), sessionId.get())) {
@@ -64,7 +64,7 @@ public final class CopilotProvider implements LlmProvider {
 		});
 		cancel.onCancel(acp::close);
 		try {
-			JsonObject created = acp.request("session/new", cli.newSessionParams(null, null), 60_000);
+			JsonObject created = acp.request("session/new", cli.newSessionParams(), 60_000);
 			sessionId.set(Json.str(created, "sessionId"));
 			Turn t = new Turn(adapt(listener));
 			turn.set(t);
