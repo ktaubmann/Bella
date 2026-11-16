@@ -1489,7 +1489,8 @@ public final class AdtToolProvider implements ToolProvider {
 	 * Exact names looked up through ADT and in TADIR, side by side; an object
 	 * only one of them knows is named (ARC-1 {@code tadir_lookup} with source
 	 * {@code both}). Customer objects outside the development package are
-	 * left out, as in the name search.
+	 * left out, as in the name search; a name neither knows is reported as
+	 * free.
 	 */
 	private ToolResult tadirLookup(AdtSystem sys, AdtClient c, JsonObject in, int max, CancelToken cancel)
 			throws IOException {
@@ -1536,6 +1537,11 @@ public final class AdtToolProvider implements ToolProvider {
 							+ r.get(4).trim() + ", source system " + r.get(5).trim()
 							+ (r.get(6).isBlank() ? "" : ", deletion flag " + r.get(6).trim()));
 				}
+			}
+			if (adt.isEmpty() && tadir.isEmpty()) {
+				// no package to compare: an unknown name is free, not an object of another package
+				sb.append(name).append(": free (ADT: not found, TADIR: no entry).\n");
+				continue;
 			}
 			String pkg = adt.isEmpty() ? tadirPackage : adt.get(0).replaceFirst(".* package ", "");
 			if (scoped && DevScope.customer(name) && !(dev != null && pkg.equalsIgnoreCase(dev))

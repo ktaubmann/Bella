@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -116,6 +118,25 @@ class DevScopeTest {
 
 		ToolResult context = call(p, "adt_context", "{\"names\":[\"ZCL_OTHER\"]}");
 		assertTrue(context.content().contains(AdtContext.IGNORED + "ZCL_OTHER"), context.content());
+	}
+
+	@Test
+	void tadirLookupReportsUnknownNamesAsFree() {
+		FakeAdt adt = system().route("POST /sap/bc/adt/datapreview/freestyle", r -> {
+			Map<String, List<String>> cols = new LinkedHashMap<>();
+			for (String c : List.of("PGMID", "OBJECT", "OBJ_NAME", "DEVCLASS", "AUTHOR", "SRCSYSTEM", "DELFLAG")) {
+				cols.put(c, List.of());
+			}
+			return FakeAdt.ok(AdtStoredTextTest.table(cols));
+		});
+		AdtToolProvider p = provider(adt, new DevScope());
+		call(p, "adt_dev_package", "{\"action\":\"set\",\"package\":\"ZSD_DELIV\"}");
+		ToolResult r = call(p, "adt_search_objects",
+				"{\"query\":\"ZCL_NEW_PHANTOM, ZEI_NEW, ZCL_OTHER, ZCL_OWN\",\"search_in\":\"tadir\"}");
+		assertTrue(r.content().contains("ZCL_NEW_PHANTOM: free (ADT: not found, TADIR: no entry)."), r.content());
+		assertTrue(r.content().contains("ZEI_NEW: free"), r.content());
+		assertTrue(r.content().contains("ZCL_OTHER: a customer object outside the development package"), r.content());
+		assertTrue(r.content().contains("ZCL_OWN:\n  ADT: CLAS package ZSD_DELIV"), r.content());
 	}
 
 	@Test
