@@ -151,6 +151,28 @@ public final class AbapLint {
 		}
 	}
 
+	/**
+	 * {@link #check(String, NamingRules, Target)} for the body of one method
+	 * (without {@code METHOD}/{@code ENDMETHOD}). The body is checked inside a
+	 * method, so its declarations count as local data, not as global data of a
+	 * program; line numbers count within the body.
+	 */
+	public static List<Finding> checkMethodBody(String body, NamingRules naming, Target target) {
+		if (body == null || body.isBlank()) {
+			return new ArrayList<>();
+		}
+		String wrapped = "METHOD bella_body.\n" + body + (body.endsWith("\n") ? "" : "\n") + "ENDMETHOD.";
+		int lines = lineStarts(wrapped).length;
+		List<Finding> out = new ArrayList<>();
+		for (Finding f : check(wrapped, naming, target)) {
+			// findings on the wrapper itself (first and last line) are not about the body
+			if (f.line() > 1 && f.line() < lines) {
+				out.add(new Finding(f.line() - 1, f.rule(), f.severity(), f.message()));
+			}
+		}
+		return out;
+	}
+
 	private static List<Finding> checkAbap(String source, NamingRules naming, Target target, List<Finding> out) {
 		int[] lineStarts = lineStarts(source);
 		List<Statement> statements = AbapStructureScanner.statements(source);

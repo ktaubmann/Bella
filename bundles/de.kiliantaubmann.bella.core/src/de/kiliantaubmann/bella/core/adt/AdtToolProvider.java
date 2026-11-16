@@ -3163,7 +3163,8 @@ public final class AdtToolProvider implements ToolProvider {
 	private String checksAfterWrite(AdtClient c, String objectUri, String written, boolean methodBody,
 			AbapLint.Target target, List<AdtClient.Message> syntax, CancelToken cancel) {
 		StringBuilder sb = new StringBuilder();
-		List<AbapLint.Finding> lint = AbapLint.check(written, naming.get(), target);
+		List<AbapLint.Finding> lint = methodBody ? AbapLint.checkMethodBody(written, naming.get(), target)
+				: AbapLint.check(written, naming.get(), target);
 		if (!lint.isEmpty()) {
 			sb.append("\n\nBella's style check of the code written")
 					.append(methodBody ? " (line numbers count within the method body)" : "")

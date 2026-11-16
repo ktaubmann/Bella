@@ -18,6 +18,25 @@ class NamingCheckTest {
 	}
 
 	@Test
+	void aMethodBodyAloneDeclaresLocalData() {
+		String body = """
+				DATA lv_matnr TYPE matnr.
+				DATA counter TYPE i.
+				READ TABLE mt_items INTO DATA(ls_entry) INDEX 1.
+				SELECT * FROM t000 INTO TABLE @DATA(lt_clients).
+				LOOP AT lt_clients INTO DATA(ls_row).
+				ENDLOOP.
+				""";
+		List<String> found = AbapLint.checkMethodBody(body, RULES, AbapLint.Target.UNKNOWN).stream()
+				.filter(f -> f.rule().equals("naming")).map(AbapLint.Finding::format).toList();
+		// lv_/ls_/lt_ are local data; line numbers count within the body
+		assertEquals(List.of("Line 2 [warning] naming: local data \"counter\" should match lv_*, lt_*, ls_*, lo_*, lr_*, lx_*"),
+				found);
+		// checked alone, the same lines would be global data of a program
+		assertTrue(naming(body).stream().anyMatch(f -> f.contains("global data \"lv_matnr\"")), naming(body).toString());
+	}
+
+	@Test
 	void checksDeclarationsByPlace() {
 		String src = """
 				CLASS zcl_order DEFINITION PUBLIC.
