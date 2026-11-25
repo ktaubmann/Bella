@@ -15,6 +15,8 @@ public final class SecureStore {
 	public static final String CLAUDE_CODE_TOKEN = "claudeCode.oauthToken";
 	/** Fine-grained GitHub token with the "Copilot Requests" permission. */
 	public static final String COPILOT_TOKEN = "copilot.token";
+	/** Bearer token of Bella's MCP server for other programs. */
+	public static final String MCP_EXTERNAL_TOKEN = "mcp.external.token";
 
 	private static final String NODE = "de.kiliantaubmann.bella";
 

@@ -57,6 +57,7 @@ import de.kiliantaubmann.bella.core.util.HttpTransport;
 import de.kiliantaubmann.bella.core.util.Log;
 import de.kiliantaubmann.bella.ui.internal.LogFile;
 import de.kiliantaubmann.bella.ui.debug.EclipseDebugBackend;
+import de.kiliantaubmann.bella.ui.internal.ExternalMcp;
 import de.kiliantaubmann.bella.ui.prefs.McpServerConfig;
 import de.kiliantaubmann.bella.ui.prefs.Prefs;
 import de.kiliantaubmann.bella.ui.prefs.SecureStore;
@@ -82,6 +83,7 @@ public class BellaPlugin extends AbstractUIPlugin {
 	private final Masker masker = new Masker(this::maskSettings);
 	private volatile List<AdtSystem> maskSystems = List.of();
 	private volatile long maskSystemsAt;
+	private ExternalMcp externalMcp;
 
 	public static BellaPlugin getDefault() {
 		return plugin;
@@ -124,6 +126,11 @@ public class BellaPlugin extends AbstractUIPlugin {
 				configureLog();
 			} else if (Prefs.MCP_SERVERS.equals(e.getProperty())) {
 				reconnectMcpServers();
+			} else if (Prefs.MCP_EXTERNAL_ENABLED.equals(e.getProperty())
+					|| Prefs.MCP_EXTERNAL_PORT.equals(e.getProperty())) {
+				if (externalMcp != null) {
+					externalMcp.apply();
+				}
 			} else if (Prefs.UI_LANGUAGE.equals(e.getProperty())) {
 				Messages.reload();
 				refreshLabels();
@@ -133,11 +140,17 @@ public class BellaPlugin extends AbstractUIPlugin {
 			}
 		});
 		reconnectMcpServers();
+		externalMcp = new ExternalMcp(getPreferenceStore(), ExternalMcp.TokenStore.SECURE, tools, this::policy,
+				getStateLocation().toFile().toPath(), VERSION);
+		externalMcp.apply();
 	}
 
 	@Override
 	public void stop(BundleContext context) throws Exception {
 		Log.info("bella", "Bella stops");
+		if (externalMcp != null) {
+			externalMcp.close();
+		}
 		closeMcpServers();
 		if (adtTracker != null) {
 			adtTracker.close();
@@ -532,6 +545,11 @@ public class BellaPlugin extends AbstractUIPlugin {
 
 	public AdtBackend adt() {
 		return adtTracker == null ? null : adtTracker.getService();
+	}
+
+	/** Bella's MCP server for other programs on this machine. */
+	public ExternalMcp externalMcp() {
+		return externalMcp;
 	}
 
 	/** Development package and transport request of the chat, which the SAP tools keep to. */

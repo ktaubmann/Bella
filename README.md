@@ -284,6 +284,25 @@ Under *Preferences → Bella → Project conventions* you describe your project 
 
 The parameters of ATC check variants (e.g. a naming check) cannot be read through ADT, so they cannot be imported; findings of such a check are fixed with *Check with ATC and fix…*.
 
+### Bella's tools in other programs (MCP)
+
+Bella can offer its SAP tools to other programs on your computer, e.g. Claude Code in a terminal, the GitHub Copilot CLI, VS Code or Cursor. They then work through your ADT logon in Eclipse, under the same rules as Bella's chat.
+
+1. *Preferences → Bella → MCP for other programs*: tick *Offer Bella's tools to other programs (MCP)*, keep or change the port (default 47011) and choose the mode, then *Apply*. The status shows the address, e.g. `http://127.0.0.1:47011/mcp`.
+2. Choose your shell (bash/zsh, PowerShell, cmd) and copy the suggested command. It contains the token:
+   - **Claude Code**: `claude mcp add-json --scope user bella-adt '{"type":"http","url":"http://127.0.0.1:47011/mcp","headers":{"Authorization":"Bearer …"},"timeout":1800000}'` registers the server for all your projects; in PowerShell and cmd the JSON goes in through standard input. The timeout lets a call wait for your confirmation in Eclipse.
+   - **GitHub Copilot CLI**: `copilot --additional-mcp-config @<file>` starts Copilot with the server; Bella writes the file, readable only by you, when you copy the command, so the token stays out of your shell history. *Add to Copilot configuration* instead enters it in `~/.copilot/mcp-config.json` (or `$COPILOT_HOME`), keeping your other servers, so a plain `copilot` has it.
+   - **Other programs**: *Copy JSON* gives the `mcpServers` entry for VS Code, Cursor and others.
+3. Eclipse must be running and logged on to the SAP system while you use it.
+
+What applies:
+
+- **Only this computer, only with the token.** The server listens on `127.0.0.1` only and refuses requests without the token and requests a web page could send (a foreign `Origin` or `Host`, e.g. DNS rebinding). The token is kept in Eclipse's secure storage; *New token* replaces it, and programs set up with the old one are refused until you run the new command. The server is off by default.
+- **Bella's own tools only**: the SAP tools (`adt_*`), the style check and the debugger. Not `ask_user` (it belongs to the chat) and not the tools of MCP servers Bella itself uses, such as ARC-1.
+- **Mode**: *Read only* (as Planning Mode), *Diff mode only*, *Ask before changes* (default) or *Read data without asking*. Modes that change something without asking (*Write and activate*, Automode) are not offered to other programs.
+- **Confirmation in Eclipse**: changes ask in Eclipse, naming the program that called (*Claude Code wants to change something in the SAP system through Bella*). Switch to Eclipse when the terminal waits. Your tool policy and `DENY` rules apply, and objects open in an editor are only changed in the editor.
+- **Package and transport request of the chat**: other programs work in the development package and request shown above Bella's chat. If one sets them with `adt_dev_package`, the chat shows the change. Reading customer objects of other packages needs the chat view to be open, because Bella asks there.
+
 ### Connecting ARC-1 (optional)
 
 Under *Preferences → Bella → SAP-Tools & ARC-1 → Add…*:

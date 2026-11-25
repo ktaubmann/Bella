@@ -45,6 +45,9 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
 		s.setDefault(Prefs.SHOW_USAGE, true);
 		s.setDefault(Prefs.PREFERRED_TOOLS, "adt");
 		s.setDefault(Prefs.POLICY_RULES, "");
+		s.setDefault(Prefs.MCP_EXTERNAL_ENABLED, false);
+		s.setDefault(Prefs.MCP_EXTERNAL_PORT, 47011);
+		s.setDefault(Prefs.MCP_EXTERNAL_MODE, "NORMAL");
 		s.setDefault(Prefs.WRITE_PACKAGES, "$TMP, Z*, Y*");
 		s.setDefault(Prefs.MASK_ENABLED, true);
 		s.setDefault(Prefs.MASK_OBJECTS, true);

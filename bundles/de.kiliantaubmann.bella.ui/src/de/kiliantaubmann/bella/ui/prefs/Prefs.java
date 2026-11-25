@@ -82,6 +82,10 @@ public final class Prefs {
 	public static final String MASK_TERMS = "mask.terms";
 	/** JSON array of MCP server definitions, see {@link McpServerConfig}. */
 	public static final String MCP_SERVERS = "mcp.servers";
+	/** Bella's MCP server for other programs on this machine: on/off, loopback port, chat mode of its calls. */
+	public static final String MCP_EXTERNAL_ENABLED = "mcp.external.enabled";
+	public static final String MCP_EXTERNAL_PORT = "mcp.external.port";
+	public static final String MCP_EXTERNAL_MODE = "mcp.external.mode";
 
 	private Prefs() {
 	}

@@ -227,6 +227,67 @@ class McpServerTest {
 		assertEquals(McpServer.TOOL_TIMEOUT_MILLIS, bella.get("timeout").getAsInt());
 	}
 
+	@Test
+	void anOpenedServerOffersOnlyTheChosenToolsOnItsPortWithItsToken() throws Exception {
+		// not refreshed: another program may come before any chat read the tool list
+		ToolRegistry registry = new ToolRegistry();
+		registry.addProvider(tools);
+		ToolExecutor executor = new ToolExecutor(registry, ToolPolicy::defaults, (t, i) -> true,
+				(t, i) -> Optional.empty());
+		int port;
+		try (java.net.ServerSocket free = new java.net.ServerSocket(0)) {
+			port = free.getLocalPort();
+		}
+		try (McpServer opened = new McpServer(executor, "0.2.0", "fixed-token", port,
+				t -> t.kind() == ToolSpec.Kind.READ, "just reading")) {
+			opened.refreshToolsWith(() -> registry.refresh(e -> {
+			}));
+			opened.start();
+			assertEquals("http://127.0.0.1:" + port + "/mcp", opened.url());
+			assertEquals("fixed-token", opened.token());
+			McpClient c = new McpClient(new StreamableHttpTransport(URI.create(opened.url()), "fixed-token",
+					HttpTransport.jdk()));
+			try {
+				assertEquals(null, opened.clientName());
+				c.initialize("test");
+				assertEquals("bella", opened.clientName()); // Bella's own client names itself so
+				assertEquals(List.of("adt_read_source"), c.listTools().stream().map(McpClient.Tool::name).toList());
+				McpClient.CallResult hidden = c.callTool("adt_write_source", Json.parseObject("{\"name\":\"ZCL_A\"}"),
+						CancelToken.NONE);
+				assertTrue(hidden.isError() && hidden.text().contains("Unknown tool"), hidden.text());
+				assertTrue(tools.calls.isEmpty(), tools.calls.toString());
+				assertFalse(c.callTool("adt_read_source", Json.parseObject("{\"name\":\"ZCL_A\"}"), CancelToken.NONE)
+						.isError());
+			} finally {
+				c.close();
+			}
+		}
+	}
+
+	@Test
+	void refusesRequestsAWebPageCouldSend() throws Exception {
+		HttpClient http = HttpClient.newHttpClient();
+		String body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}";
+		HttpResponse<String> foreign = http.send(HttpRequest.newBuilder(URI.create(server.url()))
+				.header("Authorization", "Bearer " + server.token()).header("Origin", "https://evil.example")
+				.POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+		assertEquals(403, foreign.statusCode());
+		HttpResponse<String> local = http.send(HttpRequest.newBuilder(URI.create(server.url()))
+				.header("Authorization", "Bearer " + server.token()).header("Origin", "http://localhost:3000")
+				.POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+		assertEquals(200, local.statusCode());
+		assertTrue(McpServer.local(java.util.Map.of("host", "127.0.0.1:47011")));
+		assertTrue(McpServer.local(java.util.Map.of("host", "localhost")));
+		assertTrue(McpServer.local(java.util.Map.of("host", "[::1]:47011")));
+		assertTrue(McpServer.local(java.util.Map.of()));
+		// DNS rebinding: the page's own host name pointed at 127.0.0.1
+		assertFalse(McpServer.local(java.util.Map.of("host", "evil.example:47011")));
+		assertFalse(McpServer.local(java.util.Map.of("host", "localhost.evil.example")));
+		assertFalse(McpServer.local(java.util.Map.of("host", "127.0.0.1", "origin", "null")));
+		assertFalse(McpServer.local(java.util.Map.of("host", "127.0.0.1", "origin", "http://127.0.0.1.evil.example")));
+		assertTrue(tools.calls.isEmpty());
+	}
+
 	private CompletableFuture<HttpResponse<String>> post(HttpClient http, String body) {
 		return http.sendAsync(HttpRequest.newBuilder(URI.create(server.url()))
 				.header("Authorization", "Bearer " + server.token()).header("Content-Type", "application/json")

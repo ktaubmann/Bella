@@ -22,15 +22,18 @@ import de.kiliantaubmann.bella.ui.BellaPlugin;
 import de.kiliantaubmann.bella.ui.Messages;
 
 /** Asks the developer whether Bella may run a tool that changes something. */
-final class ToolConfirmDialog extends TitleAreaDialog {
+public final class ToolConfirmDialog extends TitleAreaDialog {
 
 	private final ToolSpec tool;
 	private final JsonObject input;
+	/** The program that called the tool through MCP, {@code null} for Bella's chat. */
+	private final String caller;
 
-	private ToolConfirmDialog(Shell shell, ToolSpec tool, JsonObject input) {
+	private ToolConfirmDialog(Shell shell, ToolSpec tool, JsonObject input, String caller) {
 		super(shell);
 		this.tool = tool;
 		this.input = input;
+		this.caller = caller;
 		setShellStyle(getShellStyle() | SWT.RESIZE);
 	}
 
@@ -39,7 +42,17 @@ final class ToolConfirmDialog extends TitleAreaDialog {
 	 * is cancelled (the caller stopped waiting), the dialog closes as declined.
 	 */
 	static boolean ask(Shell shell, ToolSpec tool, JsonObject input, CancelToken cancel) {
-		ToolConfirmDialog dialog = new ToolConfirmDialog(shell, tool, input);
+		return ask(shell, tool, input, cancel, null);
+	}
+
+	/**
+	 * As {@link #ask(Shell, ToolSpec, JsonObject, CancelToken)}, for a call of
+	 * another program through Bella's MCP server.
+	 *
+	 * @param caller the program's name, {@code null} for Bella's chat
+	 */
+	public static boolean ask(Shell shell, ToolSpec tool, JsonObject input, CancelToken cancel, String caller) {
+		ToolConfirmDialog dialog = new ToolConfirmDialog(shell, tool, input, caller);
 		Display display = shell.getDisplay();
 		cancel.onCancel(() -> {
 			if (!display.isDisposed()) {
@@ -74,7 +87,9 @@ final class ToolConfirmDialog extends TitleAreaDialog {
 	protected Control createDialogArea(Composite parent) {
 		Composite area = (Composite) super.createDialogArea(parent);
 		setTitle(Messages.fmt("confirm.title", tool.name()));
-		setMessage(Messages.get(tool.kind() == ToolSpec.Kind.READ ? "confirm.messageRead" : "confirm.messageWrite"));
+		boolean read = tool.kind() == ToolSpec.Kind.READ;
+		setMessage(caller == null ? Messages.get(read ? "confirm.messageRead" : "confirm.messageWrite")
+				: Messages.fmt(read ? "confirm.messageExternalRead" : "confirm.messageExternalWrite", caller));
 		setTitleImage(BellaPlugin.image("tool"));
 		Composite c = new Composite(area, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, true).applyTo(c);

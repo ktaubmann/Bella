@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Predicate;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -38,9 +39,11 @@ import de.kiliantaubmann.bella.core.util.Log;
 
 /**
  * Minimal MCP server ("Streamable HTTP", JSON responses) that offers Bella's
- * tools to the Claude Code CLI. It listens on the loopback interface only and
- * requires a random bearer token, so only the CLI started by Bella can call
- * it. Every call goes through the {@link ToolExecutor}: policy, open-editor
+ * tools to the Claude Code or Copilot CLI started by Bella, or, with a fixed
+ * port and token, to other programs on the developer's machine. It listens
+ * on the loopback interface only, requires a bearer token and refuses
+ * requests a web page could send (foreign {@code Origin} or {@code Host}).
+ * Every call goes through the {@link ToolExecutor}: policy, open-editor
  * router and confirmation apply exactly as in Bella's own chat.
  */
 public final class McpServer implements AutoCloseable {
@@ -61,6 +64,12 @@ public final class McpServer implements AutoCloseable {
 	private final ToolExecutor executor;
 	private final String version;
 	private final String token;
+	private final int port;
+	private final Predicate<ToolSpec> offered;
+	private final String instructions;
+	private volatile String clientName;
+	private volatile Runnable refresh = () -> {
+	};
 	private ServerSocket socket;
 	private ExecutorService pool;
 	private volatile ToolExecutor.Observer observer = ToolExecutor.Observer.NONE;
@@ -70,19 +79,40 @@ public final class McpServer implements AutoCloseable {
 	/** Results of calls that went on after the caller had given up; reported with the next call. */
 	private final List<String> late = new ArrayList<>();
 
+	/** A private server for a CLI Bella starts: any free port, a random token, all tools. */
 	public McpServer(ToolExecutor executor, String version) {
+		this(executor, version, newToken(), 0, t -> true,
+				"Tools of the Bella Eclipse plug-in. adt_* tools act on the SAP system through the developer's ADT logon.");
+	}
+
+	/**
+	 * @param token        the bearer token callers must send
+	 * @param port         loopback port, 0 for any free one
+	 * @param offered      the tools listed and callable; others count as unknown
+	 * @param instructions the server's instructions for the client's model
+	 */
+	public McpServer(ToolExecutor executor, String version, String token, int port, Predicate<ToolSpec> offered,
+			String instructions) {
 		this.executor = executor;
 		this.version = version;
+		this.token = token;
+		this.port = port;
+		this.offered = offered;
+		this.instructions = instructions;
+	}
+
+	/** A random bearer token (64 hex digits). */
+	public static String newToken() {
 		byte[] random = new byte[32];
 		new SecureRandom().nextBytes(random);
-		this.token = HexFormat.of().formatHex(random);
+		return HexFormat.of().formatHex(random);
 	}
 
 	public synchronized void start() throws IOException {
 		if (socket != null) {
 			return;
 		}
-		socket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
+		socket = new ServerSocket(port, 50, InetAddress.getLoopbackAddress());
 		pool = Executors.newCachedThreadPool(r -> {
 			Thread t = new Thread(r, "bella-mcp-server");
 			t.setDaemon(true);
@@ -115,20 +145,24 @@ public final class McpServer implements AutoCloseable {
 		return token;
 	}
 
+	/**
+	 * Reads the tool list again before it is listed, and before a call of a
+	 * tool not known yet. The CLIs Bella starts need none, since the chat has
+	 * just refreshed the registry; another program may come before any chat.
+	 */
+	public void refreshToolsWith(Runnable refresh) {
+		this.refresh = refresh == null ? () -> {
+		} : refresh;
+	}
+
+	/** Name the last client gave in {@code initialize}, {@code null} before one connected. */
+	public String clientName() {
+		return clientName;
+	}
+
 	/** {@code mcpServers} entry for Claude Code's {@code --mcp-config}. */
 	public JsonObject claudeCodeConfig(String serverName) {
-		JsonObject headers = new JsonObject();
-		headers.addProperty("Authorization", "Bearer " + token);
-		JsonObject server = new JsonObject();
-		server.addProperty("type", "http");
-		server.addProperty("url", url());
-		server.add("headers", headers);
-		server.addProperty("timeout", TOOL_TIMEOUT_MILLIS);
-		JsonObject servers = new JsonObject();
-		servers.add(serverName, server);
-		JsonObject root = new JsonObject();
-		root.add("mcpServers", servers);
-		return root;
+		return McpSetupCommands.servers(serverName, McpSetupCommands.claudeCodeEntry(url(), token));
 	}
 
 	/**
@@ -139,11 +173,7 @@ public final class McpServer implements AutoCloseable {
 	 * while the confirmation dialog is open.
 	 */
 	public JsonObject copilotConfig(String serverName) {
-		JsonObject root = claudeCodeConfig(serverName);
-		JsonArray tools = new JsonArray();
-		tools.add("*");
-		root.getAsJsonObject("mcpServers").getAsJsonObject(serverName).add("tools", tools);
-		return root;
+		return McpSetupCommands.servers(serverName, McpSetupCommands.copilotEntry(url(), token));
 	}
 
 	private void acceptLoop(ServerSocket s) {
@@ -171,6 +201,10 @@ public final class McpServer implements AutoCloseable {
 			Request req;
 			try {
 				req = read(in, this::authorized);
+			} catch (Forbidden e) {
+				Log.warn("mcp", "Bella's MCP server refused a request from a web page or a foreign host name");
+				write(out, 403, "Forbidden", null, null);
+				return;
 			} catch (Unauthorized e) {
 				Log.warn("mcp", "Bella's MCP server refused a request without the right token");
 				write(out, 401, "Unauthorized", null, null);
@@ -201,7 +235,46 @@ public final class McpServer implements AutoCloseable {
 		}
 	}
 
-	private static Request read(InputStream in, java.util.function.Predicate<String> authorized) throws IOException {
+	/** Thrown for a request a web page could have sent (DNS rebinding); its body is not read. */
+	private static final class Forbidden extends IOException {
+		private static final long serialVersionUID = 1L;
+	}
+
+	/**
+	 * Whether {@code Host} and {@code Origin} name the loopback interface:
+	 * the CLIs send no {@code Origin}, a browser always does.
+	 */
+	static boolean local(Map<String, String> headers) {
+		String host = headers.get("host");
+		if (host != null && !loopbackName(host)) {
+			return false;
+		}
+		String origin = headers.get("origin");
+		if (origin == null) {
+			return true;
+		}
+		int scheme = origin.indexOf("://");
+		return scheme > 0 && (origin.startsWith("http://") || origin.startsWith("https://"))
+				&& loopbackName(origin.substring(scheme + 3));
+	}
+
+	/** {@code 127.0.0.1}, {@code localhost} or {@code [::1]}, with an optional port. */
+	private static boolean loopbackName(String hostAndPort) {
+		String h = hostAndPort.trim().toLowerCase(Locale.ROOT);
+		if (h.startsWith("[::1]")) {
+			h = h.substring(5);
+		} else {
+			int colon = h.indexOf(':');
+			String name = colon < 0 ? h : h.substring(0, colon);
+			if (!name.equals("127.0.0.1") && !name.equals("localhost")) {
+				return false;
+			}
+			h = colon < 0 ? "" : h.substring(colon);
+		}
+		return h.isEmpty() || h.matches(":\\d{1,5}/?");
+	}
+
+	private static Request read(InputStream in, Predicate<String> authorized) throws IOException {
 		String requestLine = line(in);
 		if (requestLine == null || requestLine.isEmpty()) {
 			return null;
@@ -228,6 +301,9 @@ public final class McpServer implements AutoCloseable {
 			} catch (NumberFormatException e) {
 				throw new IOException("bad content-length");
 			}
+		}
+		if (!local(headers)) {
+			throw new Forbidden();
 		}
 		if (!authorized.test(headers.get("authorization"))) {
 			throw new Unauthorized(length);
@@ -360,6 +436,8 @@ public final class McpServer implements AutoCloseable {
 
 	private JsonObject initialize(JsonObject params) {
 		JsonObject client = Json.obj(params, "clientInfo");
+		String name = Json.str(client, "name");
+		clientName = name == null || name.isBlank() ? null : name.trim();
 		Log.info("mcp", "Bella's MCP server: client " + Json.str(client, "name") + " " + Json.str(client, "version")
 				+ " connected");
 		JsonObject r = new JsonObject();
@@ -374,14 +452,17 @@ public final class McpServer implements AutoCloseable {
 		info.addProperty("name", "bella");
 		info.addProperty("version", version);
 		r.add("serverInfo", info);
-		r.addProperty("instructions",
-				"Tools of the Bella Eclipse plug-in. adt_* tools act on the SAP system through the developer's ADT logon.");
+		r.addProperty("instructions", instructions);
 		return r;
 	}
 
 	private JsonObject listTools() {
+		refresh.run();
 		JsonArray list = new JsonArray();
 		for (ToolSpec t : executor.registry().tools()) {
+			if (!offered.test(t)) {
+				continue;
+			}
 			JsonObject o = new JsonObject();
 			o.addProperty("name", t.name());
 			o.addProperty("description", t.description());
@@ -419,6 +500,13 @@ public final class McpServer implements AutoCloseable {
 		}
 		String inputError = null;
 		ToolSpec spec = name == null ? null : executor.registry().find(name).orElse(null);
+		if (spec == null && name != null) {
+			refresh.run();
+			spec = executor.registry().find(name).orElse(null);
+		}
+		if (spec != null && !offered.test(spec)) {
+			return toolError("Unknown tool: " + name);
+		}
 		if (spec != null) {
 			inputError = SchemaCheck.validate(spec.inputSchema(), args);
 		}
@@ -457,6 +545,18 @@ public final class McpServer implements AutoCloseable {
 		JsonObject result = new JsonObject();
 		result.add("content", content);
 		result.addProperty("isError", r.isError());
+		return result;
+	}
+
+	private static JsonObject toolError(String message) {
+		JsonArray content = new JsonArray();
+		JsonObject text = new JsonObject();
+		text.addProperty("type", "text");
+		text.addProperty("text", message);
+		content.add(text);
+		JsonObject result = new JsonObject();
+		result.add("content", content);
+		result.addProperty("isError", true);
 		return result;
 	}
 

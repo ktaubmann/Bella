@@ -333,7 +333,8 @@ class WorkbenchSmokeTest {
 		Shell shell = new Shell(Display.getCurrent());
 		try {
 			for (PreferencePage p : List.<PreferencePage>of(new BellaPreferencePage(), new ToolsPreferencePage(),
-					new ConventionsPreferencePage(), new LogPreferencePage())) {
+					new ConventionsPreferencePage(), new LogPreferencePage(),
+					new de.kiliantaubmann.bella.ui.prefs.ExternalMcpPreferencePage())) {
 				((org.eclipse.ui.IWorkbenchPreferencePage) p).init(PlatformUI.getWorkbench());
 				p.createControl(shell);
 				assertTrue(p.performOk());
@@ -442,6 +443,61 @@ class WorkbenchSmokeTest {
 		assertTrue(notes.contains(Messages.fmt("diff.lint", 2)), notes);
 		assertTrue(notes.contains("Line 1 [warning] select_star"), notes);
 		assertEquals("", CodeActions.previewNotes(List.of(), List.of()));
+	}
+
+	@Test
+	void otherProgramsReachBellasOwnToolsOnlyWhenSwitchedOn() throws Exception {
+		BellaPlugin plugin = BellaPlugin.getDefault();
+		assertFalse(plugin.prefs().getDefaultBoolean(Prefs.MCP_EXTERNAL_ENABLED), "off by default");
+		assertFalse(plugin.externalMcp().running());
+		// own preferences and a token in memory: secure storage would ask for its master password
+		var prefs = new org.eclipse.jface.preference.PreferenceStore();
+		prefs.setDefault(Prefs.MCP_EXTERNAL_MODE, "NORMAL");
+		String[] token = { "" };
+		var mcp = new de.kiliantaubmann.bella.ui.internal.ExternalMcp(prefs,
+				new de.kiliantaubmann.bella.ui.internal.ExternalMcp.TokenStore() {
+					@Override
+					public String get() {
+						return token[0];
+					}
+
+					@Override
+					public void put(String t) {
+						token[0] = t;
+					}
+				}, plugin.tools(), plugin::policy, java.nio.file.Files.createTempDirectory("bella-mcp"), "test");
+		int port;
+		try (java.net.ServerSocket free = new java.net.ServerSocket(0)) {
+			port = free.getLocalPort();
+		}
+		try {
+			prefs.setValue(Prefs.MCP_EXTERNAL_PORT, port);
+			prefs.setValue(Prefs.MCP_EXTERNAL_ENABLED, true);
+			mcp.apply();
+			assertTrue(mcp.running(), String.valueOf(mcp.problem()));
+			assertTrue(mcp.token().matches("[0-9a-f]{64}"));
+			var client = new de.kiliantaubmann.bella.core.mcp.McpClient(
+					new de.kiliantaubmann.bella.core.mcp.StreamableHttpTransport(
+							java.net.URI.create("http://127.0.0.1:" + port + "/mcp"), mcp.token(),
+							de.kiliantaubmann.bella.core.util.HttpTransport.jdk()));
+			try {
+				client.initialize("smoke");
+				List<String> names = client.listTools().stream().map(t -> t.name()).toList();
+				assertTrue(names.contains("abap_lint") && names.stream().anyMatch(n -> n.startsWith("debug_")),
+						names.toString());
+				assertFalse(names.contains("ask_user"), names.toString());
+			} finally {
+				client.close();
+			}
+			// another mode than those offered falls back to asking before changes
+			prefs.setValue(Prefs.MCP_EXTERNAL_MODE, "AUTO");
+			assertEquals(de.kiliantaubmann.bella.core.tools.ChatMode.NORMAL, mcp.mode());
+			prefs.setValue(Prefs.MCP_EXTERNAL_ENABLED, false);
+			mcp.apply();
+			assertFalse(mcp.running());
+		} finally {
+			mcp.close();
+		}
 	}
 
 	@Test
