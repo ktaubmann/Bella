@@ -9,7 +9,7 @@ Bella brings Claude into the SAP ABAP Development Tools (ADT). You can use it wi
 - Generate code, rework a selection or implement a method, written **into the editor only**
 - Inline AI completion as ghost text
 
-Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other MCP server can be added. The user interface is available in 14 languages.
+Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other MCP server can be added, and Bella can in turn offer its SAP tools to Claude Code, the GitHub Copilot CLI, VS Code or Cursor on your computer. The user interface is available in 14 languages.
 
 <p align="center"><img src="docs/screenshots/diff-preview.png" width="760" alt="Bella shows a diff preview before it writes generated code into the ABAP editor"></p>
 
@@ -32,6 +32,7 @@ Bella reaches the SAP system through your existing ADT logon. ARC-1 or any other
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools**: search, read (also DDIC tables, structures, data elements, domains, table types, function modules, message classes, classic DDIC views, lock objects, technical table settings, transactions, enhancement implementations, enhancement spots, knowledge transfer documents, authorization fields, feature toggles, BOR object types, business configuration objects and the newer CDS, RAP event and application objects), table contents, context of used objects, where-used, syntax check (also for unsaved code), ABAP Unit and ATC (for one object or a whole package), style check, write, create, activate, test OData and REST services | automatically in the chat |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Chat modes** from *Diff mode only* to *Automode*, and **Planning Mode** with accept, change or cancel (see below) | Drop-down and button below the chat input |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/bella.png"> | **Questions with options**: when a decision is yours, Bella asks with a menu as Claude Code does; pick with the mouse, arrow keys or digits, or type your own answer | in the chat |
+| <img src="bundles/de.kiliantaubmann.bella.ui/icons/tool.png"> | **SAP tools for other programs**: Claude Code in a terminal, the Copilot CLI, VS Code or Cursor use Bella's SAP tools through your ADT logon, with confirmation in Eclipse; Bella suggests the console command including the token (see [Bella's tools in other programs](#bellas-tools-in-other-programs-mcp)) | *Preferences → Bella → MCP for other programs* |
 | <img src="bundles/de.kiliantaubmann.bella.ui/icons/history.png"> | **Chat history**: chats are saved; open an earlier one to read and continue it | *Chats ▾* below the chat input, toolbar of the chat view |
 
 <p align="center"><img src="docs/screenshots/context-menu.png" width="560" alt="Right-click in the ABAP editor: submenu Bella with its actions"></p>
@@ -129,7 +130,7 @@ Tables and structures are read as source on newer ABAP releases (7.52 and later)
 
 1. and 2. Bella reads the source from the ADT editor and writes suggestions only into its buffer.
 3. **Only Bella calls the model.** Prompt, code context and tool list go out; text and `tool_use` requests come back. With the Claude subscription or GitHub Copilot, the local Claude Code CLI or Copilot CLI makes this call for Bella.
-4. Optionally Bella runs tool requests through ARC-1 or another MCP server.
+4. Optionally Bella runs tool requests through ARC-1 or another MCP server. The other way round, if you switch it on, programs on your computer such as Claude Code call Bella's tools; their model then runs in that program, and the tools still run in Eclipse with your confirmation.
 5. Tools reach the SAP system in one of two ways:
    - **5a (default):** Bella's own `adt_*` tools use the ADT communication layer with the logon of your ABAP projects, including SSO. There is no second logon and no extra process.
    - **5b (optional):** ARC-1 talks to the SAP system and adds audit, rate limits and a package allowlist.
@@ -301,7 +302,23 @@ What applies:
 - **Bella's own tools only**: the SAP tools (`adt_*`), the style check and the debugger. Not `ask_user` (it belongs to the chat) and not the tools of MCP servers Bella itself uses, such as ARC-1.
 - **Mode**: *Read only* (as Planning Mode), *Diff mode only*, *Ask before changes* (default) or *Read data without asking*. Modes that change something without asking (*Write and activate*, Automode) are not offered to other programs.
 - **Confirmation in Eclipse**: changes ask in Eclipse, naming the program that called (*Claude Code wants to change something in the SAP system through Bella*). Switch to Eclipse when the terminal waits. Your tool policy and `DENY` rules apply, and objects open in an editor are only changed in the editor.
-- **Package and transport request of the chat**: other programs work in the development package and request shown above Bella's chat. If one sets them with `adt_dev_package`, the chat shows the change. Reading customer objects of other packages needs the chat view to be open, because Bella asks there.
+- **Package and transport request of the chat**: other programs work in the development package and request shown above Bella's chat. Choose them there before you let another program write; otherwise it is asked to name a package, which Bella records only after your confirmation in Eclipse. If a program sets them with `adt_dev_package`, the chat shows the change. Reading customer objects of other packages needs the chat view to be open, because Bella asks there.
+
+A first try in Claude Code: start `claude` in any folder, check with `/mcp` that `bella-adt` is connected, then ask e.g. *Read class CL_ABAP_CHAR_UTILITIES with bella-adt and explain its constants.*
+
+If something does not work:
+
+| Symptom | Cause and remedy |
+|---|---|
+| The program cannot connect (connection refused) | Eclipse is not running, or the server is switched off. The status on the preference page says which. |
+| `401 Unauthorized` | The token was renewed. Copy the command again and run it. |
+| Status *Could not start on port 47011* | Another program uses the port. Choose another one, *Apply*, and run the copied command again. |
+| A call waits and nothing happens | The confirmation dialog is open in Eclipse, possibly behind other windows. Claude Code and Copilot wait up to 30 minutes. |
+| No `adt_*` tools, only style check and debugger | The feature *Bella ADT integration* is not installed. |
+| The tools answer that no system is logged on | Log on to the ABAP project in Eclipse; Bella never logs on itself. |
+| Eclipse asks for a secure storage password | Eclipse encrypts the token like your API keys; depending on the system it asks once for the master password of its secure storage. |
+
+To remove it: switch it off in Eclipse; in Claude Code `claude mcp remove --scope user bella-adt`; for Copilot delete the `bella-adt` entry in `~/.copilot/mcp-config.json` (only if you added it there).
 
 ### Connecting ARC-1 (optional)
 
@@ -310,7 +327,7 @@ Under *Preferences → Bella → SAP-Tools & ARC-1 → Add…*:
 - **HTTP**: URL of the ARC-1 server, e.g. locally `http://localhost:3000/mcp` or a BTP instance, optionally with a bearer token.
 - **stdio**: Bella starts ARC-1 itself, e.g. with `npx -y arc-1@latest`. Configure the SAP connection as described in the [ARC-1 documentation](https://github.com/arc-mcp/arc-1).
 
-Bella does not start an HTTP server itself. If the server is not reachable, the chat shows this once with the URL, and **Test** shows the same message. When the server comes back, or after it was restarted, Bella reconnects on the next question.
+Bella does not start ARC-1's HTTP server itself. If the server is not reachable, the chat shows this once with the URL, and **Test** shows the same message. When the server comes back, or after it was restarted, Bella reconnects on the next question.
 
 **Test** lists the tools a server offers. When two tools offer the same capability (e.g. reading source code), Bella's ADT tools win by default. You can prefer ARC-1 instead, e.g. when governance should run centrally through ARC-1.
 
@@ -340,6 +357,7 @@ When something does not work, switch on the log under *Preferences → Bella →
 - The selected model provider receives your question, source excerpts from the editor and tool results. With Ollama everything stays local.
 - API keys and tokens are kept in Eclipse secure storage, not in plain-text preferences.
 - Bella never opens an SAP logon itself. Tools only use projects that are already logged on.
+- Bella opens no network port unless you switch on *MCP for other programs*. Then it listens on `127.0.0.1` only, with a token, and other programs see the tool results, including source code and, after your confirmation, table contents.
 - Writing tools ask first, releasing transports is blocked, and open objects are only changed in the editor.
 - The log file is off by default and never contains keys or tokens; with details on it contains source code.
 - The chat history stays in the workspace and contains your messages, the answers and shortened tool calls, so also source code. Results of table contents, service answers and debugger values are not stored. Switch it off under *Preferences → Bella*, or delete chats in *All chats…*.
@@ -366,8 +384,8 @@ python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 | `bundles/de.kiliantaubmann.bella.core` | no UI and no ADT: Anthropic and OpenAI-compatible providers (streaming, tool use, prompt caching), Claude Code integration (CLI, `stream-json`, local MCP server), GitHub Copilot integration (Copilot CLI, Agent Client Protocol), tool registry and policy, MCP client (HTTP and stdio), chat tool loop, ABAP scanner, reference finder and style check, prompts, ADT REST client, `adt_*` tools and the context builder |
 | `bundles/de.kiliantaubmann.bella.ui` | chat view, context menu, diff preview, router, ghost text, preferences, icons, translations |
 | `bundles/de.kiliantaubmann.bella.adt` | the only dependency on the ADT SDK: projects, logon and REST transport as an OSGi service |
-| `tests/…core.tests` | unit tests for providers, MCP client and server, Claude Code and Copilot sessions (with simulated CLIs), tool loop, ABAP scanner, reference finder, style check, ADT client and context (with a simulated ADT backend), logging and redaction, translations |
-| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription and Copilot hints), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, style check in the diff preview, log file on/off, router, language switch |
+| `tests/…core.tests` | unit tests for providers, MCP client and server (also opened for other programs, with the console commands), Claude Code and Copilot sessions (with simulated CLIs), tool loop, ABAP scanner, reference finder, style check, ADT client and context (with a simulated ADT backend), logging and redaction, translations |
+| `tests/…ui.tests` | workbench smoke test: commands, chat, preferences (provider drop-down, subscription and Copilot hints), `Ctrl+↑` without key conflict, menus in Bella's language, writing into the editor without saving, style check in the diff preview, log file on/off, router, language switch, MCP server for other programs |
 
 The Claude integration deliberately uses `java.net.http` instead of the Anthropic Java SDK. This keeps the OSGi bundle free of OkHttp, Kotlin and Jackson.
 
@@ -383,6 +401,7 @@ The Claude integration deliberately uses `java.net.http` instead of the Anthropi
 - If ADT itself uses `Ctrl+↑` in the ABAP editor, *Preferences → General → Keys* shows a conflict. Change the shortcut there.
 - When the chat view is dragged to another place (e.g. the right side) or detached, Eclipse moves its embedded browser, which some browser engines no longer draw afterwards. Bella then replaces the browser and shows the chat again; the scroll position and expanded details are not kept.
 - Command names in *Keys* and *Quick Access* still follow the operating system language; Eclipse resolves them before Bella starts.
+- **MCP for other programs** was tested with Bella's own MCP client and a workbench test; the console commands follow the documented options of `claude mcp add-json` and the `--additional-mcp-config` option Bella already uses for Copilot, but have not yet been run against the real CLIs in every shell. Please report commands that fail, especially in PowerShell and cmd.
 - All translations except German and English were machine-generated. Corrections are welcome.
 
 ## License, disclaimer and trademarks
