@@ -57,6 +57,14 @@ public record AdtTransportRequest(String id, String description, String owner, S
 		return status.equalsIgnoreCase("R") || status.equalsIgnoreCase("N") || status.equalsIgnoreCase("O");
 	}
 
+	/**
+	 * A workbench request (type K), the kind repository objects go into. A
+	 * request of unknown type counts, since not every answer names it.
+	 */
+	public boolean workbench() {
+		return type.isEmpty() || type.equalsIgnoreCase("K");
+	}
+
 	/** Parses a transport organizer document (one request or a list). */
 	public static List<AdtTransportRequest> parse(String xml) throws IOException {
 		List<AdtTransportRequest> out = new ArrayList<>();
@@ -79,9 +87,23 @@ public record AdtTransportRequest(String id, String description, String owner, S
 				}
 			}
 			out.add(new AdtTransportRequest(id, AdtXml.attr(req, "desc"), AdtXml.attr(req, "owner"),
-					AdtXml.attr(req, "status"), AdtXml.attr(req, "type"), AdtXml.attr(req, "target"), tasks, direct));
+					AdtXml.attr(req, "status"), type(req), AdtXml.attr(req, "target"), tasks, direct));
 		}
 		return out;
+	}
+
+	/** The request's type; the organizer tree may name it only by the category the request is in. */
+	private static String type(Element req) {
+		String type = AdtXml.attr(req, "type");
+		for (Node n = req.getParentNode(); type.isEmpty() && n instanceof Element e; n = n.getParentNode()) {
+			type = switch (localName(e)) {
+			case "workbench" -> "K";
+			case "customizing" -> "W";
+			case "transportofcopies" -> "T";
+			default -> "";
+			};
+		}
+		return type;
 	}
 
 	private static Entry entry(Element o, String taskId) {

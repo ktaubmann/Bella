@@ -305,6 +305,30 @@ class DevScopeTest {
 	}
 
 	@Test
+	void onlyWorkbenchRequestsCanBeChosen() throws Exception {
+		DevScope scope = new DevScope();
+		FakeAdt adt = system();
+		// the organizer tree names the type only through the category, as SAP answers it
+		adt.route("GET /sap/bc/adt/cts/transportrequests?", r -> FakeAdt.ok(
+				"<tm:root xmlns:tm=\"http://www.sap.com/cts/adt/tm\"><tm:workbench tm:category=\"Workbench\">"
+						+ "<tm:target tm:name=\"QAS\"><tm:modifiable><tm:request tm:number=\"DEVK900001\" "
+						+ "tm:owner=\"DEV\" tm:desc=\"x\" tm:status=\"D\"/></tm:modifiable></tm:target></tm:workbench>"
+						+ "<tm:customizing tm:category=\"Customizing\"><tm:target tm:name=\"QAS\"><tm:modifiable>"
+						+ "<tm:request tm:number=\"DEVK900003\" tm:owner=\"DEV\" tm:desc=\"y\" tm:status=\"D\"/>"
+						+ "</tm:modifiable></tm:target></tm:customizing></tm:root>"))
+				.route("GET /sap/bc/adt/cts/transportrequests/DEVK900003", r -> FakeAdt.ok(
+						request("DEVK900003", "DEV", "D").replace("tm:type=\"K\"", "tm:type=\"W\"")));
+		AdtToolProvider p = provider(adt, scope);
+		assertEquals(List.of("DEVK900001"), p.openTransports(CancelToken.NONE).stream()
+				.map(AdtTransportRequest::id).toList());
+		assertEquals(Optional.empty(), p.choose("zsd_deliv", null, CancelToken.NONE));
+		Optional<String> customizing = p.choose(null, "DEVK900003", CancelToken.NONE);
+		assertTrue(customizing.isPresent() && customizing.get().contains("not a workbench request"),
+				customizing.toString());
+		assertEquals(null, p.scope(CancelToken.NONE).transport());
+	}
+
+	@Test
 	void theChatWindowShowsTheEditorObjectsPackage() throws Exception {
 		DevScope scope = new DevScope();
 		scope.editorObject(new AdtEditorObject("dev", "/sap/bc/adt/oo/classes/zcl_own", "ZCL_OWN", "CLAS/OC"));

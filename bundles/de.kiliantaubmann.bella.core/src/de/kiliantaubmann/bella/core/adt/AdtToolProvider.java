@@ -1109,6 +1109,10 @@ public final class AdtToolProvider implements ToolProvider {
 		if (request.get().released()) {
 			return Optional.of(new Refusal(id + " is released.", "Ask the developer for an open request."));
 		}
+		if (!request.get().workbench()) {
+			return Optional.of(new Refusal(id + " is not a workbench request; repository objects go into workbench "
+					+ "requests.", "Ask the developer for a workbench request."));
+		}
 		return Optional.empty();
 	}
 
@@ -1282,10 +1286,10 @@ public final class AdtToolProvider implements ToolProvider {
 		return client(system(scopeSystem())).search(q.endsWith("*") ? q : q + "*", "DEVC/K", null, max, cancel);
 	}
 
-	/** The developer's own modifiable transport requests on the chat's system. */
+	/** The developer's own modifiable workbench requests on the chat's system. */
 	public List<AdtTransportRequest> openTransports(CancelToken cancel) throws IOException {
 		AdtSystem s = system(scopeSystem());
-		return client(s).transports(s.user(), "D", cancel);
+		return client(s).transports(s.user(), "D", cancel).stream().filter(AdtTransportRequest::workbench).toList();
 	}
 
 	/**
