@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "Il debugger si è fermato sull’eccezione {0} in {1}.",
  "debug.exception.link": "Lascia che Bella analizzi la causa",
  "prefs.debugOffer": "Proponi un’analisi quando il debugger si ferma su un’eccezione (sperimentale)",
+ "chat.scope.system": "Sistema:",
+ "chat.scope.systemTip": "Sistema SAP in cui lavora questa chat",
  "chat.scope.package": "Pacchetto:",
  "chat.scope.packageTip": "Pacchetto di sviluppo di questa chat: Bella usa gli oggetti cliente (Z*, Y*) solo da esso e scrive solo al suo interno. Digitare un nome e premere Invio, oppure sceglierne uno dall’elenco.",
  "chat.scope.searchTip": "Cerca un pacchetto nel sistema SAP",

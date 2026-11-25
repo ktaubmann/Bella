@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "O depurador parou na exceção {0} em {1}.",
  "debug.exception.link": "Deixar a Bella analisar a causa",
  "prefs.debugOffer": "Oferecer uma análise quando o depurador parar em uma exceção (experimental)",
+ "chat.scope.system": "Sistema:",
+ "chat.scope.systemTip": "Sistema SAP em que este chat trabalha",
  "chat.scope.package": "Pacote:",
  "chat.scope.packageTip": "Pacote de desenvolvimento deste chat: a Bella usa objetos de cliente (Z*, Y*) somente dele e grava somente nele. Digite um nome e pressione Enter, ou escolha um na lista.",
  "chat.scope.searchTip": "Pesquisar um pacote no sistema SAP",

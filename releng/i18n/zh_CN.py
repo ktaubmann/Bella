@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "调试器在 {1} 中因异常 {0} 而暂停。",
  "debug.exception.link": "让 Bella 分析原因",
  "prefs.debugOffer": "调试器因异常暂停时提供分析（实验性）",
+ "chat.scope.system": "系统：",
+ "chat.scope.systemTip": "此聊天使用的 SAP 系统",
  "chat.scope.package": "包：",
  "chat.scope.packageTip": "此聊天的开发包：Bella 只使用其中的客户对象（Z*、Y*），也只写入此包。输入名称并按 Enter，或从列表中选择。",
  "chat.scope.searchTip": "在 SAP 系统中搜索包",

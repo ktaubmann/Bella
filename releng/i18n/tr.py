@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "Hata ayıklayıcı {1} içinde {0} istisnasında durdu.",
  "debug.exception.link": "Nedeni Bella analiz etsin",
  "prefs.debugOffer": "Hata ayıklayıcı bir istisnada durduğunda analiz öner (deneysel)",
+ "chat.scope.system": "Sistem:",
+ "chat.scope.systemTip": "Bu sohbetin çalıştığı SAP sistemi",
  "chat.scope.package": "Paket:",
  "chat.scope.packageTip": "Bu sohbetin geliştirme paketi: Bella müşteri nesnelerini (Z*, Y*) yalnızca bu paketten kullanır ve yalnızca buraya yazar. Bir ad yazıp Enter’a basın veya listeden seçin.",
  "chat.scope.searchTip": "SAP sisteminde paket ara",

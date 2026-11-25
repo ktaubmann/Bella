@@ -302,6 +302,8 @@ MESSAGES = {
  "debug.exception.text": "Der Debugger hat bei der Ausnahme {0} in {1} angehalten.",
  "debug.exception.link": "Ursache von Bella analysieren lassen",
  "prefs.debugOffer": "Analyse anbieten, wenn der Debugger bei einer Ausnahme anhält (experimentell)",
+ "chat.scope.system": "System:",
+ "chat.scope.systemTip": "SAP-System, in dem dieser Chat arbeitet",
  "chat.scope.package": "Paket:",
  "chat.scope.packageTip": "Entwicklungspaket dieses Chats: Bella verwendet Kundenobjekte (Z*, Y*) nur daraus und schreibt nur hinein. Namen eingeben und Enter drücken oder aus der Liste wählen.",
  "chat.scope.searchTip": "Paket im SAP-System suchen",

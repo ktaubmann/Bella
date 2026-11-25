@@ -152,6 +152,8 @@ public class ChatView extends ViewPart {
 	};
 	/** Development package and transport request above the chat. */
 	private Composite scopeBar;
+	/** The SAP system the chat's package and request belong to. */
+	private Label systemName;
 	private Combo packageChoice;
 	private Button packageSearch;
 	private Combo transportChoice;
@@ -1117,7 +1119,12 @@ public class ChatView extends ViewPart {
 	private void createScopeBar(Composite parent) {
 		scopeBar = new Composite(parent, SWT.NONE);
 		GridDataFactory.fillDefaults().grab(true, false).applyTo(scopeBar);
-		GridLayoutFactory.swtDefaults().numColumns(5).margins(6, 4).applyTo(scopeBar);
+		GridLayoutFactory.swtDefaults().numColumns(7).margins(6, 4).applyTo(scopeBar);
+		Label sysLabel = new Label(scopeBar, SWT.NONE);
+		sysLabel.setText(Messages.get("chat.scope.system"));
+		systemName = new Label(scopeBar, SWT.NONE);
+		systemName.setToolTipText(Messages.get("chat.scope.systemTip"));
+		GridDataFactory.fillDefaults().align(SWT.BEGINNING, SWT.CENTER).applyTo(systemName);
 		Label pkgLabel = new Label(scopeBar, SWT.NONE);
 		pkgLabel.setText(Messages.get("chat.scope.package"));
 		packageChoice = new Combo(scopeBar, SWT.DROP_DOWN);
@@ -1212,6 +1219,8 @@ public class ChatView extends ViewPart {
 		String before = shownScope == null || shownScope.pkg() == null ? "" : shownScope.pkg();
 		shownScope = scope;
 		String pkg = scope == null || scope.pkg() == null ? "" : scope.pkg();
+		systemName.setText(scope == null ? "–" : scope.system().replace("&", "&&"));
+		systemName.setToolTipText(scope == null ? problem : Messages.get("chat.scope.systemTip"));
 		String typed = packageChoice.getText().trim();
 		packageChoice.setItems(packageHistory().toArray(String[]::new));
 		// a name the developer is still typing stays; a refresh (e.g. on activating the view) must not wipe it

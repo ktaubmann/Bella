@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "디버거가 {1}에서 예외 {0}로 중지되었습니다.",
  "debug.exception.link": "Bella가 원인을 분석하도록 하기",
  "prefs.debugOffer": "디버거가 예외에서 중지되면 분석 제안 (실험적)",
+ "chat.scope.system": "시스템:",
+ "chat.scope.systemTip": "이 채팅이 작업하는 SAP 시스템",
  "chat.scope.package": "패키지:",
  "chat.scope.packageTip": "이 채팅의 개발 패키지: Bella는 고객 오브젝트(Z*, Y*)를 이 패키지에서만 사용하고 이 패키지에만 씁니다. 이름을 입력하고 Enter를 누르거나 목록에서 선택하세요.",
  "chat.scope.searchTip": "SAP 시스템에서 패키지 검색",

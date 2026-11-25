@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "Debuger zatrzymał się na wyjątku {0} w {1}.",
  "debug.exception.link": "Pozwól Belli przeanalizować przyczynę",
  "prefs.debugOffer": "Proponuj analizę, gdy debuger zatrzyma się na wyjątku (eksperymentalne)",
+ "chat.scope.system": "System:",
+ "chat.scope.systemTip": "System SAP, w którym pracuje ten czat",
  "chat.scope.package": "Pakiet:",
  "chat.scope.packageTip": "Pakiet deweloperski tego czatu: Bella używa obiektów klienta (Z*, Y*) tylko z niego i zapisuje tylko w nim. Wpisz nazwę i naciśnij Enter albo wybierz z listy.",
  "chat.scope.searchTip": "Szukaj pakietu w systemie SAP",

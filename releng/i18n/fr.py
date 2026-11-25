@@ -222,6 +222,8 @@ MESSAGES = {
  "debug.exception.text": "Le débogueur s’est arrêté sur l’exception {0} dans {1}.",
  "debug.exception.link": "Laisser Bella analyser la cause",
  "prefs.debugOffer": "Proposer une analyse quand le débogueur s’arrête sur une exception (expérimental)",
+ "chat.scope.system": "Système :",
+ "chat.scope.systemTip": "Système SAP dans lequel travaille ce chat",
  "chat.scope.package": "Paquet :",
  "chat.scope.packageTip": "Paquet de développement de ce chat : Bella n’utilise les objets client (Z*, Y*) que de ce paquet et n’écrit que dans celui-ci. Saisissez un nom et appuyez sur Entrée, ou choisissez-en un dans la liste.",
  "chat.scope.searchTip": "Rechercher un paquet dans le système SAP",

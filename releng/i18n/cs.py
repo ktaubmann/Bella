@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "Debugger se zastavil na výjimce {0} v {1}.",
  "debug.exception.link": "Nechat Bellu analyzovat příčinu",
  "prefs.debugOffer": "Nabídnout analýzu, když se debugger zastaví na výjimce (experimentální)",
+ "chat.scope.system": "Systém:",
+ "chat.scope.systemTip": "SAP systém, ve kterém tento chat pracuje",
  "chat.scope.package": "Balík:",
  "chat.scope.packageTip": "Vývojový balík tohoto chatu: Bella používá zákaznické objekty (Z*, Y*) jen z něj a zapisuje jen do něj. Zadejte název a stiskněte Enter, nebo vyberte ze seznamu.",
  "chat.scope.searchTip": "Hledat balík v systému SAP",

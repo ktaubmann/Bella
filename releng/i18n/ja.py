@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "デバッガーが {1} で例外 {0} により停止しました。",
  "debug.exception.link": "Bella に原因を分析させる",
  "prefs.debugOffer": "デバッガーが例外で停止したときに分析を提案する（試験的）",
+ "chat.scope.system": "システム:",
+ "chat.scope.systemTip": "このチャットが作業する SAP システム",
  "chat.scope.package": "パッケージ:",
  "chat.scope.packageTip": "このチャットの開発パッケージ: Bella は顧客オブジェクト (Z*, Y*) をこのパッケージからのみ使用し、このパッケージにのみ書き込みます。名前を入力して Enter を押すか、一覧から選択してください。",
  "chat.scope.searchTip": "SAP システムでパッケージを検索",

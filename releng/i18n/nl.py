@@ -221,6 +221,8 @@ MESSAGES = {
  "debug.exception.text": "De debugger is gestopt bij exceptie {0} in {1}.",
  "debug.exception.link": "Bella de oorzaak laten analyseren",
  "prefs.debugOffer": "Analyse aanbieden wanneer de debugger bij een exceptie stopt (experimenteel)",
+ "chat.scope.system": "Systeem:",
+ "chat.scope.systemTip": "SAP-systeem waarin deze chat werkt",
  "chat.scope.package": "Pakket:",
  "chat.scope.packageTip": "Ontwikkelpakket van deze chat: Bella gebruikt klantobjecten (Z*, Y*) alleen uit dit pakket en schrijft alleen hierin. Typ een naam en druk op Enter, of kies er een uit de lijst.",
  "chat.scope.searchTip": "Een pakket zoeken in het SAP-systeem",
