@@ -377,7 +377,14 @@ python3 releng/i18n/generate.py   # generate translations from releng/i18n/*.py
 
 `-Padt` downloads ADT from SAP's update site; SAP's license terms for these downloads (SAP Developer License Agreement) apply to whoever runs the build. The ADT bundles are only used to compile against and are not part of Bella's update site.
 
-**Release:** raise the version in all `pom.xml`, `MANIFEST.MF` and `feature.xml` files and in `BellaPlugin.VERSION` (e.g. with `./mvnw org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`) and commit. Then push a tag `v0.3.0`, or enter the version `0.3.0` under *Actions → Release → Run workflow*. The `release.yml` workflow builds everything including the ADT integration, runs the tests and attaches `bella-update-site-v0.3.0.zip` to a GitHub release. When the repository variable `PAGES_ENABLED` is `true`, it then publishes the same update site on GitHub Pages (`pages.yml`, address from the variable `UPDATE_SITE_URL`); for a release from a pushed tag it starts `pages.yml` on `main`, because the `github-pages` environment does not accept deployments from tags. *Actions → Update site → Run workflow* publishes an existing release again.
+**Release:** every change goes through the branch `test` before it reaches `main`.
+
+1. **Test build:** push the commit to `test`. `test-build.yml` builds it with the ADT integration, runs the tests and replaces the pre-release `test-build` (`bella-update-site-test.zip`), which can be installed like a release for trying it out. It is never offered as an update.
+2. **New version:** to release, raise the version in one commit: the root `pom.xml`, the `pom.xml` and `MANIFEST.MF`/`feature.xml` of every bundle, feature and test bundle, the update site's `pom.xml` and `BellaPlugin.VERSION` (e.g. with `./mvnw org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=0.3.0-SNAPSHOT`, then `BellaPlugin.VERSION` by hand). That commit also goes through `test` first.
+3. **Release:** once the test build of exactly this commit is green, push the same commit to `main`. `release.yml` runs on every push to `main`: if the version in `pom.xml` has no tag yet, it checks that the commit passed the test build, builds, tags `v<version>` itself and attaches `bella-update-site-v<version>.zip` to a GitHub release. A push to `main` without a new version releases nothing. Without a green test build of the commit the release stops.
+4. **Update site:** when the repository variable `PAGES_ENABLED` is `true`, the release publishes the same update site on GitHub Pages (`pages.yml`, address from the variable `UPDATE_SITE_URL`).
+
+*Actions → Release → Run workflow* (on `main` only, with the version as in `pom.xml`) releases again by hand, e.g. after a failed run; pushing a tag `v<version>` works too, and `pages.yml` is then started on `main`, because the `github-pages` environment does not accept deployments from tags. *Actions → Update site → Run workflow* publishes an existing release again.
 
 | Module | Contents |
 |---|---|
