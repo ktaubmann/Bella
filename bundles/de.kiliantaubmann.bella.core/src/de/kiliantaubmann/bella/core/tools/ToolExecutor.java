@@ -38,6 +38,19 @@ public final class ToolExecutor {
 		}
 	}
 
+	/**
+	 * Thrown by a {@link Confirmer} that could not ask at all (no window to
+	 * show the dialog in): the call does not run, and the caller is not told
+	 * that the developer declined.
+	 */
+	public static final class ConfirmationUnavailable extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		public ConfirmationUnavailable(String message) {
+			super(message);
+		}
+	}
+
 	/** Result of a call that was cancelled before it ran. */
 	public static final String NOT_RUN = "Not run: the call was cancelled before it started (the caller stopped "
 			+ "waiting, e.g. after a timeout). Nothing was changed.";
@@ -215,7 +228,15 @@ public final class ToolExecutor {
 			Log.info(AREA, tool.name() + ": refused by the provider: " + refused.get());
 			return ToolResult.error(refused.get());
 		}
-		boolean confirmed = decision != ToolPolicy.Decision.CONFIRM || confirmer.confirm(tool, input, cancel);
+		boolean confirmed;
+		try {
+			confirmed = decision != ToolPolicy.Decision.CONFIRM || confirmer.confirm(tool, input, cancel);
+		} catch (ConfirmationUnavailable e) {
+			Log.warn(AREA, tool.name() + ": could not ask the developer: " + e.getMessage());
+			return ToolResult.error("Not run: Bella could not ask the developer for confirmation (" + e.getMessage()
+					+ "). The developer did not decline; nothing was changed. Ask them to bring Eclipse to the front "
+					+ "and try again.");
+		}
 		if (cancel.isCancelled()) {
 			// an answer given after the caller stopped waiting must not change anything: nobody gets the result
 			Log.warn(AREA, tool.name() + ": cancelled before it ran");

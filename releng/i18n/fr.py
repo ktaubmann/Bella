@@ -129,6 +129,7 @@ MESSAGES = {
  "mcpx.status.running": "En marche sur {0}",
  "mcpx.status.off": "Arrêté",
  "mcpx.status.failed": "Démarrage impossible sur le port {0} : {1}",
+ "mcpx.status.tokenNotSaved": "Le jeton n’a pas pu être enregistré dans le stockage sécurisé et n’est valable que jusqu’au redémarrage d’Eclipse. Configurez ensuite à nouveau les programmes.",
  "mcpx.hint": "Seuls les programmes de cet ordinateur (127.0.0.1) peuvent se connecter, et uniquement avec le jeton. Sont proposés les outils SAP, le contrôle de style et le débogueur. Les modifications sont confirmées dans Eclipse et restent dans le paquet de développement et l’ordre de transport du chat Bella. Eclipse doit être ouvert et connecté au système SAP.",
  "mcpx.setup": "Configuration",
  "mcpx.shell": "Shell :",

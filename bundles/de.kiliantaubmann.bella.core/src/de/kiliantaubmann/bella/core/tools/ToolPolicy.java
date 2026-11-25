@@ -139,19 +139,34 @@ public final class ToolPolicy {
 
 	private final List<Rule> userRules;
 	private final ChatMode mode;
+	private final boolean confirmChanges;
 
 	public ToolPolicy(List<Rule> userRules) {
 		this(userRules, ChatMode.NORMAL);
 	}
 
 	public ToolPolicy(List<Rule> userRules, ChatMode mode) {
+		this(userRules, mode, false);
+	}
+
+	private ToolPolicy(List<Rule> userRules, ChatMode mode, boolean confirmChanges) {
 		this.userRules = List.copyOf(userRules);
 		this.mode = mode == null ? ChatMode.NORMAL : mode;
+		this.confirmChanges = confirmChanges;
 	}
 
 	/** The same rules in another chat mode. */
 	public ToolPolicy withMode(ChatMode newMode) {
-		return new ToolPolicy(userRules, newMode);
+		return new ToolPolicy(userRules, newMode, confirmChanges);
+	}
+
+	/**
+	 * The same rules, but every call that is not known to be read only asks,
+	 * whatever a rule or the mode says; for programs outside Bella's chat,
+	 * which must never change anything without the developer's consent.
+	 */
+	public ToolPolicy confirmingChanges() {
+		return new ToolPolicy(userRules, mode, true);
 	}
 
 	public ChatMode mode() {
@@ -223,6 +238,11 @@ public final class ToolPolicy {
 	}
 
 	public Decision decide(ToolSpec tool, JsonObject input) {
+		Decision d = decideByRules(tool, input);
+		return d == Decision.AUTO && confirmChanges && tool.kind() != ToolSpec.Kind.READ ? Decision.CONFIRM : d;
+	}
+
+	private Decision decideByRules(ToolSpec tool, JsonObject input) {
 		Decision configured = configured(tool, input);
 		if (configured == Decision.DENY || blockedByPlan(tool)) {
 			return Decision.DENY;

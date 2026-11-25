@@ -501,6 +501,59 @@ class WorkbenchSmokeTest {
 	}
 
 	@Test
+	void aTokenSecureStorageCannotKeepStaysTheSameUntilRestart() throws Exception {
+		var prefs = new org.eclipse.jface.preference.PreferenceStore();
+		java.nio.file.Path state = java.nio.file.Files.createTempDirectory("bella-mcp");
+		var mcp = new de.kiliantaubmann.bella.ui.internal.ExternalMcp(prefs,
+				new de.kiliantaubmann.bella.ui.internal.ExternalMcp.TokenStore() {
+					@Override
+					public String get() {
+						return ""; // as SecureStore after a StorageException
+					}
+
+					@Override
+					public void put(String t) {
+						// lost, as SecureStore only logs
+					}
+				}, BellaPlugin.getDefault().tools(), BellaPlugin.getDefault()::policy, state, "test");
+		String first = mcp.token();
+		assertEquals(first, mcp.token(), "the server and the copied commands must use the same token");
+		assertTrue(mcp.tokenNotSaved());
+		mcp.newToken();
+		assertFalse(first.equals(mcp.token()));
+		assertEquals(mcp.token(), mcp.token());
+	}
+
+	@Test
+	void theCopilotFileIsPrivateAlsoWhenItExistedBefore() throws Exception {
+		org.junit.jupiter.api.Assumptions.assumeTrue(
+				java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+		java.nio.file.Path state = java.nio.file.Files.createTempDirectory("bella-mcp");
+		java.nio.file.Path file = state.resolve("mcp").resolve("bella-adt-copilot.json");
+		java.nio.file.Files.createDirectories(file.getParent());
+		java.nio.file.Files.writeString(file, "{}");
+		java.nio.file.Files.setPosixFilePermissions(file,
+				java.nio.file.attribute.PosixFilePermissions.fromString("rw-r--r--"));
+		String[] token = { "" };
+		var mcp = new de.kiliantaubmann.bella.ui.internal.ExternalMcp(new org.eclipse.jface.preference.PreferenceStore(),
+				new de.kiliantaubmann.bella.ui.internal.ExternalMcp.TokenStore() {
+					@Override
+					public String get() {
+						return token[0];
+					}
+
+					@Override
+					public void put(String t) {
+						token[0] = t;
+					}
+				}, BellaPlugin.getDefault().tools(), BellaPlugin.getDefault()::policy, state, "test");
+		assertEquals(file, mcp.writeCopilotFile(8123));
+		assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions
+				.toString(java.nio.file.Files.getPosixFilePermissions(file)));
+		assertFalse(mcp.tokenNotSaved());
+	}
+
+	@Test
 	void logFileCanBeSwitchedOnAndOff() throws Exception {
 		BellaPlugin plugin = BellaPlugin.getDefault();
 		IPreferenceStore prefs = plugin.prefs();

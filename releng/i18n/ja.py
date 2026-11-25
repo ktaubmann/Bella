@@ -128,6 +128,7 @@ MESSAGES = {
  "mcpx.status.running": "{0} で実行中",
  "mcpx.status.off": "オフ",
  "mcpx.status.failed": "ポート {0} で起動できません: {1}",
+ "mcpx.status.tokenNotSaved": "トークンをセキュアストレージに保存できませんでした。Eclipse を再起動するまでのみ有効です。再起動後にプログラムを設定し直してください。",
  "mcpx.hint": "接続できるのはこのコンピューター上のプログラム (127.0.0.1) のみで、トークンが必要です。提供されるのは SAP ツール、スタイルチェック、デバッガーです。変更は Eclipse で確認し、Bella チャットの開発パッケージと移送依頼に限定されます。Eclipse が起動し、SAP システムにログオンしている必要があります。",
  "mcpx.setup": "セットアップ",
  "mcpx.shell": "シェル:",

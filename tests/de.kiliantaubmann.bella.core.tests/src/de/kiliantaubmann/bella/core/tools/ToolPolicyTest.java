@@ -204,4 +204,23 @@ class ToolPolicyTest {
 		assertEquals(Decision.AUTO, p.decide(tool("adt_diagnose", ToolSpec.Kind.READ),
 				Json.parseObject("{\"action\":\"traces\"}")));
 	}
+
+	@Test
+	void forOtherProgramsEveryChangeAsksWhateverTheRulesAndTheModeSay() {
+		ToolPolicy p = new ToolPolicy(ToolPolicy.parseRules("adt_write_source=AUTO\nadt_*=AUTO"), ChatMode.NORMAL)
+				.confirmingChanges();
+		assertEquals(Decision.CONFIRM, p.decide(tool("adt_write_source", ToolSpec.Kind.WRITE), new JsonObject()));
+		// adt_edit_code runs without asking in the chat (default adt_*=AUTO)
+		assertEquals(Decision.AUTO, ToolPolicy.defaults().decide(tool("adt_edit_code", ToolSpec.Kind.WRITE),
+				new JsonObject()));
+		assertEquals(Decision.CONFIRM, ToolPolicy.defaults().confirmingChanges()
+				.decide(tool("adt_edit_code", ToolSpec.Kind.WRITE), new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.decide(tool("mcp_x_unknown", ToolSpec.Kind.UNKNOWN), new JsonObject()));
+		// reading is untouched, and the flag survives a change of mode
+		assertEquals(Decision.AUTO, p.decide(tool("adt_read_source", ToolSpec.Kind.READ), new JsonObject()));
+		assertEquals(Decision.CONFIRM, p.withMode(ChatMode.AUTO).decide(tool("adt_activate", ToolSpec.Kind.WRITE),
+				new JsonObject()));
+		assertEquals(Decision.DENY, p.withMode(ChatMode.PLAN).decide(tool("adt_write_source", ToolSpec.Kind.WRITE),
+				new JsonObject()));
+	}
 }

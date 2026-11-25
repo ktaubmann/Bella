@@ -82,6 +82,8 @@ class McpServerTest {
 
 	private final Tools tools = new Tools();
 	private final List<String> confirmed = new ArrayList<>();
+	/** The client each confirmation was asked for, as the dialog names it. */
+	private final List<String> callers = new ArrayList<>();
 	private volatile boolean allow;
 	/** Set: the confirmation waits for it or for the call's cancellation, like the dialog. */
 	private volatile CountDownLatch answer;
@@ -105,6 +107,7 @@ class McpServerTest {
 			@Override
 			public boolean confirm(ToolSpec tool, JsonObject input, CancelToken cancel) {
 				confirmed.add(tool.name());
+				callers.add(String.valueOf(McpServer.callerName()));
 				CountDownLatch wait = answer;
 				if (wait != null) {
 					asking.countDown();
@@ -248,9 +251,7 @@ class McpServerTest {
 			McpClient c = new McpClient(new StreamableHttpTransport(URI.create(opened.url()), "fixed-token",
 					HttpTransport.jdk()));
 			try {
-				assertEquals(null, opened.clientName());
 				c.initialize("test");
-				assertEquals("bella", opened.clientName()); // Bella's own client names itself so
 				assertEquals(List.of("adt_read_source"), c.listTools().stream().map(McpClient.Tool::name).toList());
 				McpClient.CallResult hidden = c.callTool("adt_write_source", Json.parseObject("{\"name\":\"ZCL_A\"}"),
 						CancelToken.NONE);
@@ -289,9 +290,58 @@ class McpServerTest {
 	}
 
 	private CompletableFuture<HttpResponse<String>> post(HttpClient http, String body) {
-		return http.sendAsync(HttpRequest.newBuilder(URI.create(server.url()))
+		return post(http, body, null);
+	}
+
+	private CompletableFuture<HttpResponse<String>> post(HttpClient http, String body, String session) {
+		HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(server.url()))
 				.header("Authorization", "Bearer " + server.token()).header("Content-Type", "application/json")
-				.POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+				.POST(HttpRequest.BodyPublishers.ofString(body));
+		if (session != null) {
+			b.header("Mcp-Session-Id", session);
+		}
+		return http.sendAsync(b.build(), HttpResponse.BodyHandlers.ofString());
+	}
+
+	/** Opens a session as a client named {@code name} and returns its id. */
+	private String initialize(HttpClient http, String name) throws Exception {
+		HttpResponse<String> r = post(http, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+				+ "{\"protocolVersion\":\"2025-06-18\",\"clientInfo\":{\"name\":\"" + name + "\",\"version\":\"1\"}}}")
+				.get(10, TimeUnit.SECONDS);
+		assertEquals(200, r.statusCode(), r.body());
+		return r.headers().firstValue("Mcp-Session-Id").orElseThrow();
+	}
+
+	private static String readBody(int id, String name) {
+		return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"method\":\"tools/call\",\"params\":{\"name\":\""
+				+ "adt_read_source\",\"arguments\":{\"name\":\"" + name + "\"}}}";
+	}
+
+	@Test
+	void eachClientIsNamedInItsOwnConfirmation() throws Exception {
+		allow = true;
+		HttpClient http = HttpClient.newHttpClient();
+		String other = initialize(http, "Other CLI");
+		// Bella's own client, initialized last, must not lend its name to the other one's call
+		client.callTool("adt_write_source", Json.parseObject("{\"name\":\"ZCL_A\"}"), CancelToken.NONE);
+		post(http, callBody(2, "ZCL_B"), other).get(10, TimeUnit.SECONDS);
+		post(http, callBody(3, "ZCL_C")).get(10, TimeUnit.SECONDS);
+		assertEquals(List.of("bella", "Other CLI", "null"), callers);
+		assertEquals(null, McpServer.callerName());
+	}
+
+	@Test
+	void anUnknownOrEndedSessionIsRefused() throws Exception {
+		HttpClient http = HttpClient.newHttpClient();
+		assertEquals(404, post(http, readBody(1, "ZCL_A"), "no-such-session").get(10, TimeUnit.SECONDS).statusCode());
+		String session = initialize(http, "Other CLI");
+		assertEquals(200, post(http, readBody(2, "ZCL_A"), session).get(10, TimeUnit.SECONDS).statusCode());
+		HttpResponse<String> ended = http.send(HttpRequest.newBuilder(URI.create(server.url()))
+				.header("Authorization", "Bearer " + server.token()).header("Mcp-Session-Id", session).DELETE().build(),
+				HttpResponse.BodyHandlers.ofString());
+		assertEquals(200, ended.statusCode());
+		assertEquals(404, post(http, readBody(3, "ZCL_A"), session).get(10, TimeUnit.SECONDS).statusCode());
+		assertEquals(List.of("adt_read_source:ZCL_A"), tools.calls);
 	}
 
 	private static String callBody(int id, String name) {
@@ -331,14 +381,17 @@ class McpServerTest {
 		call.get(10, TimeUnit.SECONDS);
 		tools.slow = null;
 
-		McpClient.CallResult next = client.callTool("adt_read_source", Json.parseObject("{\"name\":\"ZCL_B\"}"),
+		// another client never sees it
+		McpClient.CallResult foreign = client.callTool("adt_read_source", Json.parseObject("{\"name\":\"ZCL_X\"}"),
 				CancelToken.NONE);
-		assertTrue(next.text().contains("still ran to the end"), next.text());
-		assertTrue(next.text().contains("- adt_write_source {\"name\":\"ZCL_SLOW\"} ran: result of adt_write_source"),
-				next.text());
-		assertTrue(next.text().contains("result of adt_read_source"), next.text());
-		McpClient.CallResult after = client.callTool("adt_read_source", Json.parseObject("{\"name\":\"ZCL_C\"}"),
-				CancelToken.NONE);
-		assertEquals("result of adt_read_source", after.text());
+		assertEquals("result of adt_read_source", foreign.text());
+
+		String next = post(http, readBody(9, "ZCL_B")).get(10, TimeUnit.SECONDS).body();
+		assertTrue(next.contains("still ran to the end"), next);
+		assertTrue(next.contains("- adt_write_source {\\\"name\\\":\\\"ZCL_SLOW\\\"} ran: result of adt_write_source"),
+				next);
+		assertTrue(next.contains("result of adt_read_source"), next);
+		String after = post(http, readBody(10, "ZCL_C")).get(10, TimeUnit.SECONDS).body();
+		assertFalse(after.contains("still ran to the end"), after);
 	}
 }

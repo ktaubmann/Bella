@@ -128,6 +128,7 @@ MESSAGES = {
  "mcpx.status.running": "Działa pod {0}",
  "mcpx.status.off": "Wyłączony",
  "mcpx.status.failed": "Nie można uruchomić na porcie {0}: {1}",
+ "mcpx.status.tokenNotSaved": "Nie udało się zapisać tokenu w bezpiecznym magazynie; jest ważny tylko do ponownego uruchomienia Eclipse. Potem skonfiguruj programy ponownie.",
  "mcpx.hint": "Połączyć mogą się tylko programy na tym komputerze (127.0.0.1) i tylko z tokenem. Udostępniane są narzędzia SAP, kontrola stylu i debuger. Zmiany potwierdzasz w Eclipse; pozostają w pakiecie deweloperskim i zleceniu transportowym czatu Belli. Eclipse musi być uruchomiony i zalogowany do systemu SAP.",
  "mcpx.setup": "Konfiguracja",
  "mcpx.shell": "Powłoka:",

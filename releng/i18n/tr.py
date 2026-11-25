@@ -128,6 +128,7 @@ MESSAGES = {
  "mcpx.status.running": "{0} adresinde çalışıyor",
  "mcpx.status.off": "Kapalı",
  "mcpx.status.failed": "{0} numaralı bağlantı noktasında başlatılamadı: {1}",
+ "mcpx.status.tokenNotSaved": "Belirteç güvenli depolamaya kaydedilemedi ve yalnızca Eclipse yeniden başlatılana kadar geçerlidir. Ardından programları yeniden ayarlayın.",
  "mcpx.hint": "Yalnızca bu bilgisayardaki programlar (127.0.0.1) ve yalnızca belirteçle bağlanabilir. SAP araçları, stil denetimi ve hata ayıklayıcı sunulur. Değişiklikleri Eclipse’te onaylarsınız; Bella sohbetinin geliştirme paketinde ve taşıma talebinde kalırlar. Eclipse çalışıyor ve SAP sistemine oturum açmış olmalıdır.",
  "mcpx.setup": "Kurulum",
  "mcpx.shell": "Kabuk:",

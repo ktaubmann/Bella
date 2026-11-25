@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * Merges the tools of all registered providers into the single list the
@@ -27,8 +28,11 @@ public final class ToolRegistry {
 
 	private final List<ToolProvider> providers = new CopyOnWriteArrayList<>();
 	private volatile String preferredProviderId = ADT_PROVIDER_ID;
-	private volatile Map<String, ToolSpec> tools = Map.of();
-	private volatile Map<String, ToolProvider> providerByTool = Map.of();
+	/** Tools and their providers, published together so that a reader never sees one without the other. */
+	private record Listed(Map<String, ToolSpec> tools, Map<String, ToolProvider> providerByTool) {
+	}
+
+	private volatile Listed listed = new Listed(Map.of(), Map.of());
 	/** The last tool list of each provider, used while it fails, so the list the model sees stays the same. */
 	private final Map<String, List<ToolSpec>> lastListed = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -63,6 +67,15 @@ public final class ToolRegistry {
 	 * The order is stable for the same reason.
 	 */
 	public void refresh(Consumer<String> onError) {
+		refresh(onError, p -> true);
+	}
+
+	/**
+	 * Like {@link #refresh(Consumer)}, but asks only the providers {@code ask}
+	 * accepts; the others keep the tools they listed last, without a request
+	 * to their server.
+	 */
+	public synchronized void refresh(Consumer<String> onError, Predicate<ToolProvider> ask) {
 		Map<String, ToolSpec> merged = new LinkedHashMap<>();
 		Map<String, ToolProvider> owners = new LinkedHashMap<>();
 		Map<String, String> capabilityOwner = new LinkedHashMap<>();
@@ -71,7 +84,14 @@ public final class ToolRegistry {
 		for (ToolProvider provider : ordered) {
 			List<ToolSpec> specs;
 			try {
-				specs = provider.listTools();
+				if (!ask.test(provider)) {
+					specs = lastListed.get(provider.id());
+					if (specs == null) {
+						continue;
+					}
+				} else {
+					specs = provider.listTools();
+				}
 				lastListed.put(provider.id(), List.copyOf(specs));
 			} catch (Exception e) {
 				onError.accept(provider.displayName() + ": " + e.getMessage());
@@ -95,8 +115,8 @@ public final class ToolRegistry {
 				}
 			}
 		}
-		this.tools = java.util.Collections.unmodifiableMap(merged);
-		this.providerByTool = java.util.Collections.unmodifiableMap(owners);
+		this.listed = new Listed(java.util.Collections.unmodifiableMap(merged),
+				java.util.Collections.unmodifiableMap(owners));
 	}
 
 	private boolean isPreferred(ToolProvider p) {
@@ -104,15 +124,15 @@ public final class ToolRegistry {
 	}
 
 	public List<ToolSpec> tools() {
-		return List.copyOf(tools.values());
+		return List.copyOf(listed.tools().values());
 	}
 
 	public Optional<ToolSpec> find(String exposedName) {
-		return Optional.ofNullable(tools.get(exposedName));
+		return Optional.ofNullable(listed.tools().get(exposedName));
 	}
 
 	public Optional<ToolProvider> providerOf(String exposedName) {
-		return Optional.ofNullable(providerByTool.get(exposedName));
+		return Optional.ofNullable(listed.providerByTool().get(exposedName));
 	}
 
 	/**

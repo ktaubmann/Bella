@@ -60,6 +60,12 @@ public final class McpServer implements AutoCloseable {
 	public static final int TOOL_TIMEOUT_MILLIS = 1_800_000;
 	/** Characters of a late result reported to the model. */
 	static final int LATE_RESULT_CHARS = 1_500;
+	/** Header that carries the session the server handed out in {@code initialize}. */
+	static final String SESSION_HEADER = "Mcp-Session-Id";
+	/** Sessions kept at most; the oldest is dropped beyond, for clients that never end theirs. */
+	static final int MAX_SESSIONS = 64;
+	/** The client of the tool call running on this thread, for the confirmation dialog. */
+	private static final ThreadLocal<String> CALLER = new ThreadLocal<>();
 
 	private final ToolExecutor executor;
 	private final String version;
@@ -67,7 +73,6 @@ public final class McpServer implements AutoCloseable {
 	private final int port;
 	private final Predicate<ToolSpec> offered;
 	private final String instructions;
-	private volatile String clientName;
 	private volatile Runnable refresh = () -> {
 	};
 	private ServerSocket socket;
@@ -76,8 +81,30 @@ public final class McpServer implements AutoCloseable {
 	private volatile CancelToken cancel = CancelToken.NONE;
 	/** Running tool calls by JSON-RPC id, so that {@code notifications/cancelled} can stop them. */
 	private final Map<String, CancelToken> running = new ConcurrentHashMap<>();
-	/** Results of calls that went on after the caller had given up; reported with the next call. */
-	private final List<String> late = new ArrayList<>();
+	/**
+	 * One client's connection: its name and the results of its calls that went
+	 * on after it had given up, reported with its next call and to no one else.
+	 */
+	private static final class Session {
+		final String id;
+		final String clientName;
+		final List<String> late = new ArrayList<>();
+
+		Session(String id, String clientName) {
+			this.id = id;
+			this.clientName = clientName;
+		}
+
+		/** Key of a running call: JSON-RPC ids are only unique within one client. */
+		String key(JsonElement requestId) {
+			return id + " " + requestId;
+		}
+	}
+
+	/** Sessions by id, oldest first. */
+	private final Map<String, Session> sessions = new LinkedHashMap<>();
+	/** Clients that send no session id; they share one session as before sessions existed. */
+	private final Session anonymous = new Session("", null);
 
 	/** A private server for a CLI Bella starts: any free port, a random token, all tools. */
 	public McpServer(ToolExecutor executor, String version) {
@@ -155,9 +182,13 @@ public final class McpServer implements AutoCloseable {
 		} : refresh;
 	}
 
-	/** Name the last client gave in {@code initialize}, {@code null} before one connected. */
-	public String clientName() {
-		return clientName;
+	/**
+	 * The name the client gave in {@code initialize} whose tool call runs on
+	 * the current thread; {@code null} outside a call or for a client that
+	 * sends no session id.
+	 */
+	public static String callerName() {
+		return CALLER.get();
 	}
 
 	/** {@code mcpServers} entry for Claude Code's {@code --mcp-config}. */
@@ -342,11 +373,45 @@ public final class McpServer implements AutoCloseable {
 			write(out, 404, "Not Found", null, null);
 			return;
 		}
+		String sessionId = req.headers().get(SESSION_HEADER.toLowerCase(Locale.ROOT));
+		Session session = sessionId == null ? anonymous : session(sessionId);
+		if (session == null) {
+			// unknown or dropped: the client starts a new session with initialize
+			write(out, 404, "Not Found", null, error(null, -32001, "Session not found"));
+			return;
+		}
 		switch (req.method()) {
-		case "POST" -> handlePost(req, out);
-		case "DELETE" -> write(out, 200, "OK", null, null);
+		case "POST" -> handlePost(req, session, out);
+		case "DELETE" -> {
+			if (sessionId != null) {
+				synchronized (sessions) {
+					sessions.remove(sessionId);
+				}
+			}
+			write(out, 200, "OK", null, null);
+		}
 		default -> write(out, 405, "Method Not Allowed", Map.of("Allow", "POST, DELETE"), null);
 		}
+	}
+
+	private Session session(String id) {
+		synchronized (sessions) {
+			return sessions.get(id);
+		}
+	}
+
+	/** A new session for a client that sent {@code initialize}; returns its id. */
+	private String openSession(String clientName) {
+		String id = newToken();
+		synchronized (sessions) {
+			while (sessions.size() >= MAX_SESSIONS) {
+				var oldest = sessions.keySet().iterator();
+				oldest.next();
+				oldest.remove();
+			}
+			sessions.put(id, new Session(id, clientName));
+		}
+		return id;
 	}
 
 	private boolean authorized(String header) {
@@ -355,7 +420,7 @@ public final class McpServer implements AutoCloseable {
 				header.getBytes(StandardCharsets.UTF_8));
 	}
 
-	private void handlePost(Request req, OutputStream out) throws IOException {
+	private void handlePost(Request req, Session session, OutputStream out) throws IOException {
 		JsonElement payload;
 		try {
 			payload = Json.parseStrict(new String(req.body(), StandardCharsets.UTF_8));
@@ -366,7 +431,8 @@ public final class McpServer implements AutoCloseable {
 		if (payload.isJsonArray()) {
 			JsonArray responses = new JsonArray();
 			for (JsonElement e : payload.getAsJsonArray()) {
-				JsonObject r = e.isJsonObject() ? dispatch(e.getAsJsonObject()) : error(null, -32600, "Invalid Request");
+				JsonObject r = e.isJsonObject() ? dispatch(e.getAsJsonObject(), session)
+						: error(null, -32600, "Invalid Request");
 				if (r != null) {
 					responses.add(r);
 				}
@@ -382,7 +448,14 @@ public final class McpServer implements AutoCloseable {
 			write(out, 400, "Bad Request", null, error(null, -32600, "Invalid Request"));
 			return;
 		}
-		JsonObject response = dispatch(payload.getAsJsonObject());
+		JsonObject msg = payload.getAsJsonObject();
+		if ("initialize".equals(Json.str(msg, "method"))) {
+			String id = openSession(clientName(Json.obj(msg, "params")));
+			JsonObject response = dispatch(msg, session);
+			write(out, 200, "OK", Map.of(SESSION_HEADER, id), response);
+			return;
+		}
+		JsonObject response = dispatch(msg, session);
 		if (response == null) {
 			write(out, 202, "Accepted", null, null);
 		} else {
@@ -412,12 +485,16 @@ public final class McpServer implements AutoCloseable {
 
 	/** @return the response, or {@code null} for notifications */
 	JsonObject dispatch(JsonObject msg) {
+		return dispatch(msg, anonymous);
+	}
+
+	private JsonObject dispatch(JsonObject msg, Session session) {
 		JsonElement id = msg.get("id");
 		String method = Json.str(msg, "method");
 		JsonObject params = Json.obj(msg, "params");
 		if (id == null || id.isJsonNull()) {
 			if ("notifications/cancelled".equals(method)) {
-				cancelled(params);
+				cancelled(params, session);
 			}
 			return null; // other notifications, e.g. notifications/initialized
 		}
@@ -429,15 +506,13 @@ public final class McpServer implements AutoCloseable {
 		case "initialize" -> result(id, initialize(params));
 		case "ping" -> result(id, new JsonObject());
 		case "tools/list" -> result(id, listTools());
-		case "tools/call" -> result(id, callTool(id, params));
+		case "tools/call" -> result(id, callTool(id, params, session));
 		default -> error(id, -32601, "Method not found: " + method);
 		};
 	}
 
 	private JsonObject initialize(JsonObject params) {
 		JsonObject client = Json.obj(params, "clientInfo");
-		String name = Json.str(client, "name");
-		clientName = name == null || name.isBlank() ? null : name.trim();
 		Log.info("mcp", "Bella's MCP server: client " + Json.str(client, "name") + " " + Json.str(client, "version")
 				+ " connected");
 		JsonObject r = new JsonObject();
@@ -454,6 +529,11 @@ public final class McpServer implements AutoCloseable {
 		r.add("serverInfo", info);
 		r.addProperty("instructions", instructions);
 		return r;
+	}
+
+	private static String clientName(JsonObject initializeParams) {
+		String name = Json.str(Json.obj(initializeParams, "clientInfo"), "name");
+		return name == null || name.isBlank() ? null : name.trim();
 	}
 
 	private JsonObject listTools() {
@@ -481,9 +561,9 @@ public final class McpServer implements AutoCloseable {
 	 * The caller stopped waiting for a request (timeout, interrupted turn): a
 	 * confirmation still open is closed and the call does not run.
 	 */
-	private void cancelled(JsonObject params) {
+	private void cancelled(JsonObject params, Session session) {
 		JsonElement requestId = params == null ? null : params.get("requestId");
-		CancelToken token = requestId == null ? null : running.get(requestId.toString());
+		CancelToken token = requestId == null ? null : running.get(session.key(requestId));
 		Log.warn("mcp", "Bella's MCP server: the client cancelled request " + requestId
 				+ (Json.str(params, "reason") == null ? "" : " (" + Json.str(params, "reason") + ")")
 				+ (token == null ? ", which is no longer running" : ""));
@@ -492,7 +572,7 @@ public final class McpServer implements AutoCloseable {
 		}
 	}
 
-	private JsonObject callTool(JsonElement id, JsonObject params) {
+	private JsonObject callTool(JsonElement id, JsonObject params, Session session) {
 		String name = Json.str(params, "name");
 		JsonObject args = Json.obj(params, "arguments");
 		if (args == null) {
@@ -512,22 +592,24 @@ public final class McpServer implements AutoCloseable {
 		}
 		ToolCall call = new ToolCall("mcp-" + System.nanoTime(), String.valueOf(name), args, Json.GSON.toJson(args),
 				inputError);
-		String key = id.toString();
+		String key = session.key(id);
 		CancelToken token = cancel.child();
 		running.put(key, token);
 		ToolResult r;
+		CALLER.set(session.clientName);
 		try {
 			r = executor.run(call, observer, token);
 		} finally {
+			CALLER.remove();
 			running.remove(key);
 		}
 		// taken before this call's own late result is added: that goes to the next call, not to the lost answer
-		String notes = lateNotes();
+		String notes = lateNotes(session);
 		if (token.isCancelled() && spec != null && spec.kind() != ToolSpec.Kind.READ
 				&& !ToolExecutor.NOT_RUN.equals(r.content())) {
 			String out = r.content() == null ? "" : r.content();
-			synchronized (late) {
-				late.add("- " + name + " " + Log.clip(Json.GSON.toJson(args), 300) + (r.isError() ? " failed: " : " ran: ")
+			synchronized (session.late) {
+				session.late.add("- " + name + " " + Log.clip(Json.GSON.toJson(args), 300) + (r.isError() ? " failed: " : " ran: ")
 						+ (out.length() > LATE_RESULT_CHARS ? out.substring(0, LATE_RESULT_CHARS) + " …" : out));
 			}
 		}
@@ -561,14 +643,14 @@ public final class McpServer implements AutoCloseable {
 	}
 
 	/** Late results not yet reported, once; {@code null} if there are none. */
-	private String lateNotes() {
-		synchronized (late) {
-			if (late.isEmpty()) {
+	private static String lateNotes(Session session) {
+		synchronized (session.late) {
+			if (session.late.isEmpty()) {
 				return null;
 			}
 			String notes = "Bella: earlier tool calls you stopped waiting for (e.g. after a timeout) still ran to the "
-					+ "end. Check their outcome before repeating them:\n" + String.join("\n", late);
-			late.clear();
+					+ "end. Check their outcome before repeating them:\n" + String.join("\n", session.late);
+			session.late.clear();
 			return notes;
 		}
 	}

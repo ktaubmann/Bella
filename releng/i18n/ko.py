@@ -128,6 +128,7 @@ MESSAGES = {
  "mcpx.status.running": "{0}에서 실행 중",
  "mcpx.status.off": "꺼짐",
  "mcpx.status.failed": "포트 {0}에서 시작할 수 없음: {1}",
+ "mcpx.status.tokenNotSaved": "토큰을 보안 저장소에 저장할 수 없어 Eclipse를 다시 시작할 때까지만 유효합니다. 그 후 프로그램을 다시 설정하십시오.",
  "mcpx.hint": "이 컴퓨터의 프로그램(127.0.0.1)만, 그리고 토큰이 있어야만 연결할 수 있습니다. SAP 도구, 스타일 검사, 디버거가 제공됩니다. 변경은 Eclipse에서 확인하며 Bella 채팅의 개발 패키지와 전송 요청에 머뭅니다. Eclipse가 실행 중이고 SAP 시스템에 로그온되어 있어야 합니다.",
  "mcpx.setup": "설정",
  "mcpx.shell": "셸:",

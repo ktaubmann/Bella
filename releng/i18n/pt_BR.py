@@ -128,6 +128,7 @@ MESSAGES = {
  "mcpx.status.running": "Em execução em {0}",
  "mcpx.status.off": "Desligado",
  "mcpx.status.failed": "Não foi possível iniciar na porta {0}: {1}",
+ "mcpx.status.tokenNotSaved": "Não foi possível salvar o token no armazenamento seguro; ele vale apenas até o Eclipse ser reiniciado. Depois disso, configure os programas novamente.",
  "mcpx.hint": "Somente programas neste computador (127.0.0.1) podem se conectar, e só com o token. São oferecidas as ferramentas SAP, a verificação de estilo e o depurador. Alterações são confirmadas no Eclipse e ficam no pacote de desenvolvimento e na ordem de transporte do chat da Bella. O Eclipse precisa estar aberto e conectado ao sistema SAP.",
  "mcpx.setup": "Configurar",
  "mcpx.shell": "Shell:",

@@ -128,6 +128,7 @@ MESSAGES = {
  "mcpx.status.running": "Běží na {0}",
  "mcpx.status.off": "Vypnuto",
  "mcpx.status.failed": "Nelze spustit na portu {0}: {1}",
+ "mcpx.status.tokenNotSaved": "Token nelze uložit do zabezpečeného úložiště a platí jen do restartu Eclipse. Poté programy nastavte znovu.",
  "mcpx.hint": "Připojit se mohou jen programy na tomto počítači (127.0.0.1) a jen s tokenem. Nabízeny jsou nástroje SAP, kontrola stylu a debugger. Změny potvrzujete v Eclipse a zůstávají ve vývojovém balíku a transportním požadavku chatu Bella. Eclipse musí běžet a být přihlášen k systému SAP.",
  "mcpx.setup": "Nastavení",
  "mcpx.shell": "Shell:",

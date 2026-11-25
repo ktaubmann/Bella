@@ -142,7 +142,15 @@ public class BellaPlugin extends AbstractUIPlugin {
 		reconnectMcpServers();
 		externalMcp = new ExternalMcp(getPreferenceStore(), ExternalMcp.TokenStore.SECURE, tools, this::policy,
 				getStateLocation().toFile().toPath(), VERSION);
-		externalMcp.apply();
+		// not in start(): reading the token may open secure storage, whose master password prompt would hold
+		// up Eclipse's start
+		ExternalMcp started = externalMcp;
+		org.eclipse.core.runtime.jobs.Job job = org.eclipse.core.runtime.jobs.Job
+				.create("Bella: MCP server for other programs", monitor -> {
+					started.apply();
+				});
+		job.setSystem(true);
+		job.schedule();
 	}
 
 	@Override

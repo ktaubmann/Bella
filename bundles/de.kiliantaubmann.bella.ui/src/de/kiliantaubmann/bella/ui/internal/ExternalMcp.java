@@ -5,7 +5,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclEntryType;
+import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.nio.file.attribute.UserPrincipal;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -78,6 +85,10 @@ public final class ExternalMcp {
 	private McpServer server;
 	private int serverPort;
 	private String serverToken;
+	/** The token in use; kept here as well, so that it stays the same when secure storage fails. */
+	private String token;
+	/** Whether {@link #token} could not be saved: it then holds only until Eclipse restarts. */
+	private volatile boolean tokenNotSaved;
 	private volatile String problem;
 
 	public ExternalMcp(IPreferenceStore prefs, TokenStore tokens, ToolRegistry tools, Supplier<ToolPolicy> policy,
@@ -90,8 +101,18 @@ public final class ExternalMcp {
 		this.version = version;
 	}
 
-	/** Starts, restarts or stops the server as the preferences say. */
+	/** Starts, restarts or stops the server as the preferences say; never throws. */
 	public synchronized void apply() {
+		try {
+			applyPrefs();
+		} catch (RuntimeException e) {
+			stop();
+			problem = Messages.fmt("mcpx.status.failed", port(), e.getMessage() == null ? e.toString() : e.getMessage());
+			Log.warn("mcp", "Bella's MCP server for other programs could not start: " + e);
+		}
+	}
+
+	private void applyPrefs() {
 		if (!prefs.getBoolean(Prefs.MCP_EXTERNAL_ENABLED)) {
 			stop();
 			problem = null;
@@ -103,12 +124,15 @@ public final class ExternalMcp {
 			return;
 		}
 		stop();
-		McpServer s = new McpServer(new ToolExecutor(tools, () -> policy.get().withMode(mode()), new Confirmer(),
+		McpServer s = new McpServer(new ToolExecutor(tools,
+				() -> policy.get().withMode(mode()).confirmingChanges(), new Confirmer(),
 				new OpenEditorRouter()), version, token, port, t -> PROVIDERS.contains(t.providerId()),
 				"Tools of the Bella Eclipse plug-in. adt_* tools act on the SAP system through the developer's ADT "
 						+ "logon in Eclipse. Changes are confirmed by the developer in Eclipse and stay in the "
 						+ "development package and transport request of Bella's chat (adt_dev_package).");
-		s.refreshToolsWith(() -> tools.refresh(e -> Log.warn("mcp", "Tool list for another program: " + e)));
+		// only the offered providers: no requests to the MCP servers Bella itself uses
+		s.refreshToolsWith(() -> tools.refresh(e -> Log.warn("mcp", "Tool list for another program: " + e),
+				p -> PROVIDERS.contains(p.id())));
 		try {
 			s.start();
 			server = s;
@@ -162,20 +186,57 @@ public final class ExternalMcp {
 		}
 	}
 
-	/** The token, created on first use. */
+	/**
+	 * The token, created on first use. Read from the store once; if a new one
+	 * cannot be saved there, it is kept in memory, so the server and the copied
+	 * commands still agree until Eclipse restarts (see {@link #tokenNotSaved()}).
+	 */
 	public synchronized String token() {
-		String t = tokens.get();
-		if (t == null || t.isBlank()) {
-			t = McpServer.newToken();
-			tokens.put(t);
+		if (token == null) {
+			String stored = read();
+			if (stored == null || stored.isBlank()) {
+				save(McpServer.newToken());
+			} else {
+				token = stored;
+				tokenNotSaved = false;
+			}
 		}
-		return t;
+		return token;
 	}
 
 	/** Replaces the token; programs set up with the old one are refused from now on. */
 	public synchronized void newToken() {
-		tokens.put(McpServer.newToken());
+		save(McpServer.newToken());
 		apply();
+	}
+
+	/** Whether the token could not be saved in secure storage and holds only until Eclipse restarts. */
+	public boolean tokenNotSaved() {
+		return tokenNotSaved;
+	}
+
+	private String read() {
+		try {
+			return tokens.get();
+		} catch (RuntimeException e) {
+			Log.warn("mcp", "Cannot read the token of Bella's MCP server for other programs: " + e);
+			return null;
+		}
+	}
+
+	private void save(String t) {
+		token = t;
+		try {
+			tokens.put(t);
+			tokenNotSaved = !t.equals(tokens.get());
+		} catch (RuntimeException e) {
+			Log.warn("mcp", "Cannot save the token of Bella's MCP server for other programs: " + e);
+			tokenNotSaved = true;
+		}
+		if (tokenNotSaved) {
+			Log.warn("mcp", "The token of Bella's MCP server for other programs is not in secure storage; it is "
+					+ "valid until Eclipse restarts");
+		}
 	}
 
 	/** Writes the file the Copilot command names (only the developer may read it) and returns it. */
@@ -199,12 +260,32 @@ public final class ExternalMcp {
 		return file;
 	}
 
-	private static void writePrivate(Path file, String content) throws IOException {
+	/**
+	 * Writes a file with the token that only the developer may read: also a
+	 * file that exists already, and before the token is in it.
+	 */
+	static void writePrivate(Path file, String content) throws IOException {
 		Files.createDirectories(file.getParent());
-		if (!Files.exists(file) && FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
-			Files.createFile(file, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+		if (!Files.exists(file)) {
+			Files.createFile(file);
 		}
+		restrictToOwner(file);
 		Files.writeString(file, content, StandardCharsets.UTF_8);
+	}
+
+	/** POSIX: {@code rw-------}; Windows: one ACL entry for the owner, nothing inherited. */
+	private static void restrictToOwner(Path file) throws IOException {
+		if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+			Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
+			return;
+		}
+		AclFileAttributeView acl = Files.getFileAttributeView(file, AclFileAttributeView.class);
+		if (acl == null) {
+			return;
+		}
+		UserPrincipal owner = acl.getOwner();
+		acl.setAcl(List.of(AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(owner)
+				.setPermissions(EnumSet.allOf(AclEntryPermission.class)).build()));
 	}
 
 	/** Asks in Eclipse, naming the program that called. */
@@ -218,22 +299,22 @@ public final class ExternalMcp {
 		@Override
 		public boolean confirm(ToolSpec tool, JsonObject input, CancelToken cancel) {
 			if (!PlatformUI.isWorkbenchRunning()) {
-				return false;
+				throw new ToolExecutor.ConfirmationUnavailable("Eclipse is not running");
 			}
-			McpServer s;
-			synchronized (ExternalMcp.this) {
-				s = server;
-			}
-			String client = s == null ? null : s.clientName();
-			String caller = Objects.requireNonNullElse(client, Messages.get("mcpx.unknownClient"));
+			String caller = Objects.requireNonNullElse(McpServer.callerName(), Messages.get("mcpx.unknownClient"));
 			AtomicBoolean ok = new AtomicBoolean();
+			AtomicBoolean shown = new AtomicBoolean();
 			PlatformUI.getWorkbench().getDisplay().syncExec(() -> {
 				Shell shell = shell();
 				if (shell != null && !cancel.isCancelled()) {
+					shown.set(true);
 					shell.forceActive();
 					ok.set(ToolConfirmDialog.ask(shell, tool, input, cancel, caller));
 				}
 			});
+			if (!shown.get() && !cancel.isCancelled()) {
+				throw new ToolExecutor.ConfirmationUnavailable("no Eclipse window to show the dialog in");
+			}
 			return ok.get();
 		}
 

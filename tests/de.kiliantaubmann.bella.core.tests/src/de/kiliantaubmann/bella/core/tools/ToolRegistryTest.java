@@ -164,4 +164,42 @@ class ToolRegistryTest {
 		r.refresh(errors::add);
 		assertEquals(List.of("adt_a", "adt_b"), names(r));
 	}
+
+	@Test
+	void aRefreshAsksOnlyTheChosenProvidersAndKeepsTheOthersTools() {
+		ToolRegistry r = new ToolRegistry();
+		List<String> asked = new ArrayList<>();
+		List<ToolSpec> remote = new ArrayList<>(List.of(spec("SAPRead", null)));
+		r.addProvider(new Fake("adt", List.of(spec("adt_read_source", null))));
+		r.addProvider(new ToolProvider() {
+			@Override
+			public String id() {
+				return "mcp:arc-1";
+			}
+
+			@Override
+			public String displayName() {
+				return "arc-1";
+			}
+
+			@Override
+			public List<ToolSpec> listTools() {
+				asked.add(id());
+				return List.copyOf(remote);
+			}
+
+			@Override
+			public ToolResult call(String remoteName, JsonObject input, CancelToken cancel) {
+				return ToolResult.ok("");
+			}
+		});
+		r.refresh(e -> {
+		});
+		remote.add(spec("SAPWrite", null));
+		r.refresh(e -> {
+		}, p -> p.id().equals("adt"));
+		assertEquals(List.of("mcp:arc-1"), asked, "not asked again");
+		assertEquals(List.of("adt_read_source", "mcp_arc-1_SAPRead"), names(r));
+		assertTrue(r.providerOf("mcp_arc-1_SAPRead").isPresent());
+	}
 }

@@ -128,6 +128,7 @@ MESSAGES = {
  "mcpx.status.running": "运行于 {0}",
  "mcpx.status.off": "关闭",
  "mcpx.status.failed": "无法在端口 {0} 上启动：{1}",
+ "mcpx.status.tokenNotSaved": "无法将令牌保存到安全存储中，它仅在 Eclipse 重新启动前有效。之后请重新设置这些程序。",
  "mcpx.hint": "只有这台计算机上的程序 (127.0.0.1) 才能连接，且必须使用令牌。提供 SAP 工具、风格检查和调试器。更改在 Eclipse 中确认，并保留在 Bella 聊天的开发包和传输请求中。Eclipse 必须正在运行并已登录 SAP 系统。",
  "mcpx.setup": "设置",
  "mcpx.shell": "Shell：",

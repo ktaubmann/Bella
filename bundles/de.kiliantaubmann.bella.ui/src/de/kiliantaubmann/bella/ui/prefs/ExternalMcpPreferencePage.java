@@ -158,8 +158,12 @@ public class ExternalMcpPreferencePage extends PreferencePage implements IWorkbe
 
 	private void showStatus() {
 		ExternalMcp m = mcp();
-		status.setText(m.running() ? Messages.fmt("mcpx.status.running", ExternalMcp.url(m.port()))
-				: m.problem() != null ? m.problem() : Messages.get("mcpx.status.off"));
+		String text = m.running() ? Messages.fmt("mcpx.status.running", ExternalMcp.url(m.port()))
+				: m.problem() != null ? m.problem() : Messages.get("mcpx.status.off");
+		if (m.running() && m.tokenNotSaved()) {
+			text += "\n" + Messages.get("mcpx.status.tokenNotSaved");
+		}
+		status.setText(text);
 		status.getParent().layout(true, true);
 	}
 
