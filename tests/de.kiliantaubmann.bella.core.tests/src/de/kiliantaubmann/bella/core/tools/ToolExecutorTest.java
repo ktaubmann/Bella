@@ -172,6 +172,34 @@ class ToolExecutorTest {
 	}
 
 	@Test
+	void forOtherProgramsAWriteIntoAnOpenEditorAsksFirst() {
+		Recording provider = new Recording();
+		ToolRegistry registry = new ToolRegistry();
+		registry.addProvider(provider);
+		registry.refresh(e -> {
+		});
+		List<String> guarded = new ArrayList<>();
+		WriteGuard editor = (tool, input) -> {
+			guarded.add(tool.name());
+			return Optional.of(ToolResult.ok("into the editor"));
+		};
+		ToolCall write = new ToolCall("1", "adt_write_source", new JsonObject(), "{}", null);
+		// declined: the editor stays untouched
+		ToolResult r = new ToolExecutor(registry, () -> ToolPolicy.defaults().confirmingChanges(),
+				(tool, input) -> false, editor).run(write, ToolExecutor.Observer.NONE, CancelToken.NONE);
+		assertTrue(r.isError());
+		assertTrue(guarded.isEmpty());
+		// confirmed: then it lands in the editor
+		List<String> confirmations = new ArrayList<>();
+		r = new ToolExecutor(registry, () -> ToolPolicy.defaults().confirmingChanges(),
+				(tool, input) -> confirmations.add(tool.name()), editor)
+				.run(write, ToolExecutor.Observer.NONE, CancelToken.NONE);
+		assertEquals("into the editor", r.content());
+		assertEquals(List.of("adt_write_source"), confirmations);
+		assertTrue(provider.inputs.isEmpty());
+	}
+
+	@Test
 	void suggestModeWritesOnlyIntoTheOpenEditor() {
 		Recording provider = new Recording();
 		ToolRegistry registry = new ToolRegistry();

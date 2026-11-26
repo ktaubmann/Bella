@@ -140,7 +140,8 @@ public class BellaPlugin extends AbstractUIPlugin {
 			}
 		});
 		reconnectMcpServers();
-		externalMcp = new ExternalMcp(getPreferenceStore(), ExternalMcp.TokenStore.SECURE, tools, this::policy,
+		externalMcp = new ExternalMcp(getPreferenceStore(), ExternalMcp.TokenStore.SECURE, BellaPlugin::onUiThread,
+				tools, this::policy,
 				getStateLocation().toFile().toPath(), VERSION);
 		// not in start(): reading the token may open secure storage, whose master password prompt would hold
 		// up Eclipse's start
@@ -556,6 +557,30 @@ public class BellaPlugin extends AbstractUIPlugin {
 	}
 
 	/** Bella's MCP server for other programs on this machine. */
+	/**
+	 * Runs the task on the UI thread and waits for it; on the calling thread when
+	 * that is the UI thread or the workbench is not running.
+	 */
+	private static <T> T onUiThread(java.util.function.Supplier<T> task) {
+		if (!org.eclipse.ui.PlatformUI.isWorkbenchRunning()
+				|| org.eclipse.swt.widgets.Display.getCurrent() != null) {
+			return task.get();
+		}
+		java.util.concurrent.atomic.AtomicReference<T> result = new java.util.concurrent.atomic.AtomicReference<>();
+		java.util.concurrent.atomic.AtomicReference<RuntimeException> failure = new java.util.concurrent.atomic.AtomicReference<>();
+		org.eclipse.ui.PlatformUI.getWorkbench().getDisplay().syncExec(() -> {
+			try {
+				result.set(task.get());
+			} catch (RuntimeException e) {
+				failure.set(e);
+			}
+		});
+		if (failure.get() != null) {
+			throw failure.get();
+		}
+		return result.get();
+	}
+
 	public ExternalMcp externalMcp() {
 		return externalMcp;
 	}

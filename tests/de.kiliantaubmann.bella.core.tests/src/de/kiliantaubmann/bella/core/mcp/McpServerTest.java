@@ -394,4 +394,58 @@ class McpServerTest {
 		String after = post(http, readBody(10, "ZCL_C")).get(10, TimeUnit.SECONDS).body();
 		assertFalse(after.contains("still ran to the end"), after);
 	}
+
+	/** Runs a write in {@code session} that the client gives up on while it runs. */
+	private void lateWrite(HttpClient http, String session, int id) throws Exception {
+		allow = true;
+		tools.slow = new CountDownLatch(1);
+		CompletableFuture<HttpResponse<String>> call = post(http, callBody(id, "ZCL_SLOW"), session);
+		assertTrue(tools.running.await(10, TimeUnit.SECONDS));
+		post(http, cancelBody(id), session).get(10, TimeUnit.SECONDS);
+		tools.slow.countDown();
+		call.get(10, TimeUnit.SECONDS);
+		tools.slow = null;
+	}
+
+	@Test
+	void aLateResultReachesTheClientsNextSessionAfterAReconnect() throws Exception {
+		HttpClient http = HttpClient.newHttpClient();
+		String first = initialize(http, "Other CLI");
+		lateWrite(http, first, 8);
+		// reconnects without ending the old session
+		String second = initialize(http, "Other CLI");
+		String next = post(http, readBody(9, "ZCL_B"), second).get(10, TimeUnit.SECONDS).body();
+		assertTrue(next.contains("still ran to the end") && next.contains("ZCL_SLOW"), next);
+		// another client never sees it
+		String foreign = post(http, readBody(10, "ZCL_C"), initialize(http, "Third")).get(10, TimeUnit.SECONDS)
+				.body();
+		assertFalse(foreign.contains("still ran to the end"), foreign);
+	}
+
+	@Test
+	void aLateResultOfAnEndedSessionReachesTheClientsNextOne() throws Exception {
+		HttpClient http = HttpClient.newHttpClient();
+		String first = initialize(http, "Other CLI");
+		lateWrite(http, first, 8);
+		http.send(HttpRequest.newBuilder(URI.create(server.url())).header("Authorization", "Bearer " + server.token())
+				.header("Mcp-Session-Id", first).DELETE().build(), HttpResponse.BodyHandlers.ofString());
+		String second = initialize(http, "Other CLI");
+		String next = post(http, readBody(9, "ZCL_B"), second).get(10, TimeUnit.SECONDS).body();
+		assertTrue(next.contains("still ran to the end") && next.contains("ZCL_SLOW"), next);
+		String after = post(http, readBody(10, "ZCL_C"), second).get(10, TimeUnit.SECONDS).body();
+		assertFalse(after.contains("still ran to the end"), after);
+	}
+
+	@Test
+	void anInitializeInABatchOpensASession() throws Exception {
+		allow = true;
+		HttpClient http = HttpClient.newHttpClient();
+		HttpResponse<String> r = post(http, "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+				+ "{\"protocolVersion\":\"2025-06-18\",\"clientInfo\":{\"name\":\"Batch CLI\",\"version\":\"1\"}}}]")
+				.get(10, TimeUnit.SECONDS);
+		assertEquals(200, r.statusCode(), r.body());
+		String session = r.headers().firstValue("Mcp-Session-Id").orElseThrow();
+		post(http, callBody(2, "ZCL_A"), session).get(10, TimeUnit.SECONDS);
+		assertEquals(List.of("Batch CLI"), callers);
+	}
 }

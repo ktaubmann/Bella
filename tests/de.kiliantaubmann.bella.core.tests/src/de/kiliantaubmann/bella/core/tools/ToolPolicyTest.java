@@ -223,4 +223,17 @@ class ToolPolicyTest {
 		assertEquals(Decision.DENY, p.withMode(ChatMode.PLAN).decide(tool("adt_write_source", ToolSpec.Kind.WRITE),
 				new JsonObject()));
 	}
+
+	@Test
+	void forOtherProgramsAUserRuleDoesNotWaveThroughWhatTheDefaultsAskFor() {
+		ToolPolicy chat = new ToolPolicy(ToolPolicy.parseRules("adt_*=AUTO"), ChatMode.NORMAL);
+		ToolSpec devPackage = tool("adt_dev_package", ToolSpec.Kind.READ);
+		JsonObject set = Json.parseObject("{\"action\":\"set\",\"package\":\"ZOTHER\"}");
+		assertEquals(Decision.AUTO, chat.decide(devPackage, set));
+		assertEquals(Decision.CONFIRM, chat.confirmingChanges().decide(devPackage, set));
+		assertEquals(Decision.CONFIRM, chat.withMode(ChatMode.PLAN).confirmingChanges().decide(devPackage, set));
+		// reading the package stays free
+		assertEquals(Decision.AUTO, chat.confirmingChanges().decide(devPackage,
+				Json.parseObject("{\"action\":\"get\"}")));
+	}
 }

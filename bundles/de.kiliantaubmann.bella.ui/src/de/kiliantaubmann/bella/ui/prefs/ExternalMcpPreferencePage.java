@@ -176,14 +176,29 @@ public class ExternalMcpPreferencePage extends PreferencePage implements IWorkbe
 		}
 	}
 
+	/**
+	 * Saves a changed port before a command or file names it: the server must
+	 * listen where the programs will call, even if the page is then cancelled.
+	 */
+	private int applyPort() {
+		int selected = port.getSelection();
+		if (selected != mcp().port()) {
+			// the preference listener restarts the server on the new port
+			BellaPlugin.getDefault().getPreferenceStore().setValue(Prefs.MCP_EXTERNAL_PORT, selected);
+			showStatus();
+		}
+		return selected;
+	}
+
 	private void copyClaude() {
+		applyPort();
 		copy(McpSetupCommands.claudeCode(url(), mcp().token(), selectedShell()));
 		setMessage(Messages.get("mcpx.copied"), INFORMATION);
 	}
 
 	private void copyCopilot() {
 		try {
-			Path file = mcp().writeCopilotFile(port.getSelection());
+			Path file = mcp().writeCopilotFile(applyPort());
 			copy(McpSetupCommands.copilot(file, selectedShell()));
 			setMessage(Messages.get("mcpx.copied"), INFORMATION);
 		} catch (IOException e) {
@@ -193,7 +208,7 @@ public class ExternalMcpPreferencePage extends PreferencePage implements IWorkbe
 
 	private void addToCopilot() {
 		try {
-			Path file = mcp().addToCopilotConfig(port.getSelection());
+			Path file = mcp().addToCopilotConfig(applyPort());
 			MessageDialog.openInformation(getShell(), Messages.get("app.name"),
 					Messages.fmt("mcpx.copilotConfig.done", McpSetupCommands.SERVER_NAME, file));
 		} catch (IOException e) {
@@ -202,6 +217,7 @@ public class ExternalMcpPreferencePage extends PreferencePage implements IWorkbe
 	}
 
 	private void copyJson() {
+		applyPort();
 		JsonObject entry = McpSetupCommands.claudeCodeEntry(url(), mcp().token());
 		copy(Json.PRETTY.toJson(McpSetupCommands.servers(McpSetupCommands.SERVER_NAME, entry)));
 		setMessage(Messages.get("mcpx.copied"), INFORMATION);

@@ -208,8 +208,17 @@ public final class ToolExecutor {
 		if (decision == ToolPolicy.Decision.DENY) {
 			return ToolResult.error(rules.refusal(tool));
 		}
-		// The write guard runs before confirmation: writing into an open editor
-		// is harmless (nothing is saved) and the developer sees the diff there.
+		// In the chat the write guard runs before confirmation: writing into an open editor is harmless
+		// (nothing is saved) and the developer sees the diff there. For other programs every change asks
+		// first, also one that only lands in an editor.
+		boolean askFirst = rules.confirmsChanges() && decision == ToolPolicy.Decision.CONFIRM;
+		Optional<ToolProvider> owner = tools.providerOf(tool.name());
+		if (askFirst) {
+			Optional<ToolResult> stop = refuseOrConfirm(owner, tool, input, decision, cancel);
+			if (stop.isPresent()) {
+				return stop.get();
+			}
+		}
 		Optional<ToolResult> intercepted = writeGuard.intercept(tool, input);
 		if (intercepted.isPresent()) {
 			Log.info(AREA, tool.name() + ": redirected into the open editor");
@@ -219,32 +228,11 @@ public final class ToolExecutor {
 			Log.info(AREA, tool.name() + ": refused in suggest mode");
 			return ToolResult.error(rules.refusal(tool));
 		}
-		Optional<ToolProvider> owner = tools.providerOf(tool.name());
-		if (owner.isEmpty()) {
-			return ToolResult.error("Tool provider is no longer available: " + tool.name());
-		}
-		Optional<String> refused = owner.get().refuse(tool.remoteName(), input, cancel);
-		if (refused.isPresent()) {
-			Log.info(AREA, tool.name() + ": refused by the provider: " + refused.get());
-			return ToolResult.error(refused.get());
-		}
-		boolean confirmed;
-		try {
-			confirmed = decision != ToolPolicy.Decision.CONFIRM || confirmer.confirm(tool, input, cancel);
-		} catch (ConfirmationUnavailable e) {
-			Log.warn(AREA, tool.name() + ": could not ask the developer: " + e.getMessage());
-			return ToolResult.error("Not run: Bella could not ask the developer for confirmation (" + e.getMessage()
-					+ "). The developer did not decline; nothing was changed. Ask them to bring Eclipse to the front "
-					+ "and try again.");
-		}
-		if (cancel.isCancelled()) {
-			// an answer given after the caller stopped waiting must not change anything: nobody gets the result
-			Log.warn(AREA, tool.name() + ": cancelled before it ran");
-			return ToolResult.error(NOT_RUN);
-		}
-		if (!confirmed) {
-			Log.info(AREA, tool.name() + ": declined by the developer");
-			return ToolResult.error("The developer declined this tool call.");
+		if (!askFirst) {
+			Optional<ToolResult> stop = refuseOrConfirm(owner, tool, input, decision, cancel);
+			if (stop.isPresent()) {
+				return stop.get();
+			}
 		}
 		JsonObject effective = input;
 		if (rules.mode() == ChatMode.AUTO && ToolRegistry.ADT_PROVIDER_ID.equals(tool.providerId())
@@ -261,5 +249,37 @@ public final class ToolExecutor {
 			Log.error(AREA, tool.name() + " threw an exception", e);
 			return ToolResult.error(e.getClass().getSimpleName() + ": " + e.getMessage());
 		}
+	}
+
+	/** The provider's refusal or the developer's no, if any; empty when the call may run. */
+	private Optional<ToolResult> refuseOrConfirm(Optional<ToolProvider> owner, ToolSpec tool, JsonObject input,
+			ToolPolicy.Decision decision, CancelToken cancel) {
+		if (owner.isEmpty()) {
+			return Optional.of(ToolResult.error("Tool provider is no longer available: " + tool.name()));
+		}
+		Optional<String> refused = owner.get().refuse(tool.remoteName(), input, cancel);
+		if (refused.isPresent()) {
+			Log.info(AREA, tool.name() + ": refused by the provider: " + refused.get());
+			return Optional.of(ToolResult.error(refused.get()));
+		}
+		boolean confirmed;
+		try {
+			confirmed = decision != ToolPolicy.Decision.CONFIRM || confirmer.confirm(tool, input, cancel);
+		} catch (ConfirmationUnavailable e) {
+			Log.warn(AREA, tool.name() + ": could not ask the developer: " + e.getMessage());
+			return Optional.of(ToolResult.error("Not run: Bella could not ask the developer for confirmation ("
+					+ e.getMessage() + "). The developer did not decline; nothing was changed. Ask them to bring "
+					+ "Eclipse to the front and try again."));
+		}
+		if (cancel.isCancelled()) {
+			// an answer given after the caller stopped waiting must not change anything: nobody gets the result
+			Log.warn(AREA, tool.name() + ": cancelled before it ran");
+			return Optional.of(ToolResult.error(NOT_RUN));
+		}
+		if (!confirmed) {
+			Log.info(AREA, tool.name() + ": declined by the developer");
+			return Optional.of(ToolResult.error("The developer declined this tool call."));
+		}
+		return Optional.empty();
 	}
 }

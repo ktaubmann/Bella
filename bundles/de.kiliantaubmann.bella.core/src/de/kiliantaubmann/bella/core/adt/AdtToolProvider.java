@@ -1109,7 +1109,16 @@ public final class AdtToolProvider implements ToolProvider {
 		if (request.get().released()) {
 			return Optional.of(new Refusal(id + " is released.", "Ask the developer for an open request."));
 		}
-		if (!request.get().workbench()) {
+		String type = request.get().type();
+		if (type.isEmpty()) {
+			// the single request does not name its type: the developer's list does, through its categories
+			type = c.transports(s.user(), "D", cancel).stream().filter(t -> t.id().equalsIgnoreCase(id))
+					.map(AdtTransportRequest::type).findFirst().orElse("");
+			if (type.isEmpty()) {
+				Log.warn("adt", "Transport request " + id + ": SAP names no type; taken as a workbench request");
+			}
+		}
+		if (!type.isEmpty() && !type.equalsIgnoreCase("K")) {
 			return Optional.of(new Refusal(id + " is not a workbench request; repository objects go into workbench "
 					+ "requests.", "Ask the developer for a workbench request."));
 		}

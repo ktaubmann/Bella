@@ -169,6 +169,11 @@ public final class ToolPolicy {
 		return new ToolPolicy(userRules, mode, true);
 	}
 
+	/** Whether every change asks first (see {@link #confirmingChanges()}). */
+	public boolean confirmsChanges() {
+		return confirmChanges;
+	}
+
 	public ChatMode mode() {
 		return mode;
 	}
@@ -239,7 +244,22 @@ public final class ToolPolicy {
 
 	public Decision decide(ToolSpec tool, JsonObject input) {
 		Decision d = decideByRules(tool, input);
-		return d == Decision.AUTO && confirmChanges && tool.kind() != ToolSpec.Kind.READ ? Decision.CONFIRM : d;
+		return d == Decision.AUTO && confirmChanges
+				&& (tool.kind() != ToolSpec.Kind.READ || defaultAsks(tool, input)) ? Decision.CONFIRM : d;
+	}
+
+	/**
+	 * Whether a default rule asks for this call in every mode: also read-only
+	 * tools that change Bella's own state (adt_dev_package 'set'), which a user
+	 * rule such as {@code adt_*=AUTO} must not wave through for other programs.
+	 */
+	private static boolean defaultAsks(ToolSpec tool, JsonObject input) {
+		for (Rule r : DEFAULT_RULES) {
+			if (r.matches(tool.name(), input)) {
+				return r.decision() == Decision.ASK;
+			}
+		}
+		return false;
 	}
 
 	private Decision decideByRules(ToolSpec tool, JsonObject input) {

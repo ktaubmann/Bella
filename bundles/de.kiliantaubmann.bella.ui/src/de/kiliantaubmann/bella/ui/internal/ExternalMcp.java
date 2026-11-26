@@ -30,6 +30,7 @@ import de.kiliantaubmann.bella.core.mcp.McpSetupCommands;
 import de.kiliantaubmann.bella.core.tools.ChatMode;
 import de.kiliantaubmann.bella.core.tools.ToolExecutor;
 import de.kiliantaubmann.bella.core.tools.ToolPolicy;
+import de.kiliantaubmann.bella.core.tools.ToolProvider;
 import de.kiliantaubmann.bella.core.tools.ToolRegistry;
 import de.kiliantaubmann.bella.core.tools.ToolSpec;
 import de.kiliantaubmann.bella.core.util.CancelToken;
@@ -76,63 +77,89 @@ public final class ExternalMcp {
 		};
 	}
 
+	/**
+	 * Runs the token's reads and writes on the thread that may show secure
+	 * storage's master password prompt (Eclipse's UI thread; in tests the caller).
+	 * Only that thread ever loads or saves the token, so no other thread waits for
+	 * it while it waits for the prompt.
+	 */
+	public interface TokenThread {
+		<T> T call(Supplier<T> task);
+
+		/** On the calling thread. */
+		TokenThread CALLER = Supplier::get;
+	}
+
 	private final IPreferenceStore prefs;
 	private final TokenStore tokens;
+	private final TokenThread tokenThread;
 	private final ToolRegistry tools;
 	private final Supplier<ToolPolicy> policy;
 	private final Path stateDir;
 	private final String version;
-	private McpServer server;
+	private volatile McpServer server;
+	private final Object tokenLock = new Object();
 	private int serverPort;
 	private String serverToken;
 	/** The token in use; kept here as well, so that it stays the same when secure storage fails. */
-	private String token;
+	private volatile String token;
 	/** Whether {@link #token} could not be saved: it then holds only until Eclipse restarts. */
 	private volatile boolean tokenNotSaved;
 	private volatile String problem;
 
-	public ExternalMcp(IPreferenceStore prefs, TokenStore tokens, ToolRegistry tools, Supplier<ToolPolicy> policy,
-			Path stateDir, String version) {
+	public ExternalMcp(IPreferenceStore prefs, TokenStore tokens, TokenThread tokenThread, ToolRegistry tools,
+			Supplier<ToolPolicy> policy, Path stateDir, String version) {
 		this.prefs = prefs;
 		this.tokens = tokens;
+		this.tokenThread = tokenThread;
 		this.tools = tools;
 		this.policy = policy;
 		this.stateDir = stateDir;
 		this.version = version;
 	}
 
-	/** Starts, restarts or stops the server as the preferences say; never throws. */
-	public synchronized void apply() {
+	/**
+	 * Starts, restarts or stops the server as the preferences say; never throws.
+	 * The token is read before the lock is taken: reading it may wait for secure
+	 * storage's password prompt on the UI thread, which may itself be waiting for
+	 * this lock.
+	 */
+	public void apply() {
 		try {
-			applyPrefs();
+			String token = prefs.getBoolean(Prefs.MCP_EXTERNAL_ENABLED) ? token() : null;
+			synchronized (this) {
+				applyPrefs(token);
+			}
 		} catch (RuntimeException e) {
-			stop();
+			synchronized (this) {
+				stop();
+			}
 			problem = Messages.fmt("mcpx.status.failed", port(), e.getMessage() == null ? e.toString() : e.getMessage());
 			Log.warn("mcp", "Bella's MCP server for other programs could not start: " + e);
 		}
 	}
 
-	private void applyPrefs() {
-		if (!prefs.getBoolean(Prefs.MCP_EXTERNAL_ENABLED)) {
+	private void applyPrefs(String token) {
+		if (token == null || !prefs.getBoolean(Prefs.MCP_EXTERNAL_ENABLED)) {
 			stop();
 			problem = null;
 			return;
 		}
 		int port = port();
-		String token = token();
 		if (server != null && server.isRunning() && port == serverPort && token.equals(serverToken)) {
 			return;
 		}
 		stop();
-		McpServer s = new McpServer(new ToolExecutor(tools,
+		// its own registry over the same providers: a refresh for another program never changes the tool list
+		// a running chat sends, which must stay the same for the prompt cache
+		ToolRegistry own = new ToolRegistry();
+		McpServer s = new McpServer(new ToolExecutor(own,
 				() -> policy.get().withMode(mode()).confirmingChanges(), new Confirmer(),
 				new OpenEditorRouter()), version, token, port, t -> PROVIDERS.contains(t.providerId()),
 				"Tools of the Bella Eclipse plug-in. adt_* tools act on the SAP system through the developer's ADT "
 						+ "logon in Eclipse. Changes are confirmed by the developer in Eclipse and stay in the "
 						+ "development package and transport request of Bella's chat (adt_dev_package).");
-		// only the offered providers: no requests to the MCP servers Bella itself uses
-		s.refreshToolsWith(() -> tools.refresh(e -> Log.warn("mcp", "Tool list for another program: " + e),
-				p -> PROVIDERS.contains(p.id())));
+		s.refreshToolsWith(() -> refresh(own));
 		try {
 			s.start();
 			server = s;
@@ -144,6 +171,25 @@ public final class ExternalMcp {
 			s.close();
 			problem = Messages.fmt("mcpx.status.failed", port, e.getMessage() == null ? e.toString() : e.getMessage());
 			Log.warn("mcp", "Bella's MCP server for other programs could not start on port " + port + ": " + e);
+		}
+	}
+
+	/**
+	 * Takes over the offered providers the chat's registry has now (the ADT
+	 * provider comes and goes with the ADT bundle) and re-reads their tools:
+	 * no requests to the MCP servers Bella itself uses.
+	 */
+	private void refresh(ToolRegistry own) {
+		synchronized (own) {
+			List<ToolProvider> offered = tools.providers().stream()
+					.filter(p -> PROVIDERS.contains(p.id())).toList();
+			for (var p : own.providers()) {
+				if (offered.stream().noneMatch(o -> o == p)) {
+					own.removeProvider(p.id());
+				}
+			}
+			offered.forEach(own::addProvider);
+			own.refresh(e -> Log.warn("mcp", "Tool list for another program: " + e));
 		}
 	}
 
@@ -159,8 +205,10 @@ public final class ExternalMcp {
 		}
 	}
 
-	public synchronized boolean running() {
-		return server != null && server.isRunning();
+	/** Lock-free, so the preference page never waits for a start in progress. */
+	public boolean running() {
+		McpServer s = server;
+		return s != null && s.isRunning();
 	}
 
 	/** Why the server is not running although switched on; {@code null} otherwise. */
@@ -191,7 +239,19 @@ public final class ExternalMcp {
 	 * cannot be saved there, it is kept in memory, so the server and the copied
 	 * commands still agree until Eclipse restarts (see {@link #tokenNotSaved()}).
 	 */
-	public synchronized String token() {
+	public String token() {
+		String t = token;
+		return t != null ? t : tokenThread.call(this::loadToken);
+	}
+
+	/** Runs only on {@link #tokenThread}; its own lock, never the server's. */
+	private String loadToken() {
+		synchronized (tokenLock) {
+			return loadTokenLocked();
+		}
+	}
+
+	private String loadTokenLocked() {
 		if (token == null) {
 			String stored = read();
 			if (stored == null || stored.isBlank()) {
@@ -205,8 +265,13 @@ public final class ExternalMcp {
 	}
 
 	/** Replaces the token; programs set up with the old one are refused from now on. */
-	public synchronized void newToken() {
-		save(McpServer.newToken());
+	public void newToken() {
+		tokenThread.call(() -> {
+			synchronized (tokenLock) {
+				save(McpServer.newToken());
+			}
+			return null;
+		});
 		apply();
 	}
 

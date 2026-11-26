@@ -465,7 +465,7 @@ class WorkbenchSmokeTest {
 					public void put(String t) {
 						token[0] = t;
 					}
-				}, plugin.tools(), plugin::policy, java.nio.file.Files.createTempDirectory("bella-mcp"), "test");
+				}, de.kiliantaubmann.bella.ui.internal.ExternalMcp.TokenThread.CALLER, plugin.tools(), plugin::policy, java.nio.file.Files.createTempDirectory("bella-mcp"), "test");
 		int port;
 		try (java.net.ServerSocket free = new java.net.ServerSocket(0)) {
 			port = free.getLocalPort();
@@ -515,7 +515,7 @@ class WorkbenchSmokeTest {
 					public void put(String t) {
 						// lost, as SecureStore only logs
 					}
-				}, BellaPlugin.getDefault().tools(), BellaPlugin.getDefault()::policy, state, "test");
+				}, de.kiliantaubmann.bella.ui.internal.ExternalMcp.TokenThread.CALLER, BellaPlugin.getDefault().tools(), BellaPlugin.getDefault()::policy, state, "test");
 		String first = mcp.token();
 		assertEquals(first, mcp.token(), "the server and the copied commands must use the same token");
 		assertTrue(mcp.tokenNotSaved());
@@ -546,7 +546,7 @@ class WorkbenchSmokeTest {
 					public void put(String t) {
 						token[0] = t;
 					}
-				}, BellaPlugin.getDefault().tools(), BellaPlugin.getDefault()::policy, state, "test");
+				}, de.kiliantaubmann.bella.ui.internal.ExternalMcp.TokenThread.CALLER, BellaPlugin.getDefault().tools(), BellaPlugin.getDefault()::policy, state, "test");
 		assertEquals(file, mcp.writeCopilotFile(8123));
 		assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions
 				.toString(java.nio.file.Files.getPosixFilePermissions(file)));

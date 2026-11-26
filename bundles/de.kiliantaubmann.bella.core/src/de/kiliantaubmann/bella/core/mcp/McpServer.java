@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -88,7 +89,10 @@ public final class McpServer implements AutoCloseable {
 	private static final class Session {
 		final String id;
 		final String clientName;
+		/** Guarded by itself, as is {@link #closed}. */
 		final List<String> late = new ArrayList<>();
+		/** Ended or dropped: late results go to {@link McpServer#orphaned} instead. */
+		boolean closed;
 
 		Session(String id, String clientName) {
 			this.id = id;
@@ -105,6 +109,12 @@ public final class McpServer implements AutoCloseable {
 	private final Map<String, Session> sessions = new LinkedHashMap<>();
 	/** Clients that send no session id; they share one session as before sessions existed. */
 	private final Session anonymous = new Session("", null);
+	/**
+	 * Late results of sessions that ended or were dropped before they could be
+	 * reported, by client name ({@code ""} for clients without one); the next
+	 * session of that client takes them over.
+	 */
+	private final Map<String, List<String>> orphaned = new HashMap<>();
 
 	/** A private server for a CLI Bella starts: any free port, a random token, all tools. */
 	public McpServer(ToolExecutor executor, String version) {
@@ -385,7 +395,7 @@ public final class McpServer implements AutoCloseable {
 		case "DELETE" -> {
 			if (sessionId != null) {
 				synchronized (sessions) {
-					sessions.remove(sessionId);
+					close(sessions.remove(sessionId));
 				}
 			}
 			write(out, 200, "OK", null, null);
@@ -400,18 +410,74 @@ public final class McpServer implements AutoCloseable {
 		}
 	}
 
-	/** A new session for a client that sent {@code initialize}; returns its id. */
-	private String openSession(String clientName) {
-		String id = newToken();
+	/**
+	 * A new session for a client that sent {@code initialize}. It inherits the
+	 * late results not yet reported to earlier sessions of the same client:
+	 * those that ended are moved, those still open are copied, since a client
+	 * that reconnects often never ends its old session.
+	 */
+	private Session openSession(String clientName) {
+		Session created = new Session(newToken(), clientName);
 		synchronized (sessions) {
 			while (sessions.size() >= MAX_SESSIONS) {
-				var oldest = sessions.keySet().iterator();
-				oldest.next();
+				var oldest = sessions.values().iterator();
+				Session dropped = oldest.next();
 				oldest.remove();
+				close(dropped);
 			}
-			sessions.put(id, new Session(id, clientName));
+			synchronized (orphaned) {
+				List<String> left = orphaned.remove(orphanKey(clientName));
+				if (left != null) {
+					created.late.addAll(left);
+				}
+			}
+			if (clientName != null) {
+				for (Session other : sessions.values()) {
+					if (clientName.equals(other.clientName)) {
+						synchronized (other.late) {
+							created.late.addAll(other.late);
+						}
+					}
+				}
+			}
+			sessions.put(created.id, created);
 		}
-		return id;
+		return created;
+	}
+
+	/** Marks the session ended; its unreported late results wait for the client's next session. */
+	private void close(Session session) {
+		if (session == null) {
+			return;
+		}
+		synchronized (session.late) {
+			session.closed = true;
+			if (!session.late.isEmpty()) {
+				orphan(session.clientName, session.late);
+				session.late.clear();
+			}
+		}
+	}
+
+	private void orphan(String clientName, List<String> notes) {
+		synchronized (orphaned) {
+			orphaned.computeIfAbsent(orphanKey(clientName), k -> new ArrayList<>()).addAll(notes);
+		}
+	}
+
+	private static String orphanKey(String clientName) {
+		return clientName == null ? "" : clientName;
+	}
+
+	/** Adds a late result to the session, or, if it ended meanwhile, to its client's next one. */
+	private void addLate(Session session, String note) {
+		synchronized (session.late) {
+			if (!session.closed) {
+				session.late.add(note);
+				return;
+			}
+		}
+		orphan(session.clientName, List.of(note));
 	}
 
 	private boolean authorized(String header) {
@@ -430,17 +496,25 @@ public final class McpServer implements AutoCloseable {
 		}
 		if (payload.isJsonArray()) {
 			JsonArray responses = new JsonArray();
+			Session current = session;
+			Session opened = null;
 			for (JsonElement e : payload.getAsJsonArray()) {
-				JsonObject r = e.isJsonObject() ? dispatch(e.getAsJsonObject(), session)
+				if (opened == null && e.isJsonObject() && "initialize".equals(Json.str(e.getAsJsonObject(), "method"))) {
+					// as for a single initialize; the rest of the batch already belongs to the new session
+					opened = openSession(clientName(Json.obj(e.getAsJsonObject(), "params")));
+					current = opened;
+				}
+				JsonObject r = e.isJsonObject() ? dispatch(e.getAsJsonObject(), current)
 						: error(null, -32600, "Invalid Request");
 				if (r != null) {
 					responses.add(r);
 				}
 			}
+			Map<String, String> header = opened == null ? null : Map.of(SESSION_HEADER, opened.id);
 			if (responses.isEmpty()) {
-				write(out, 202, "Accepted", null, null);
+				write(out, 202, "Accepted", header, null);
 			} else {
-				write(out, 200, "OK", null, responses);
+				write(out, 200, "OK", header, responses);
 			}
 			return;
 		}
@@ -450,9 +524,9 @@ public final class McpServer implements AutoCloseable {
 		}
 		JsonObject msg = payload.getAsJsonObject();
 		if ("initialize".equals(Json.str(msg, "method"))) {
-			String id = openSession(clientName(Json.obj(msg, "params")));
-			JsonObject response = dispatch(msg, session);
-			write(out, 200, "OK", Map.of(SESSION_HEADER, id), response);
+			Session opened = openSession(clientName(Json.obj(msg, "params")));
+			JsonObject response = dispatch(msg, opened);
+			write(out, 200, "OK", Map.of(SESSION_HEADER, opened.id), response);
 			return;
 		}
 		JsonObject response = dispatch(msg, session);
@@ -608,10 +682,9 @@ public final class McpServer implements AutoCloseable {
 		if (token.isCancelled() && spec != null && spec.kind() != ToolSpec.Kind.READ
 				&& !ToolExecutor.NOT_RUN.equals(r.content())) {
 			String out = r.content() == null ? "" : r.content();
-			synchronized (session.late) {
-				session.late.add("- " + name + " " + Log.clip(Json.GSON.toJson(args), 300) + (r.isError() ? " failed: " : " ran: ")
-						+ (out.length() > LATE_RESULT_CHARS ? out.substring(0, LATE_RESULT_CHARS) + " …" : out));
-			}
+			addLate(session, "- " + name + " " + Log.clip(Json.GSON.toJson(args), 300)
+					+ (r.isError() ? " failed: " : " ran: ")
+					+ (out.length() > LATE_RESULT_CHARS ? out.substring(0, LATE_RESULT_CHARS) + " …" : out));
 		}
 		JsonArray content = new JsonArray();
 		if (notes != null) {
